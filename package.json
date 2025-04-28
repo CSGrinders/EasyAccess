@@ -36,6 +36,7 @@
     "webpack-dev-server": "^5.2.1"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
     "@tailwindcss/typography": "^0.5.16",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import Test from '@Pages/Test';
+import TestLoginPage from '@Pages/TestLoginPage';
 import Titlebar from '@Components/Titlebar'
 import "./global.css";
 
@@ -10,6 +11,7 @@ root.render(
     <div>
         <Titlebar/>
         <div className="p-6"/>
-        <Test/>
+        {/* <Test/> */}
+        <TestLoginPage/>
     </div>
 );
