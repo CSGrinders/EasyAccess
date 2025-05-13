@@ -1,13 +1,13 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
+import { saveAuthTokens, getAuthTokens, clearAuthTokens } from './token_storage';
 import dotenv from 'dotenv';
+import ElectronGoogleOAuth2 from '@getstation/electron-google-oauth2';
 
 
 dotenv.config();
 
 const clientId = process.env.GOOGLE_CLIENT_ID;
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-
-import ElectronGoogleOAuth2 from '@getstation/electron-google-oauth2';
 
 const createWindow = () => {
     const win = new BrowserWindow({
@@ -43,4 +43,16 @@ ipcMain.handle('google-auth', async (event) => {
     const token = await myApiOauth.openAuthWindowAndGetTokens();
     console.log("Access Token: ", token.access_token);
     return token;
+});
+
+ipcMain.handle('save-auth-tokens', async (event, tokens) => {
+    saveAuthTokens(tokens);
+});
+
+ipcMain.handle('get-auth-tokens', async (event) => {
+    return getAuthTokens();
+});
+
+ipcMain.handle('clear-auth-tokens', async (event) => {
+    clearAuthTokens();
 });

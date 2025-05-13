@@ -1,19 +1,10 @@
 
 import { useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = 'https://lliuckljienxmohsoitv.supabase.co'
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsaXVja2xqaWVueG1vaHNvaXR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU4NTk2NjgsImV4cCI6MjA2MTQzNTY2OH0.lpPgq0V4Qz0A7B6z28gQ7Tw_BaeN4zyr4ZnKWbum5VA'
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+import axios from 'axios'
 
 export default function LoginForm() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [isSignup, setIsSignup] = useState(false)
   const [token, setToken] = useState<string | null>(null)
 
   const handleLogin = async () => {
@@ -22,9 +13,43 @@ export default function LoginForm() {
     try {
         const token = await (window as any).electronAPI.googleAuth();
         setToken(token.access_token);
+        await (window as any).electronAPI.saveAuthTokens(token);
         console.log("Token: ", token);
     } catch (error) {
       console.error('Login error:', error)
+      setError('An unexpected error occurred. Please try again.')
+    }
+    setLoading(false)
+  }
+
+  const handleFetchTokens = async () => {
+    console.log('getSavedTokens clicked')
+    setLoading(true)
+    try {
+        const token = await (window as any).electronAPI.getAuthTokens();
+        console.log("Token: ", token);
+        console.log("Token scope: ", token.scope);
+        setToken(token.access_token);
+    } catch (error) {
+      console.error('getSavedTokens error:', error)
+      setError('An unexpected error occurred. Please try again.')
+    }
+    setLoading(false)
+  }
+
+  const requestDriveFiles = async () => {
+    console.log('Request Drive Files clicked')
+    setLoading(true)
+    try {
+      const response = await axios.get('https://www.googleapis.com/drive/v3/files', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+  
+      console.log('Files:', response.data);
+    } catch (error) {
+      console.error('Error fetching drive files:', error)
       setError('An unexpected error occurred. Please try again.')
     }
     setLoading(false)
@@ -44,10 +69,22 @@ export default function LoginForm() {
       >
         <span className="text-lg">Sign in with Google</span>
       </button>
+      <button
+          onClick={handleFetchTokens}
+          className="flex items-center justify-center space-x-3 px-6 py-3 bg-white text-gray-700 font-semibold rounded-md shadow hover:shadow-lg hover:bg-gray-100 transition"
+      >
+        <span className="text-lg">Get Saved Tokens</span>
+      </button>
       {token && (
-        <div className="mt-4">
+        <div className="flex flex-col mt-4 justify-center items-center">
           <h2 className="text-lg font-semibold">Access Token:</h2>
           <p className="text-sm text-gray-600">{token}</p>
+          <button
+            onClick={requestDriveFiles}
+            className="flex items-center justify-center space-x-3 px-6 py-3 bg-white text-gray-700 font-semibold rounded-md shadow hover:shadow-lg hover:bg-gray-100 transition"
+          >
+            <span className="text-lg">Request Drive Files</span>
+          </button>
         </div>
       )}
     </div>
