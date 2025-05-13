@@ -23,6 +23,7 @@ app-release/
 .vscode/
 .idea/
 
+.env
 
 # testing
 /coverage

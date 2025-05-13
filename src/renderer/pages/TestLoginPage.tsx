@@ -14,51 +14,18 @@ export default function LoginForm() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [isSignup, setIsSignup] = useState(false)
+  const [token, setToken] = useState<string | null>(null)
 
   const handleLogin = async () => {
     console.log('Login clicked')
     setLoading(true)
     try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-        })
-        if (error) {
-            setError(error.message)
-        } else {
-            console.log('Login success!', data)
-        }
+        const token = await (window as any).electronAPI.googleAuth();
+        setToken(token.access_token);
+        console.log("Token: ", token);
     } catch (error) {
       console.error('Login error:', error)
       setError('An unexpected error occurred. Please try again.')
-    }
-    setLoading(false)
-  }
-
-  const handleSignup = async () => {
-    console.log('Sign Up clicked')
-    setLoading(true)
-    try {
-        // Check if passwords match
-        if (password !== confirmPassword) {
-            setError("Passwords do not match!")
-            setLoading(false)
-            return
-        }
-        setError(null)
-
-        const { data, error } = await supabase.auth.signUp({
-            email,
-            password,
-        })
-
-        if (error) {
-        setError(error.message)
-        } else {
-        console.log('Sign up success!', data)
-        }
-    } catch (error) {
-        console.error('Sign up error:', error)
     }
     setLoading(false)
   }
@@ -71,99 +38,18 @@ export default function LoginForm() {
         </h1>
       </section>
 
-      <section className="w-full max-w-md text-center space-y-6">
-        {/* Conditional Form Rendering */}
-        {isSignup ? (
-          <>
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full p-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-sidebar-primary"
-            />
-
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full p-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-sidebar-primary"
-            />
-
-            <input
-              type="password"
-              placeholder="Confirm Password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full p-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-sidebar-primary"
-            />
-
-            <button
-              onClick={handleSignup}
-              className="w-full p-3 rounded-md border border-gray-300 bg-sidebar-primary font-bold disabled:bg-gray-300"
-              disabled={loading}
-            >
-              {loading ? 'Creating Account...' : 'Sign Up'}
-            </button>
-          </>
-        ) : (
-          <>
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full p-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-sidebar-primary"
-            />
-
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full p-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-sidebar-primary"
-            />
-
-            <button
-              onClick={handleLogin}
-              className="w-full p-3 rounded-md border border-gray-300 bg-sidebar-primary font-bold disabled:bg-gray-300"
-              disabled={loading}
-            >
-              {loading ? 'Logging In...' : 'Log In'}
-            </button>
-          </>
-        )}
-
-        {/* Switch between login and signup */}
-        <p className="text-sm mt-4">
-          {isSignup ? (
-            <>
-              Already have an account?{' '}
-              <button
-                onClick={() => setIsSignup(false)}
-                className="text-blue-500 hover:text-blue-700"
-              >
-                Log In
-              </button>
-            </>
-          ) : (
-            <>
-              Don't have an account?{' '}
-              <button
-                onClick={() => setIsSignup(true)}
-                className="text-blue-500 hover:text-blue-700"
-              >
-                Sign Up
-              </button>
-            </>
-          )}
-        </p>
-
-        {error && (
-          <p className="text-red-500 text-sm mt-4">{error}</p>
-        )}
-      </section>
+      <button
+          onClick={handleLogin}
+          className="flex items-center justify-center space-x-3 px-6 py-3 bg-white text-gray-700 font-semibold rounded-md shadow hover:shadow-lg hover:bg-gray-100 transition"
+      >
+        <span className="text-lg">Sign in with Google</span>
+      </button>
+      {token && (
+        <div className="mt-4">
+          <h2 className="text-lg font-semibold">Access Token:</h2>
+          <p className="text-sm text-gray-600">{token}</p>
+        </div>
+      )}
     </div>
   )
 }
