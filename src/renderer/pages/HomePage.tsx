@@ -12,42 +12,8 @@ const test = {
 
 type BoxSize = "small" | "medium" | "large" | "full"
 type SplitZone = "top" | "right" | "bottom" | "left" | null
-import {CloudItem} from "@Components/ui/cloudItem";
-import { FaGoogleDrive, FaDropbox } from "react-icons/fa";
-import { SiIcloud } from "react-icons/si";
-
 
 const HomePage = () => {
-
-    // State to track the active navigation item
-    const [activeNav, setActiveNav] = useState("Home");
-    const [showStorageWindow, setShowStorageWindow] = useState(false);
-    const [token, setToken] = useState<string | null>(null);
-
-    const handleGoogleAuth = async () => {
-        // TODO added for testing
-        // await (window as any).electronAPI.clearAuthTokens(); 
-        console.log('google drive clicked')
-        try {
-            var token = await (window as any).electronAPI.getAuthTokens();
-            if (!token) {
-                token = await (window as any).electronAPI.googleAuth();
-                await (window as any).electronAPI.saveAuthTokens(token);
-            }
-            setToken(token.access_token);
-            console.log("Token: ", token);
-        } catch (error) {
-            console.error('Login error:', error)
-        }
-    }
-
-    const handleNavClick = (label: string) => {
-        setActiveNav(label); // Update the active navigation item
-    };
-
-    const handleAddStorageClick = () => {
-        setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
-    };
     const [activeBoxId, setActiveBoxId] = useState(1)
     const [zoomLevel, setZoomLevel] = useState(1) // 1 = 100%, 0.5 = 50%, 2 = 200%
     const [isPanMode, setIsPanMode] = useState(false)
