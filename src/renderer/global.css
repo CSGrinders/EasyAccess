@@ -6,16 +6,8 @@
     --background-end-rgb: 255, 255, 255;
 }
 
-.drag {
-    -webkit-app-region: drag;
-}
 
-.no-drag {
-    -webkit-app-region: no-drag;
-}
-
-
-@media (prefers-color-scheme: light) {
+@media (prefers-color-scheme: dark) {
     :root {
         --background: hsl(0 0% 9%);
         --foreground: #ededed;
@@ -27,6 +19,21 @@ body {
     color: var(--foreground);
     font-family: Arial, Helvetica, sans-serif;
 }
+.drag {
+    -webkit-app-region: drag;
+}
+
+.no-drag {
+    -webkit-app-region: no-drag;
+}
+
+
+:root {
+    --foreground-rgb: 0, 0, 0;
+    --background-start-rgb: 214, 219, 220;
+    --background-end-rgb: 255, 255, 255;
+}
+
 
 ::-webkit-scrollbar {
     width: 5px;
