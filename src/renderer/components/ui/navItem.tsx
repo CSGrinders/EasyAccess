@@ -1,15 +1,18 @@
 import React from "react";
+import {Button} from "@Components/ui/button";
 
 interface NavItemProps {
     icon: React.ReactNode
     label: string
     active?: boolean
+    onClick?: () => void;
 }
 
-export function NavItem({ icon, label, active = false }: NavItemProps) {
+export function NavItem({icon, label, active = false, onClick}: NavItemProps) {
     return (
         <div className="relative group">
             <div
+                onClick={onClick}
                 className={`
           flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-200
           ${
@@ -24,7 +27,7 @@ export function NavItem({ icon, label, active = false }: NavItemProps) {
             </div>
 
             {active && (
-                <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-8 bg-blue-500 rounded-r-full" />
+                <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-8 bg-blue-500 rounded-r-full"/>
             )}
         </div>
     )
