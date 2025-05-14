@@ -1,10 +1,24 @@
 @import "tailwindcss";
 
 :root {
-    --background: hsl(0 0% 9%);
-    --foreground: #ededed;
+    --foreground-rgb: 0, 0, 0;
+    --background-start-rgb: 214, 219, 220;
+    --background-end-rgb: 255, 255, 255;
 }
 
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --background: hsl(0 0% 9%);
+        --foreground: #ededed;
+    }
+}
+
+
+body {
+    color: var(--foreground);
+    font-family: Arial, Helvetica, sans-serif;
+}
 .drag {
     -webkit-app-region: drag;
 }
@@ -20,18 +34,6 @@
     --background-end-rgb: 255, 255, 255;
 }
 
-
-@media (prefers-color-scheme: dark) {
-    :root {
-        --background: hsl(0 0% 9%);
-        --foreground: #ededed;
-    }
-}
-
-body {
-    color: var(--foreground);
-    font-family: Arial, Helvetica, sans-serif;
-}
 
 ::-webkit-scrollbar {
     width: 5px;
