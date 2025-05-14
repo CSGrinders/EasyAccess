@@ -1,5 +1,6 @@
-// preload.ts
-import { contextBridge, ipcRenderer } from 'electron';
+// preload.ts - Bridge between main and renderer processes
+import { contextBridge, ipcRenderer } from 'electron'
+import type { FileSystemItem } from '../types/fileSystem'
 import { AuthTokens } from './token_storage';
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -8,3 +9,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAuthTokens: () => ipcRenderer.invoke('get-auth-tokens'),
     clearAuthTokens: () => ipcRenderer.invoke('clear-auth-tokens'),
 });
+
+contextBridge.exposeInMainWorld('fsApi', {
+    getHome: () => {
+        const home = process.env.HOME
+        return home
+    },
+    readDirectory: (dir: string) =>
+        ipcRenderer.invoke('read-directory', dir) as Promise<FileSystemItem[]>,
+    readFile: (file: string) =>
+        ipcRenderer.invoke('read-file', file) as Promise<string>
+})

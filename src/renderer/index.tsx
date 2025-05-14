@@ -1,17 +1,15 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import Test from '@Pages/Test';
-import TestLoginPage from '@Pages/TestLoginPage';
-import Titlebar from '@Components/Titlebar'
+import HomePage from '@Pages/HomePage';
+import {FileExplorer} from "@Components/FileExplorer";
 import "./global.css";
+import Titlebar from "@Components/Titlebar";
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 
 root.render(
-    <div>
-        <Titlebar/>
-        <div className="p-6"/>
-        {/* <Test/> */}
-        <TestLoginPage/>
+    <div className="w-screen h-screen overflow-hidden">
+        <Titlebar />
+        <HomePage />
     </div>
 );

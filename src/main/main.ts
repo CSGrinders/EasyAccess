@@ -1,4 +1,6 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron'
+import * as path from 'path'
+import * as fs from 'fs'
 import { saveAuthTokens, getAuthTokens, clearAuthTokens } from './token_storage';
 import dotenv from 'dotenv';
 import ElectronGoogleOAuth2 from '@getstation/electron-google-oauth2';
@@ -16,14 +18,20 @@ const createWindow = () => {
         frame: false,
         titleBarStyle: 'hiddenInset',
         webPreferences: {
-            nodeIntegration: false,
+            preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
-            preload: __dirname + '/preload.js'
+            nodeIntegration: false,
+            devTools: true
         }
+
     });
     console.log('window created');
 
     win.loadURL('http://localhost:3000').then(r => console.log("loaded"));
+    win.once('ready-to-show', () => {
+        win.show()
+        win.webContents.openDevTools({ mode: 'right' })
+    })
 };
 
 app.whenReady().then(() => {

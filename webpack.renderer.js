@@ -12,10 +12,22 @@ module.exports = {
                 exclude: /node_modules/,
             },
             {
-                test: /\.css$/i,
-                include: path.resolve(__dirname, 'src'),
-                use: ['style-loader', 'css-loader', 'postcss-loader'],
-            },
+                test: /\.css$/,
+                use: [
+                    'style-loader',
+                    'css-loader',
+                    {
+                        loader: 'postcss-loader',
+                        options: {
+                            postcssOptions: {
+                                plugins: [
+                                    require('@tailwindcss/postcss'),
+                                ],
+                            },
+                        },
+                    },
+                ],
+            }
         ],
     },
     resolve: {
@@ -24,7 +36,8 @@ module.exports = {
             '@Components': path.resolve(__dirname, 'src/renderer/components'),
             '@': path.resolve(__dirname, 'src/renderer'),
         },
-        extensions: ['.tsx', '.ts', '.js'],
+
+        extensions: ['.tsx', '.ts', '.js', '.css'],
     },
     output: {
         path: path.resolve(__dirname, 'dist'),
