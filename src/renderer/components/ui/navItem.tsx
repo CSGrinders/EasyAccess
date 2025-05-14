@@ -4,11 +4,12 @@ interface NavItemProps {
     icon: React.ReactNode
     label: string
     active?: boolean
+    onClick?: () => void; // Add onClick prop
 }
 
-export function NavItem({ icon, label, active = false }: NavItemProps) {
+export function NavItem({ icon, label, active = false, onClick }: NavItemProps) {
     return (
-        <div className="relative group">
+        <div className="relative group" onClick={onClick}>
             <div
                 className={`
           flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-200

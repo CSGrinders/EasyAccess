@@ -10,8 +10,42 @@ import {
 import {Input} from "@Components/ui/input";
 import {Button} from '@/components/ui/button';
 import {NavItem} from "@Components/ui/navItem";
+import {CloudItem} from "@Components/ui/cloudItem";
+import { FaGoogleDrive, FaDropbox } from "react-icons/fa";
+import { SiIcloud } from "react-icons/si";
+
 
 const HomePage = () => {
+
+    // State to track the active navigation item
+    const [activeNav, setActiveNav] = useState("Home");
+    const [showStorageWindow, setShowStorageWindow] = useState(false);
+    const [token, setToken] = useState<string | null>(null);
+
+    const handleGoogleAuth = async () => {
+        // TODO added for testing
+        // await (window as any).electronAPI.clearAuthTokens(); 
+        console.log('google drive clicked')
+        try {
+            var token = await (window as any).electronAPI.getAuthTokens();
+            if (!token) {
+                token = await (window as any).electronAPI.googleAuth();
+                await (window as any).electronAPI.saveAuthTokens(token);
+            }
+            setToken(token.access_token);
+            console.log("Token: ", token);
+        } catch (error) {
+            console.error('Login error:', error)
+        }
+    }
+
+    const handleNavClick = (label: string) => {
+        setActiveNav(label); // Update the active navigation item
+    };
+
+    const handleAddStorageClick = () => {
+        setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
+    };
 
     const [storageBoxes, setStorageBoxes] = useState([
         {
@@ -54,6 +88,7 @@ const HomePage = () => {
                         <div className="relative group">
                             <Button
                                 variant="outline"
+                                onClick={() => handleAddStorageClick()}
                                 size="icon"
                                 className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-200 hover:border-blue-300 dark:hover:border-blue-700"
                             >
@@ -61,14 +96,29 @@ const HomePage = () => {
                             </Button>
                             <span
                                 className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-                Add Storage
-              </span>
+                                Add Storage
+                            </span>
                         </div>
 
                         <div className="w-full px-2 space-y-4">
-                            <NavItem icon={<Home className="h-5 w-5"/>} label="Home" active/>
-                            <NavItem icon={<CloudIcon className="h-5 w-5"/>} label="Clouds"/>
-                            <NavItem icon={<Download className="h-5 w-5"/>} label="Downloads"/>
+                            <NavItem
+                                icon={<Home className="h-5 w-5" />}
+                                label="Home"
+                                active={activeNav === "Home"}
+                                onClick={() => handleNavClick("Home")}
+                            />
+                            <NavItem
+                                icon={<CloudIcon className="h-5 w-5" />}
+                                label="Clouds"
+                                active={activeNav === "Clouds"}
+                                onClick={() => handleNavClick("Clouds")}
+                            />
+                            <NavItem
+                                icon={<Download className="h-5 w-5" />}
+                                label="Downloads"
+                                active={activeNav === "Downloads"}
+                                onClick={() => handleNavClick("Downloads")}
+                            />
                         </div>
                     </div>
                     <div className="mt-auto py-5">
@@ -77,6 +127,28 @@ const HomePage = () => {
                             <User className="h-4 w-4"/>
                         </div>
                     </div>
+                </div>
+                <div
+                    className={`${
+                        showStorageWindow ? "w-30" : "w-0"
+                    } bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 shadow-sm flex flex-col items-center py-6 transition-all duration-300 overflow-hidden`}
+                >
+                    <CloudItem
+                        icon={<FaGoogleDrive className="h-5 w-5" />}
+                        label="Google Drive"
+                        onClick={() => handleGoogleAuth()}
+                    />
+                    <CloudItem
+                        icon={<FaDropbox className="h-5 w-5" />}
+                        label="Dropbox"
+                        // onClick={() => handleNavClick("Dropbox")}
+                    />
+                    <CloudItem
+                        icon={<SiIcloud className="h-5 w-5" />}
+                        label="iCloud"
+                        // onClick={() => handleNavClick("iCloud")}
+                    />
+                    {/* Add your sidebar content here */}
                 </div>
                 <div className="flex-1 flex flex-col items-center mt-5">
                     <div className="relative w-96">
