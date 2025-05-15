@@ -3,6 +3,7 @@ import {HardDrive} from "lucide-react"
 import CanvaSettings from "@Components/CanvaSettings";
 import ActionBar from "@Components/ActionBar";
 import {CanvasContainer} from "@Components/CanvasContainer";
+import StorageSideWindow from '@/components/StorageSideWindow';
 
 const test = {
     folders: ["Documents", "Pictures", "Downloads", "Desktop"],
@@ -20,6 +21,11 @@ const HomePage = () => {
     const [action, setAction] = useState("dashboard")
     const [position, setPosition] = useState({x: 0, y: 0})
     const containerRef = useRef<HTMLDivElement>(null)
+    const [showStorageWindow, setShowStorageWindow] = useState(false);
+    
+    const toggleShowSideWindow = () => {
+        setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
+    };
 
     const [storageBoxes, setStorageBoxes] = useState([
         {
@@ -54,18 +60,21 @@ const HomePage = () => {
                                    setIsPanMode={setIsPanMode}/>
                 </div>
             </header>
-            <main className="flex flex-1 overflow-hidden">
-                <ActionBar action={action} setAction={setAction}/>
-                <CanvasContainer
-                    zoomLevel={zoomLevel}
-                    isPanMode={isPanMode}
-                    className="relative"
-                    position={position}
-                    setPosition={setPosition}
+            <main className="relative flex flex-1 overflow-hidden">
+                <ActionBar action={action} setAction={setAction} toggleShowSideWindow={toggleShowSideWindow}/>
+                <div className="relative flex flex-1">
+                    <StorageSideWindow show={showStorageWindow}/>
+                    <CanvasContainer
+                        zoomLevel={zoomLevel}
+                        isPanMode={isPanMode}
+                        className="relative"
+                        position={position}
+                        setPosition={setPosition}
 
-                >
-                    <></>
-                </CanvasContainer>
+                    >
+                        <></>
+                    </CanvasContainer>
+                </div>
             </main>
         </div>
     );

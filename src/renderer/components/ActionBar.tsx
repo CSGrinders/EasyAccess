@@ -10,15 +10,10 @@ import StorageSideWindow from "./StorageSideWindow";
 interface ActionBarProps {
     action: string
     setAction: React.Dispatch<React.SetStateAction<string>>
+    toggleShowSideWindow: () => void
 }
 
-const ActionBar = ({action, setAction}: ActionBarProps) => {
-
-    const [showStorageWindow, setShowStorageWindow] = useState(false);
-    
-    const handleAddStorageClick = () => {
-        setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
-    };
+const ActionBar = ({action, setAction, toggleShowSideWindow}: ActionBarProps) => {
 
     return (
         <>
@@ -31,7 +26,7 @@ const ActionBar = ({action, setAction}: ActionBarProps) => {
                             variant="outline"
                             size="icon"
                             className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-200 hover:border-blue-300 dark:hover:border-blue-700"
-                            onClick={() => handleAddStorageClick()}
+                            onClick={() => toggleShowSideWindow()}
                         >
                             <Plus className="h-6 w-6 text-blue-600 dark:text-blue-400"/>
                         </Button>
@@ -80,7 +75,6 @@ const ActionBar = ({action, setAction}: ActionBarProps) => {
                     </div>
                 </div>
             </div>
-            <StorageSideWindow show={showStorageWindow}/>
         </>
     );
 };
