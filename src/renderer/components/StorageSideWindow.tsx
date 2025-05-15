@@ -2,10 +2,8 @@ import { useState } from "react";
 import { CloudItem } from "./ui/cloudItem";
 import { FaDropbox, FaGoogleDrive } from "react-icons/fa";
 import { SiIcloud } from "react-icons/si";
+import {StorageWideWindowProps} from "@Types/box";
 
-interface StorageWideWindowProps {
-    show: boolean
-}
 
 const StorageWideWindow = ({show}: StorageWideWindowProps) => {
     const [token, setToken] = useState<string | null>(null);

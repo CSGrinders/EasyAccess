@@ -5,15 +5,8 @@ import {Toggle} from "@/components/ui/toggle"
 import {Eye, LayoutGrid, Maximize, Minimize, Move, ZoomIn, ZoomOut} from "lucide-react"
 import {Button} from "@/components/ui/button"
 import {Slider} from "@/components/ui/slider"
-import {toast} from "sonner"
-import {DropdownMenu, DropdownMenuContent, DropdownMenuTrigger} from "@Components/ui/dropdown-menu";
+import {CanvaSettingsProps} from "@Types/canvas";
 
-interface CanvaSettingsProps {
-    zoomLevel: number
-    setZoomLevel: React.Dispatch<React.SetStateAction<number>>
-    isPanMode: boolean
-    setIsPanMode: React.Dispatch<React.SetStateAction<boolean>>
-}
 
 const CanvaSettings = ({zoomLevel, setZoomLevel, isPanMode, setIsPanMode}: CanvaSettingsProps) => {
 
@@ -84,23 +77,6 @@ const CanvaSettings = ({zoomLevel, setZoomLevel, isPanMode, setIsPanMode}: Canva
                     {zoomLevel === 1 ? <Maximize className="h-4 w-4"/> : <Minimize className="h-4 w-4"/>}
                 </Button>
             </div>
-
-            {/* AutoGrid */}
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex items-center gap-2 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-slate-200 dark:border-slate-700 hover:bg-gradient-to-r hover:from-blue-100 hover:to-indigo-100 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 hover:border-blue-300 dark:hover:border-blue-600 transition-all"
-                    >
-                        <LayoutGrid className="h-4 w-4 text-blue-600 dark:text-blue-400"/>
-                        <span>Layouts</span>
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                    {/* Dropdown content here */}
-                </DropdownMenuContent>
-            </DropdownMenu>
 
             {/* Show all */}
             <Button

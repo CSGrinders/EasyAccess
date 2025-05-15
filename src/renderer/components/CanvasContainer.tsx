@@ -5,21 +5,8 @@ import {useState, useRef, useEffect} from "react"
 import {cn} from "@/lib/utils"
 import {Crosshair} from "lucide-react";
 import {Button} from "@Components/ui/button";
+import {CANVAS_SIZE, CanvasContainerProps, Position} from "@Types/canvas";
 
-interface Position {
-    x: number
-    y: number
-}
-
-interface CanvasContainerProps {
-    zoomLevel: number
-    isPanMode?: boolean
-    children: React.ReactNode
-    className?: string
-    onPositionChange?: (position: Position) => void
-    position: Position
-    setPosition: React.Dispatch<React.SetStateAction<Position>>
-}
 
 export function CanvasContainer({
                                     zoomLevel,
@@ -30,7 +17,6 @@ export function CanvasContainer({
                                     position,
                                     setPosition,
                                 }: CanvasContainerProps) {
-    const canvasSize = 20000
     const containerRef = useRef<HTMLDivElement>(null)
     const [isDragging, setIsDragging] = useState(false)
     const [dragStart, setDragStart] = useState<Position>({x: 10000, y: 10000})
@@ -60,7 +46,7 @@ export function CanvasContainer({
             y: dragStartPosition.y + dy / zoomLevel,
         }
 
-        const half = canvasSize / 2
+        const half = CANVAS_SIZE / 2
         newPosition.x = Math.max(-half, Math.min(half, newPosition.x))
         newPosition.y = Math.max(-half, Math.min(half, newPosition.y))
 
@@ -132,12 +118,11 @@ export function CanvasContainer({
                 <div
                     className="absolute transition-transform"
                     style={{
-                        left: "50%",
-                        top: "50%",
-                        width: `${canvasSize}px`,
-                        height: `${canvasSize}px`,
-
-                        transform: `translate(${position.x}px, ${position.y}px) translate(-50%, -50%)`,
+                        transform: `translate(${position.x}px, ${position.y}px)`,
+                        width: `${CANVAS_SIZE}px`,
+                        height: `${CANVAS_SIZE}px`,
+                        left: `calc(50% - ${CANVAS_SIZE / 2}px)`,
+                        top: `calc(50% - ${CANVAS_SIZE / 2}px)`,
                     }}
                     onTransitionEnd={() => setIsAnimating(false)}
                 >
@@ -154,19 +139,20 @@ export function CanvasContainer({
                     />
 
                     <div
-                        className="absolute w-4 h-4 rounded-full bg-blue-500/50 border border-blue-500 -translate-x-1/2 -translate-y-1/2"
+                        className="absolute w-4 h-4 rounded-full bg-blue-500/50 border border-blue-500"
                         style={{
-                            left: `${canvasSize / 2}px`,
-                            top: `${canvasSize / 2}px`,
-                            zIndex: 10,
+                            left: `${CANVAS_SIZE / 2}px`,
+                            top: `${CANVAS_SIZE / 2}px`,
+                            transform: "translate(-50%, -50%)",
+                            zIndex: 1,
                         }}
                     />
 
                     <div
-                        className="absolute -translate-x-1/2 -translate-y-1/2"
+                        className="absolute"
                         style={{
-                            left: `0px`,
-                            top: `0px`,
+                            left: `${CANVAS_SIZE / 2}px`,
+                            top: `${CANVAS_SIZE / 2}px`,
                         }}
                     >
                         {children}
