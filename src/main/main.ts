@@ -64,3 +64,18 @@ ipcMain.handle('get-auth-tokens', async (event) => {
 ipcMain.handle('clear-auth-tokens', async (event) => {
     clearAuthTokens();
 });
+
+ipcMain.handle('read-directory', async (_e, dirPath: string) => {
+    const items = await fs.promises.readdir(dirPath, { withFileTypes: true })
+    return Promise.all(items.map(async item => ({
+        name: item.name,
+        isDirectory: item.isDirectory(),
+        path: path.join(dirPath, item.name),
+        size: (await fs.promises.stat(path.join(dirPath, item.name))).size,
+        modifiedTime: (await fs.promises.stat(path.join(dirPath, item.name))).mtimeMs
+    })))
+})
+
+ipcMain.handle('read-file', async (_e, filePath: string) => {
+    return fs.promises.readFile(filePath, 'utf8')
+})
