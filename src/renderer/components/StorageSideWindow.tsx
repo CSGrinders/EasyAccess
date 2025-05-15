@@ -6,10 +6,10 @@ import {StorageWideWindowProps} from "@Types/box";
 import { CloudType } from "../../types/cloudType";
 
 
-const StorageWideWindow = ({show}: StorageWideWindowProps) => {
+const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
     const [token, setToken] = useState<string | null>(null);
 
-    const handleGoogleAuth = async () => {
+    const handleGoogleClick = async () => {
         // TODO added for testing
         // await (window as any).electronAPI.clearAuthTokens(); 
         console.log('google drive clicked')
@@ -17,6 +17,12 @@ const StorageWideWindow = ({show}: StorageWideWindowProps) => {
             // if not exist in store, load token from google
             // if exist in store, load token from store
             await (window as any).electronAPI.loadAuthTokens(CloudType.GoogleDrive);
+
+            // open google storage box
+            addStorage(
+                "cloud",
+                "Google Drive",
+                <FaGoogleDrive className="h-6 w-6" />);
         } catch (error) {
             console.error('Login error:', error)
         }
@@ -30,7 +36,7 @@ const StorageWideWindow = ({show}: StorageWideWindowProps) => {
             <CloudItem
                 icon={<FaGoogleDrive className="h-5 w-5" />}
                 label="Google Drive"
-                onClick={() => handleGoogleAuth()}
+                onClick={() => handleGoogleClick()}
             />
             <CloudItem
                 icon={<FaDropbox className="h-5 w-5" />}

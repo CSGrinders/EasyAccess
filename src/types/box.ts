@@ -35,6 +35,7 @@ export interface StorageBoxData {
 
 export interface StorageWideWindowProps {
     show: boolean
+    addStorage: (type: string, title: string, icon: React.ReactNode) => void
 }
 
 
