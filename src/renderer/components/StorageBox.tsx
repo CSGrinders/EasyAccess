@@ -236,7 +236,7 @@ export function StorageBox({box, onClose, onFocus, viewportSize, viewportRef, ca
                                         className="flex items-center px-3 py-2 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 dark:hover:from-blue-900/20 dark:hover:to-indigo-900/20 rounded-md cursor-pointer transition-colors"
                                     >
                                         <div
-                                            className={`w-${key === 'small' ? 4 : key === 'medium' ? 5 : key === 'large' ? 6 : 7} h-${key === 'small' ? 4 : key === 'medium' ? 5 : key === 'large' ? 6 : 7} rounded-sm border border-blue-200 dark:border-blue-700 mr-2`}></div>
+                                            className={`w-${key === 'small' ? 3 : key === 'medium' ? 4 : key === 'large' ? 5 : 6} h-${key === 'small' ? 3 : key === 'medium' ? 4 : key === 'large' ? 5 : 6} rounded-sm border border-blue-200 dark:border-blue-700 mr-2`}></div>
                                         <span>{key.charAt(0).toUpperCase() + key.slice(1)} ({WINDOW_SIZES[key as keyof typeof WINDOW_SIZES].width}×{WINDOW_SIZES[key as keyof typeof WINDOW_SIZES].height})</span>
                                     </DropdownMenuItem>
                                 ))}
