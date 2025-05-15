@@ -2,176 +2,184 @@
 
 import type React from "react"
 import {useState, useEffect, useRef} from "react"
-import {X, Maximize2, Minimize2, ChevronDown, Folder, ChevronRight, File, FolderOpen} from "lucide-react"
+import {X, Maximize2, Minimize2, ChevronDown, Folder} from "lucide-react"
 import {cn} from "@/lib/utils"
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
-    DropdownMenuSeparator,
     DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
 import {ScrollArea} from "@/components/ui/scroll-area"
 import {StorageBoxProps, WINDOW_SIZES} from "@Types/box";
 
+export function StorageBox({
+                               box,
+                               onClose,
+                               onFocus,
+                               viewportSize,
+                               canvasZoom,
+                               canvasPan,
+                           }: StorageBoxProps) {
+    const {id, title, content, icon} = box;
+    const [position, setPosition] = useState(box.position);
+    const [size, setSize] = useState(box.size);
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState({x: 0, y: 0});
+    const [isMaximized, setIsMaximized] = useState(false);
+    const [previousState, setPreviousState] = useState({position: box.position, size: box.size});
+    const [isResizing, setIsResizing] = useState(false);
+    const [resizeDirection, setResizeDirection] = useState<string | null>(null);
+    const [resizeStart, setResizeStart] = useState({x: 0, y: 0});
+    const [resizeStartSize, setResizeStartSize] = useState(box.size);
+    const [resizeStartPosition, setResizeStartPosition] = useState(box.position);
 
-export function StorageBox({box, onClose, onFocus}: StorageBoxProps) {
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const boxRef = useRef<HTMLDivElement>(null);
 
-    const {id, title, content, icon} = box
-    const [position, setPosition] = useState(box.position)
-    const [size, setSize] = useState(box.size)
-    const [isDragging, setIsDragging] = useState(false)
-    const [dragStart, setDragStart] = useState({x: 0, y: 0})
-    const [isMaximized, setIsMaximized] = useState(false)
-    const [previousState, setPreviousState] = useState({position: box.position, size: box.size,})
-    const [resizeStartPosition, setResizeStartPosition] = useState(box.position)
-    const [isResizing, setIsResizing] = useState(false)
-    const [resizeDirection, setResizeDirection] = useState<string | null>(null)
-    const [resizeStart, setResizeStart] = useState({x: 0, y: 0})
-    const [resizeStartSize, setResizeStartSize] = useState(box.size)
-    const [isDropdownOpen, setIsDropdownOpen] = useState(false)
-    const boxRef = useRef<HTMLDivElement>(null)
-
-    // Mouse down Event
     const handleHeaderMouseDown = (e: React.MouseEvent) => {
-        e.stopPropagation()
-        if (isDropdownOpen) return
-        onFocus(id)
-        setIsDragging(true)
-        setDragStart({x: e.clientX - position.x, y: e.clientY - position.y})
-    }
+        e.stopPropagation();
+        if (isDropdownOpen || isResizing) return;
+        setIsMaximized(false)
+        onFocus(id);
+        setIsDragging(true);
+        setDragStart({x: e.clientX - position.x, y: e.clientY - position.y});
+    };
 
-    // Mouse box click event (Show focus)
     const handleWindowClick = (e: React.MouseEvent) => {
-        e.stopPropagation()
-        onFocus(id)
-    }
+        e.stopPropagation();
+        onFocus(id);
+    };
 
-    // Mouse up event
     const handleMouseUp = () => {
-        setIsDragging(false)
-        setIsResizing(false)
-        setResizeDirection(null)
-    }
+        setIsDragging(false);
+        setIsResizing(false);
+        setResizeDirection(null);
+    };
 
-    // Mouse move around canvas event
     const handleMouseMove = (e: React.MouseEvent) => {
-        if (isDropdownOpen) return
-
+        if (isDropdownOpen) return;
         if (isDragging) {
-            setPosition({x: e.clientX - dragStart.x, y: e.clientY - dragStart.y})
+            setPosition({x: e.clientX - dragStart.x, y: e.clientY - dragStart.y});
         } else if (isResizing && resizeDirection) {
-            const dx = e.clientX - resizeStart.x
-            const dy = e.clientY - resizeStart.y
+            const dx = e.clientX - resizeStart.x;
+            const dy = e.clientY - resizeStart.y;
 
-            let newWidth = resizeStartSize.width
-            let newHeight = resizeStartSize.height
-            let newX = resizeStartPosition.x
-            let newY = resizeStartPosition.y
+            let newWidth = resizeStartSize.width;
+            let newHeight = resizeStartSize.height;
+            let newX = resizeStartPosition.x;
+            let newY = resizeStartPosition.y;
 
             if (resizeDirection.includes("e")) {
-                newWidth = Math.max(200, resizeStartSize.width + dx)
+                newWidth = Math.max(200, resizeStartSize.width + dx);
             }
             if (resizeDirection.includes("s")) {
-                newHeight = Math.max(150, resizeStartSize.height + dy)
+                newHeight = Math.max(150, resizeStartSize.height + dy);
             }
             if (resizeDirection.includes("w")) {
-                newWidth = Math.max(200, resizeStartSize.width - dx)
-                newX = resizeStartPosition.x + dx
+                newWidth = Math.max(200, resizeStartSize.width - dx);
+                newX = resizeStartPosition.x + dx;
             }
             if (resizeDirection.includes("n")) {
-                newHeight = Math.max(150, resizeStartSize.height - dy)
-                newY = resizeStartPosition.y + dy
+                newHeight = Math.max(150, resizeStartSize.height - dy);
+                newY = resizeStartPosition.y + dy;
             }
-
-            setSize({width: newWidth, height: newHeight})
-            setPosition({x: newX, y: newY})
-
+            setSize({width: newWidth, height: newHeight});
+            setPosition({x: newX, y: newY});
         }
-    }
+    };
 
-
-    // Start resizing
     const handleResizeStart = (e: React.MouseEvent, direction: string) => {
+        if (isDropdownOpen || isMaximized) return; // Prevent resize if dropdown is open or box is maximized
+        e.stopPropagation();
+        e.preventDefault();
+        onFocus(id);
+        setIsResizing(true);
+        setResizeDirection(direction);
+        setResizeStart({x: e.clientX, y: e.clientY});
+        setResizeStartSize(size);
+        setResizeStartPosition(position);
+    };
 
-        if (isDropdownOpen) return
-
-        e.stopPropagation()
-        e.preventDefault()
-        onFocus(id)
-        setIsResizing(true)
-        setResizeDirection(direction)
-        setResizeStart({x: e.clientX, y: e.clientY})
-        setResizeStartSize(size)
-        setResizeStartPosition(position)
-    }
-
-    // Toggle maximize/restore
     const toggleMaximize = (e: React.MouseEvent) => {
-        e.stopPropagation()
+        e.stopPropagation();
+        if (isDropdownOpen) return;
 
         if (isMaximized) {
-            setPosition(previousState.position)
-            setSize(previousState.size)
+            setPosition(previousState.position);
+            setSize(previousState.size);
+            setIsMaximized(false);
         } else {
             setPreviousState({
                 position,
                 size,
-            })
-            setPosition({x: -400, y: -300})
-            setSize({width: 1200, height: 800})
+            });
+
+            if (viewportSize.width > 0 && viewportSize.height > 0 && canvasZoom > 0) {
+                const maximizedWidth = viewportSize.width / canvasZoom;
+                const maximizedHeight = viewportSize.height / canvasZoom;
+
+                setSize({width: maximizedWidth, height: maximizedHeight});
+
+                const newX = -canvasPan.x - (maximizedWidth / 2);
+                const newY = -canvasPan.y - (maximizedHeight / 2);
+                setPosition({x: newX, y: newY});
+                setIsMaximized(true);
+            } else {
+                console.warn("Cannot maximize: viewportSize or canvasZoom is invalid.", viewportSize, canvasZoom);
+            }
         }
+    };
 
-        setIsMaximized(!isMaximized)
-    }
-
-    // Handle close
     const handleClose = (e: React.MouseEvent) => {
-        e.stopPropagation()
-        if (onClose) onClose(id)
-    }
+        e.stopPropagation();
+        if (onClose) onClose(id);
+    };
 
-    // Apply preset size
     const applyPresetSize = (presetKey: keyof typeof WINDOW_SIZES) => {
-        const newSize = WINDOW_SIZES[presetKey]
-        setSize(newSize)
-    }
-
+        if (isMaximized) setIsMaximized(false); // Restore from maximized if applying preset
+        const newSize = WINDOW_SIZES[presetKey];
+        setSize(newSize);
+    };
 
     useEffect(() => {
         const handleGlobalMouseMove = (e: MouseEvent) => {
-            if (isDropdownOpen) return
+            if (isDropdownOpen) return;
             if (isDragging || isResizing) {
-                handleMouseMove(e as unknown as React.MouseEvent)
+                handleMouseMove(e as unknown as React.MouseEvent);
             }
-        }
+        };
 
         const handleGlobalMouseUp = () => {
-            handleMouseUp()
-        }
+            handleMouseUp();
+        };
 
         if (isDragging || isResizing) {
-            document.addEventListener("mousemove", handleGlobalMouseMove)
-            document.addEventListener("mouseup", handleGlobalMouseUp)
+            document.addEventListener("mousemove", handleGlobalMouseMove);
+            document.addEventListener("mouseup", handleGlobalMouseUp);
         }
 
         return () => {
-            document.removeEventListener("mousemove", handleGlobalMouseMove)
-            document.removeEventListener("mouseup", handleGlobalMouseUp)
-        }
-    }, [isDragging, isResizing, dragStart, position, resizeDirection, resizeStart, resizeStartSize, resizeStartPosition])
+            document.removeEventListener("mousemove", handleGlobalMouseMove);
+            document.removeEventListener("mouseup", handleGlobalMouseUp);
+        };
+    }, [isDragging, isResizing, dragStart, position, resizeDirection, resizeStart, resizeStartSize, resizeStartPosition, isDropdownOpen]); // Added dependencies
 
-    // Make sure if we overlap reduce the opacity of the box.
-    const opacity = isDragging || isResizing ? 0.7 : 1
-    const defaultIcon = <Folder className="h-5 w-5 text-amber-500"/>
+    const opacity = isDragging || isResizing ? 0.7 : 1;
+    const defaultIcon = <Folder className="h-5 w-5 text-amber-500"/>;
+
+    // Disable resizing controls when maximized
+    const showResizeHandles = !isDropdownOpen && !isMaximized;
 
     return (
         <div
             ref={boxRef}
             className={cn(
-                "absolute bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden transition-opacity",
-                isDragging && "cursor-grabbing")}
+                "absolute bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden transition-opacity",
+                isDragging && "cursor-grabbing",
+                isMaximized ? "border-blue-500 dark:border-blue-400" : "rounded-xl"
+            )}
             style={{
                 left: `${position.x}px`,
                 top: `${position.y}px`,
@@ -181,6 +189,9 @@ export function StorageBox({box, onClose, onFocus}: StorageBoxProps) {
                 opacity,
             }}
             onClick={handleWindowClick}
+            onMouseDown={(e) => {
+                if (isResizing) e.stopPropagation();
+            }}
         >
             <div
                 className="h-12 bg-white dark:bg-slate-800 flex items-center justify-between px-4 cursor-grab border-b border-slate-100 dark:border-slate-700"
@@ -188,20 +199,22 @@ export function StorageBox({box, onClose, onFocus}: StorageBoxProps) {
             >
                 <div className="flex items-center gap-3">
                     <div
-                        className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30">
+                        className="select-none flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30">
                         {icon || defaultIcon}
                     </div>
-                    <div className="font-medium text-slate-800 dark:text-slate-200">{title}</div>
+                    <div className="select-none text-slate-800 dark:text-slate-200">{title}</div>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 select-none">
                     <DropdownMenu onOpenChange={setIsDropdownOpen}>
                         <DropdownMenuTrigger asChild>
                             <button
+                                disabled={isMaximized}
                                 className={cn(
                                     "p-1.5 rounded-md transition-colors",
                                     isDropdownOpen
                                         ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
                                         : "text-slate-500 hover:bg-blue-100/50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400",
+                                    isMaximized && "opacity-50 cursor-not-allowed"
                                 )}
                             >
                                 <ChevronDown className="h-4 w-4"/>
@@ -217,43 +230,18 @@ export function StorageBox({box, onClose, onFocus}: StorageBoxProps) {
                                     Box Size
                                 </DropdownMenuLabel>
                             </div>
-
                             <div className="p-1">
-                                <DropdownMenuItem
-                                    onClick={() => applyPresetSize("small")}
-                                    className="flex items-center px-3 py-2 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 dark:hover:from-blue-900/20 dark:hover:to-indigo-900/20 rounded-md cursor-pointer transition-colors"
-                                >
-                                    <div
-                                        className="w-4 h-4 rounded-sm border border-blue-200 dark:border-blue-700 mr-2"></div>
-                                    <span>Small (320×240)</span>
-                                </DropdownMenuItem>
-
-                                <DropdownMenuItem
-                                    onClick={() => applyPresetSize("medium")}
-                                    className="flex items-center px-3 py-2 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 dark:hover:from-blue-900/20 dark:hover:to-indigo-900/20 rounded-md cursor-pointer transition-colors"
-                                >
-                                    <div
-                                        className="w-5 h-5 rounded-sm border border-blue-200 dark:border-blue-700 mr-2"></div>
-                                    <span>Medium (480×360)</span>
-                                </DropdownMenuItem>
-
-                                <DropdownMenuItem
-                                    onClick={() => applyPresetSize("large")}
-                                    className="flex items-center px-3 py-2 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 dark:hover:from-blue-900/20 dark:hover:to-indigo-900/20 rounded-md cursor-pointer transition-colors"
-                                >
-                                    <div
-                                        className="w-6 h-6 rounded-sm border border-blue-200 dark:border-blue-700 mr-2"></div>
-                                    <span>Large (640×480)</span>
-                                </DropdownMenuItem>
-
-                                <DropdownMenuItem
-                                    onClick={() => applyPresetSize("xl")}
-                                    className="flex items-center px-3 py-2 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 dark:hover:from-blue-900/20 dark:hover:to-indigo-900/20 rounded-md cursor-pointer transition-colors"
-                                >
-                                    <div
-                                        className="w-7 h-7 rounded-sm border border-blue-200 dark:border-blue-700 mr-2"></div>
-                                    <span>Extra Large (800×600)</span>
-                                </DropdownMenuItem>
+                                {Object.keys(WINDOW_SIZES).map((key) => (
+                                    <DropdownMenuItem
+                                        key={key}
+                                        onClick={() => applyPresetSize(key as keyof typeof WINDOW_SIZES)}
+                                        className="flex items-center px-3 py-2 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 dark:hover:from-blue-900/20 dark:hover:to-indigo-900/20 rounded-md cursor-pointer transition-colors"
+                                    >
+                                        <div
+                                            className={`w-${key === 'small' ? 4 : key === 'medium' ? 5 : key === 'large' ? 6 : 7} h-${key === 'small' ? 4 : key === 'medium' ? 5 : key === 'large' ? 6 : 7} rounded-sm border border-blue-200 dark:border-blue-700 mr-2`}></div>
+                                        <span>{key.charAt(0).toUpperCase() + key.slice(1)} ({WINDOW_SIZES[key as keyof typeof WINDOW_SIZES].width}×{WINDOW_SIZES[key as keyof typeof WINDOW_SIZES].height})</span>
+                                    </DropdownMenuItem>
+                                ))}
                             </div>
                         </DropdownMenuContent>
                     </DropdownMenu>
@@ -273,56 +261,45 @@ export function StorageBox({box, onClose, onFocus}: StorageBoxProps) {
                 </div>
             </div>
 
-
             <div className="p-4 h-[calc(100%-48px)] overflow-auto bg-slate-50 dark:bg-slate-900/50">
                 <ScrollArea className="flex-1 p-4">
                     <div className="space-y-1">
-                        {/* Here we will add the logic for dirs and files */}
                     </div>
                 </ScrollArea>
             </div>
 
-            <div className="absolute bottom-1 right-2 text-xs text-slate-400 pointer-events-none">
-                {Math.round(size.width)} × {Math.round(size.height)}
-            </div>
+            {!isMaximized && (
+                <div className="absolute bottom-1 right-2 text-xs text-slate-400 pointer-events-none">
+                    {Math.round(size.width)} × {Math.round(size.height)}
+                </div>
+            )}
 
-            {!isDropdownOpen && (
+            {showResizeHandles && (
                 <>
+                    {/* Corner resize handles */}
                     <div
                         className="absolute right-0 bottom-0 w-6 h-6 cursor-se-resize bg-transparent hover:bg-blue-500/10 z-10"
-                        onMouseDown={(e) => handleResizeStart(e, "se")}
-                    />
+                        onMouseDown={(e) => handleResizeStart(e, "se")}/>
                     <div
                         className="absolute left-0 bottom-0 w-6 h-6 cursor-sw-resize bg-transparent hover:bg-blue-500/10 z-10"
-                        onMouseDown={(e) => handleResizeStart(e, "sw")}
-                    />
+                        onMouseDown={(e) => handleResizeStart(e, "sw")}/>
                     <div
                         className="absolute left-0 top-0 w-6 h-6 cursor-nw-resize bg-transparent hover:bg-blue-500/10 z-10"
-                        onMouseDown={(e) => handleResizeStart(e, "nw")}
-                    />
+                        onMouseDown={(e) => handleResizeStart(e, "nw")}/>
                     <div
                         className="absolute right-0 top-0 w-6 h-6 cursor-ne-resize bg-transparent hover:bg-blue-500/10 z-10"
-                        onMouseDown={(e) => handleResizeStart(e, "ne")}
-                    />
-
+                        onMouseDown={(e) => handleResizeStart(e, "ne")}/>
                     {/* Edge resize handles */}
-                    <div
-                        className="absolute right-0 top-6 bottom-6 w-1 cursor-e-resize hover:bg-blue-500/10"
-                        onMouseDown={(e) => handleResizeStart(e, "e")}
-                    />
-                    <div
-                        className="absolute left-6 right-6 bottom-0 h-1 cursor-s-resize hover:bg-blue-500/10"
-                        onMouseDown={(e) => handleResizeStart(e, "s")}
-                    />
-                    <div
-                        className="absolute left-0 top-6 bottom-6 w-1 cursor-w-resize hover:bg-blue-500/10"
-                        onMouseDown={(e) => handleResizeStart(e, "w")}
-                    />
-                    <div
-                        className="absolute left-6 right-6 top-0 h-1 cursor-n-resize hover:bg-blue-500/10"
-                        onMouseDown={(e) => handleResizeStart(e, "n")}
-                    />
-                </>)}
+                    <div className="absolute right-0 top-6 bottom-6 w-1 cursor-e-resize hover:bg-blue-500/10 z-10"
+                         onMouseDown={(e) => handleResizeStart(e, "e")}/>
+                    <div className="absolute left-6 right-6 bottom-0 h-1 cursor-s-resize hover:bg-blue-500/10 z-10"
+                         onMouseDown={(e) => handleResizeStart(e, "s")}/>
+                    <div className="absolute left-0 top-6 bottom-6 w-1 cursor-w-resize hover:bg-blue-500/10 z-10"
+                         onMouseDown={(e) => handleResizeStart(e, "w")}/>
+                    <div className="absolute left-6 right-6 top-0 h-1 cursor-n-resize hover:bg-blue-500/10 z-10"
+                         onMouseDown={(e) => handleResizeStart(e, "n")}/>
+                </>
+            )}
         </div>
-    )
+    );
 }

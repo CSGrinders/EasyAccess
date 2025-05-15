@@ -13,6 +13,9 @@ export interface StorageBoxProps {
     box: StorageBoxData
     onClose?: (id: number) => void
     onFocus: (id: number) => void
+    viewportSize: { width: number; height: number };
+    canvasZoom: number;
+    canvasPan: { x: number; y: number };
 }
 
 export interface StorageBoxData {
