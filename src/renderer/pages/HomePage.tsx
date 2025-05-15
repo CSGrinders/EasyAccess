@@ -1,8 +1,11 @@
-import React, {useRef, useState} from 'react';
+import React, {useState} from 'react';
 import {HardDrive} from "lucide-react"
 import CanvaSettings from "@Components/CanvaSettings";
 import ActionBar from "@Components/ActionBar";
 import {CanvasContainer} from "@Components/CanvasContainer";
+import {StorageBox} from "@Components/StorageBox";
+import { type StorageBoxData, WINDOW_TYPES } from "@Types/box"
+import {FaGoogleDrive} from "react-icons/fa";
 
 const test = {
     folders: ["Documents", "Pictures", "Downloads", "Desktop"],
@@ -10,27 +13,55 @@ const test = {
 }
 
 
-type BoxSize = "small" | "medium" | "large" | "full"
-type SplitZone = "top" | "right" | "bottom" | "left" | null
+
 
 const HomePage = () => {
-    const [activeBoxId, setActiveBoxId] = useState(1)
     const [zoomLevel, setZoomLevel] = useState(1) // 1 = 100%, 0.5 = 50%, 2 = 200%
     const [isPanMode, setIsPanMode] = useState(false)
     const [action, setAction] = useState("dashboard")
     const [position, setPosition] = useState({x: 0, y: 0})
-    const containerRef = useRef<HTMLDivElement>(null)
+    const [nextZIndex, setNextZIndex] = useState(4)
+    const [nextId, setNextId] = useState(4)
 
-    const [storageBoxes, setStorageBoxes] = useState([
+    const [storageBoxes, setStorageBoxes] = useState<StorageBoxData[]>([
         {
             id: 1,
-            name: "Local Directory",
+            title: "Local Directory",
             type: "local",
             content: test,
-            width: 1200,
-            height: 400,
+            icon: <HardDrive className="h-6 w-6"/>,
+            position: { x: -500, y: -200 },
+            size: { width: 500, height: 400 },
+            zIndex: 1,
+        },
+        {
+            id: 2,
+            title: "Google acc",
+            type: "cloud",
+            content: test,
+            icon: <FaGoogleDrive className="h-6 w-6"/>,
+            position: { x: -500, y: -200 },
+            size: { width: 500, height: 400 },
+            zIndex: 1,
         },
     ])
+
+    const removeWindow = (id: number) => {
+        setStorageBoxes(storageBoxes.filter((w) => w.id !== id))
+    }
+
+
+    const bringToFront = (id: number) => {
+        setStorageBoxes(
+            storageBoxes.map((window) => {
+                if (window.id === id) {
+                    return { ...window, zIndex: nextZIndex }
+                }
+                return window
+            }),
+        )
+        setNextZIndex(nextZIndex + 1)
+    }
 
     return (
         <div className="flex flex-col h-screen  bg-white dark:bg-gray-900 text-black dark:text-white">
@@ -64,7 +95,9 @@ const HomePage = () => {
                     setPosition={setPosition}
 
                 >
-                    <></>
+                    {storageBoxes.map((box) => (
+                        <StorageBox key={box.id} box={box} onClose={removeWindow} onFocus={bringToFront} />
+                    ))}
                 </CanvasContainer>
             </main>
         </div>

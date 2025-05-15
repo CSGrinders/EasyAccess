@@ -5,7 +5,8 @@
         "./src/renderer/*"
       ],
       "@Pages/*": ["./src/renderer/pages/*"],
-      "@Components/*": ["./src/renderer/components/*"]
+      "@Components/*": ["./src/renderer/components/*"],
+      "@Types/*": ["./src/types/*"]
     },
     "target": "ES2020",
     "module": "ESNext",

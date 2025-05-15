@@ -5,15 +5,9 @@ import {Toggle} from "@/components/ui/toggle"
 import {Eye, LayoutGrid, Maximize, Minimize, Move, ZoomIn, ZoomOut} from "lucide-react"
 import {Button} from "@/components/ui/button"
 import {Slider} from "@/components/ui/slider"
-import {toast} from "sonner"
 import {DropdownMenu, DropdownMenuContent, DropdownMenuTrigger} from "@Components/ui/dropdown-menu";
+import {CanvaSettingsProps} from "@Types/canvas";
 
-interface CanvaSettingsProps {
-    zoomLevel: number
-    setZoomLevel: React.Dispatch<React.SetStateAction<number>>
-    isPanMode: boolean
-    setIsPanMode: React.Dispatch<React.SetStateAction<boolean>>
-}
 
 const CanvaSettings = ({zoomLevel, setZoomLevel, isPanMode, setIsPanMode}: CanvaSettingsProps) => {
 
