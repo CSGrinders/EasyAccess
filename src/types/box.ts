@@ -14,6 +14,7 @@ export interface StorageBoxProps {
     onClose?: (id: number) => void
     onFocus: (id: number) => void
     viewportSize: { width: number; height: number };
+    viewportRef: React.RefObject<HTMLDivElement>;
     canvasZoom: number;
     canvasPan: { x: number; y: number };
 }

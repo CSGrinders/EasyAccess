@@ -14,14 +14,7 @@ import {
 import {ScrollArea} from "@/components/ui/scroll-area"
 import {StorageBoxProps, WINDOW_SIZES} from "@Types/box";
 
-export function StorageBox({
-                               box,
-                               onClose,
-                               onFocus,
-                               viewportSize,
-                               canvasZoom,
-                               canvasPan,
-                           }: StorageBoxProps) {
+export function StorageBox({box, onClose, onFocus, viewportSize, viewportRef, canvasZoom, canvasPan,}: StorageBoxProps) {
     const {id, title, content, icon} = box;
     const [position, setPosition] = useState(box.position);
     const [size, setSize] = useState(box.size);
@@ -41,8 +34,13 @@ export function StorageBox({
     const handleHeaderMouseDown = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (isDropdownOpen || isResizing) return;
-        setIsMaximized(false)
         onFocus(id);
+        if (isMaximized) {
+            setPosition(previousState.position);
+            setSize(previousState.size);
+            setIsMaximized(false);
+            return;
+        }
         setIsDragging(true);
         setDragStart({x: e.clientX - position.x, y: e.clientY - position.y});
     };

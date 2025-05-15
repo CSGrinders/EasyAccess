@@ -18,7 +18,7 @@ const HomePage = () => {
     const [action, setAction] = useState("dashboard");
     const [position, setPosition] = useState({x: 0, y: 0});
     const [nextZIndex, setNextZIndex] = useState(4);
-    const canvasVwpRef = useRef<HTMLDivElement>(null);
+    const canvasVwpRef = useRef<HTMLDivElement>({} as HTMLDivElement);
     const [canvasVwpSize, setCanvasViewportSize] = useState({ width: 0, height: 0 });
 
     const [storageBoxes, setStorageBoxes] = useState<StorageBoxData[]>([
@@ -128,6 +128,7 @@ const HomePage = () => {
                                 onClose={removeWindow}
                                 onFocus={bringToFront}
                                 viewportSize={canvasVwpSize}
+                                viewportRef={canvasVwpRef as React.RefObject<HTMLDivElement>}
                                 canvasZoom={zoomLevel}
                                 canvasPan={position}
                             />
