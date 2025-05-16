@@ -1,6 +1,6 @@
 "use client"
 
-import React, {useEffect, useState, useRef} from "react"
+import React, {useEffect, useState, useRef, useCallback} from "react"
 import {
     ChevronLeft,
     ChevronRight,
@@ -37,6 +37,9 @@ export function LocalFileExplorer() {
     const [selectionStart, setSelectionStart] = useState({x: 0, y: 0})
     const [selectionEnd, setSelectionEnd] = useState({x: 0, y: 0})
     const [selectionBox, setSelectionBox] = useState({left: 0, top: 0, width: 0, height: 0})
+    const [isAdditiveDrag, setIsAdditiveDrag] = useState(false);
+    const selectionSnapshotRef = useRef<Set<string>>(new Set());
+
     const containerRef = useRef<HTMLDivElement>(null)
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
@@ -61,7 +64,7 @@ export function LocalFileExplorer() {
             setHistoryIndex(0)
         }
 
-        fetchHome()
+        fetchHome().then(r => console.log("Directory fetched"))
     }, [])
 
     useEffect(() => {
@@ -74,7 +77,6 @@ export function LocalFileExplorer() {
                 setItems(files)
                 updatePathSegments(cwd)
                 setIsLoading(false)
-                // Clear selection when changing directory
                 setSelectedItems(new Set())
                 setLastSelectedItem(null)
             })
@@ -142,125 +144,185 @@ export function LocalFileExplorer() {
 
     const handleItemClick = (e: React.MouseEvent, item: FileSystemItem) => {
 
+        // Double click to navigate into directory
         if (e.detail === 2 && item.isDirectory) {
             navigateTo(item.path)
             return
         }
 
-        if (e.ctrlKey || e.metaKey) {
-            const newSelectedItems = new Set(selectedItems)
-            if (newSelectedItems.has(item.path)) {
-                newSelectedItems.delete(item.path)
-            } else {
-                newSelectedItems.add(item.path)
-            }
-            setSelectedItems(newSelectedItems)
-            setLastSelectedItem(item.path)
-        } else if (e.shiftKey && lastSelectedItem) {
-            const itemsList = sortedItems.map((i) => i.path)
-            const currentIndex = itemsList.indexOf(item.path)
-            const lastIndex = itemsList.indexOf(lastSelectedItem)
+        const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
-            if (currentIndex >= 0 && lastIndex >= 0) {
-                const start = Math.min(currentIndex, lastIndex)
-                const end = Math.max(currentIndex, lastIndex)
+        if (e.shiftKey && lastSelectedItem) {
+            const itemsPathList = sortedItems.map((i) => i.path);
+            const currentIndex = itemsPathList.indexOf(item.path);
+            const lastIndex = itemsPathList.indexOf(lastSelectedItem);
 
-                const newSelectedItems = new Set<string>()
+            if (currentIndex !== -1 && lastIndex !== -1) {
+                const start = Math.min(currentIndex, lastIndex);
+                const end = Math.max(currentIndex, lastIndex);
+                const newSelectedItemsUpdate = ctrlOrMeta ? new Set(selectedItems) : new Set<string>();
+
                 for (let i = start; i <= end; i++) {
-                    newSelectedItems.add(itemsList[i])
+                    newSelectedItemsUpdate.add(itemsPathList[i]);
                 }
-                setSelectedItems(newSelectedItems)
+
+                if (ctrlOrMeta) {
+                    const rangeSelection = new Set<string>();
+                    for (let i = start; i <= end; i++) {
+                        rangeSelection.add(itemsPathList[i]);
+                    }
+                    setSelectedItems(prev => new Set([...prev, ...rangeSelection]));
+                } else {
+                    const rangeSelection = new Set<string>();
+                    for (let i = start; i <= end; i++) {
+                        rangeSelection.add(itemsPathList[i]);
+                    }
+                    setSelectedItems(rangeSelection);
+                }
+
             }
+        } else if (ctrlOrMeta) {
+            const newSelectedItemsUpdate = new Set(selectedItems);
+            if (newSelectedItemsUpdate.has(item.path)) {
+                newSelectedItemsUpdate.delete(item.path);
+            } else {
+                newSelectedItemsUpdate.add(item.path);
+            }
+            setSelectedItems(newSelectedItemsUpdate);
+            setLastSelectedItem(item.path);
         } else {
-            setSelectedItems(new Set([item.path]))
-            setLastSelectedItem(item.path)
+            setSelectedItems(new Set([item.path]));
+            setLastSelectedItem(item.path);
         }
     }
 
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        if ((e.target as HTMLElement).closest(".file-item")) return
-
-        // Only use left mouse button
-        if (e.button !== 0) return
-
-        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
-            setSelectedItems(new Set())
+        if ((e.target as HTMLElement).closest(".file-item") || e.button !== 0) {
+            return;
         }
 
-        const container = containerRef.current
-        if (!container) return
+        const scrollArea = containerRef.current;
+        if (scrollArea) {
+            if (e.clientX >= scrollArea.clientWidth + scrollArea.offsetLeft ||
+                e.clientY >= scrollArea.clientHeight + scrollArea.offsetTop) {
+                return;
+            }
+        }
 
-        const rect = container.getBoundingClientRect()
-        const x = e.clientX - rect.left
-        const y = e.clientY - rect.top
 
-        setIsSelecting(true)
-        setSelectionStart({x, y})
-        setSelectionEnd({x, y})
-        setSelectionBox({left: x, top: y, width: 0, height: 0})
+        const additive = e.ctrlKey || e.metaKey;
+        setIsAdditiveDrag(additive);
+
+        if (!additive) {
+            setSelectedItems(new Set());
+            selectionSnapshotRef.current = new Set();
+        } else {
+            selectionSnapshotRef.current = new Set(selectedItems);
+        }
+
+        const container = containerRef.current;
+        if (!container) return;
+
+        const rect = container.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        setIsSelecting(true);
+        setSelectionStart({x, y});
+        setSelectionEnd({x, y});
+        setSelectionBox({left: x, top: y, width: 0, height: 0});
     }
 
     const handleMouseMove = (e: React.MouseEvent) => {
-        if (!isSelecting) return
+        if (!isSelecting || !containerRef.current) return;
 
-        const container = containerRef.current
-        if (!container) return
+        const rect = containerRef.current.getBoundingClientRect();
+        const currentX = e.clientX - rect.left;
+        const currentY = e.clientY - rect.top;
 
-        const rect = container.getBoundingClientRect()
-        const x = e.clientX - rect.left
-        const y = e.clientY - rect.top
+        setSelectionEnd({x: currentX, y: currentY});
 
-        setSelectionEnd({x, y})
-
-        const left = Math.min(selectionStart.x, x)
-        const top = Math.min(selectionStart.y, y)
-        const width = Math.abs(x - selectionStart.x)
-        const height = Math.abs(y - selectionStart.y)
-
-        setSelectionBox({left, top, width, height})
-
-        updateSelectedItemsFromBox({left, top, width, height})
+        const newSelectionBox = {
+            left: Math.min(selectionStart.x, currentX),
+            top: Math.min(selectionStart.y, currentY),
+            width: Math.abs(currentX - selectionStart.x),
+            height: Math.abs(currentY - selectionStart.y),
+        };
+        setSelectionBox(newSelectionBox);
+        updateSelectedItemsFromBox(newSelectionBox);
     }
 
 
     const handleMouseUp = () => {
-        if (!isSelecting) return
-        setIsSelecting(false)
+        if (isSelecting) {
+            setIsSelecting(false);
+        }
     }
 
 
-    const updateSelectedItemsFromBox = (box: { left: number; top: number; width: number; height: number }) => {
-        console.log("updateSelectedItemsFromBox", box)
-        if (!isSelecting) return
+    const updateSelectedItemsFromBox = useCallback((box: {
+        left: number;
+        top: number;
+        width: number;
+        height: number
+    }) => {
+        if (!isSelecting || !containerRef.current) return;
 
-        const newSelectedItems = new Set<string>()
+        const itemsCurrentlyInBox = new Set<string>();
+        const containerRect = containerRef.current.getBoundingClientRect();
 
-        if ((window.event && (window.event as MouseEvent).ctrlKey) || (window.event as MouseEvent).metaKey) {
-            selectedItems.forEach((item) => newSelectedItems.add(item))
+        itemRefs.current.forEach((element, path) => {
+            if (!element) return;
+
+            const itemRect = element.getBoundingClientRect();
+
+            const itemLeft = itemRect.left - containerRect.left;
+            const itemTop = itemRect.top - containerRect.top;
+            const itemRight = itemLeft + itemRect.width;
+            const itemBottom = itemTop + itemRect.height;
+
+            // Check for intersection
+            if (itemLeft < box.left + box.width &&
+                itemRight > box.left &&
+                itemTop < box.top + box.height &&
+                itemBottom > box.top) {
+                itemsCurrentlyInBox.add(path);
+            }
+        });
+
+        if (isAdditiveDrag) {
+            const combinedSelection = new Set([...selectionSnapshotRef.current, ...itemsCurrentlyInBox]);
+            setSelectedItems(combinedSelection);
+        } else {
+            setSelectedItems(itemsCurrentlyInBox);
+        }
+    }, [isSelecting, isAdditiveDrag, selectionSnapshotRef]);
+
+    useEffect(() => {
+        const globalMouseMove = (e: MouseEvent) => {
+            if (isSelecting && containerRef.current) {
+                const event = e as unknown as React.MouseEvent;
+                handleMouseMove(event);
+            }
+        };
+
+        const globalMouseUp = () => {
+            if (isSelecting) {
+                handleMouseUp();
+            }
+        };
+
+        if (isSelecting) {
+            document.addEventListener('mousemove', globalMouseMove);
+            document.addEventListener('mouseup', globalMouseUp);
         }
 
-        // Check each item to see if it is within the selection box
-        itemRefs.current.forEach((element, path) => {
-            if (!element) return
-
-            const rect = element.getBoundingClientRect()
-            const containerRect = containerRef.current?.getBoundingClientRect()
-
-            if (!containerRect) return
-
-            const itemLeft = rect.left - containerRect.left
-            const itemTop = rect.top - containerRect.top
-            const itemRight = itemLeft + rect.width
-            const itemBottom = itemTop + rect.height
-
-            if (itemLeft < box.left + box.width && itemRight > box.left && itemTop < box.top + box.height && itemBottom > box.top) {
-                newSelectedItems.add(path)
-            }
-        })
-
-        setSelectedItems(newSelectedItems)
-    }
+        return () => {
+            document.removeEventListener('mousemove', globalMouseMove);
+            document.removeEventListener('mouseup', globalMouseUp);
+        };
+    }, [isSelecting, handleMouseMove, handleMouseUp]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -373,7 +435,7 @@ export function LocalFileExplorer() {
                 </div>
             </div>
 
-            {/* Selection actions */}
+
             {selectedCount > 0 && (
                 <div
                     className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border-y border-blue-100 dark:border-blue-800">
@@ -417,9 +479,9 @@ export function LocalFileExplorer() {
                     ref={containerRef}
                     className="relative h-full"
                     onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUp}
-                    onMouseLeave={handleMouseUp}
+                    //onMouseMove={handleMouseMove}
+                    //onMouseUp={handleMouseUp}
+                    //onMouseLeave={handleMouseUp}
                 >
                     {isLoading ? (
                         <div className="flex justify-center items-center h-32">
@@ -436,6 +498,12 @@ export function LocalFileExplorer() {
                                         else itemRefs.current.delete(item.path)
                                     }}
                                     onClick={(e) => handleItemClick(e, item)}
+                                    onDoubleClick={(e) => {
+                                        if (item.isDirectory) {
+                                            navigateTo(item.path);
+                                        }
+                                        e.stopPropagation();
+                                    }}
                                     className={cn(
                                         "file-item flex flex-col items-center justify-center p-3 rounded-md cursor-pointer transition-colors",
                                         selectedItems.has(item.path)
@@ -475,18 +543,6 @@ export function LocalFileExplorer() {
                         </div>
                     )}
 
-                    {/* Rubber band selection box */}
-                    {isSelecting && (
-                        <div
-                            className="absolute border border-blue-500 bg-blue-500/10 pointer-events-none"
-                            style={{
-                                left: `${selectionBox.left}px`,
-                                top: `${selectionBox.top}px`,
-                                width: `${selectionBox.width}px`,
-                                height: `${selectionBox.height}px`,
-                            }}
-                        />
-                    )}
                 </div>
             </ScrollArea>
         </div>
