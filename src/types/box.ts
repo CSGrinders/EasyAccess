@@ -1,7 +1,6 @@
 import type React from "react";
 
 export const WINDOW_SIZES = {
-    small: {width: 320, height: 240},
     medium: {width: 480, height: 360},
     large: {width: 640, height: 480},
     xl: {width: 800, height: 600},

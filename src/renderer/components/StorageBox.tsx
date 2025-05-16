@@ -13,9 +13,18 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {ScrollArea} from "@/components/ui/scroll-area"
 import {StorageBoxProps, WINDOW_SIZES} from "@Types/box";
+import {LocalFileExplorer} from "@Components/LocalFileExplorer";
 
-export function StorageBox({box, onClose, onFocus, viewportSize, viewportRef, canvasZoom, canvasPan,}: StorageBoxProps) {
-    const {id, title, content, icon} = box;
+export function StorageBox({
+                               box,
+                               onClose,
+                               onFocus,
+                               viewportSize,
+                               viewportRef,
+                               canvasZoom,
+                               canvasPan,
+                           }: StorageBoxProps) {
+    const {id, title, content, type, icon} = box;
     const [position, setPosition] = useState(box.position);
     const [size, setSize] = useState(box.size);
     const [isDragging, setIsDragging] = useState(false);
@@ -259,10 +268,11 @@ export function StorageBox({box, onClose, onFocus, viewportSize, viewportRef, ca
                 </div>
             </div>
 
-            <div className="p-4 h-[calc(100%-48px)] overflow-auto bg-slate-50 dark:bg-slate-900/50">
-                <ScrollArea className="flex-1 p-4">
-                    <div className="space-y-1">
-                    </div>
+            <div className="h-[calc(100%-48px)] overflow-auto bg-slate-50 dark:bg-slate-900/50">
+                <ScrollArea className="flex-1">
+                        {type == "local" ?  (
+                            <LocalFileExplorer/>
+                        ) : (<></>)}
                 </ScrollArea>
             </div>
 
