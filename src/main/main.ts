@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
-import { loadAuthTokens } from './token_storage';
+import { clearStore, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts } from './cloud/cloudManager';
 import { CloudType } from "../types/cloudType";
 
 
@@ -21,6 +21,9 @@ const createWindow = () => {
     });
     console.log('window created');
 
+    // load auth tokens from local storage
+    loadStoredAccounts(); 
+
     win.loadURL('http://localhost:3000').then(r => console.log("loaded"));
     win.once('ready-to-show', () => {
         win.show()
@@ -32,10 +35,15 @@ app.whenReady().then(() => {
     createWindow();
 });
 
-ipcMain.handle('load-auth-tokens', async (event, cloudType: CloudType) => {
-    loadAuthTokens(cloudType);
+ipcMain.handle('connect-new-cloud-account', async (_e, cloudType: CloudType) => {
+    return connectNewCloudAccount(cloudType);
 });
-
+ipcMain.handle('get-connected-cloud-accounts', async (_e, cloudType: CloudType) => {
+    return getConnectedCloudAccounts(cloudType);
+});
+ipcMain.handle('cloud-read-directory', async (_e, cloudType: CloudType, accountId: string, dir: string) => {
+    return readDirectory(cloudType, accountId, dir);
+});
 
 ipcMain.handle('read-directory', async (_e, dirPath: string) => {
     const items = await fs.promises.readdir(dirPath, { withFileTypes: true })
