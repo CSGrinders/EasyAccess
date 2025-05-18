@@ -77,17 +77,17 @@ export function StorageBox({
             let newY = resizeStartPosition.y;
 
             if (resizeDirection.includes("e")) {
-                newWidth = Math.max(200, resizeStartSize.width + dx);
+                newWidth = Math.max(400, resizeStartSize.width + dx);
             }
             if (resizeDirection.includes("s")) {
-                newHeight = Math.max(150, resizeStartSize.height + dy);
+                newHeight = Math.max(360, resizeStartSize.height + dy);
             }
             if (resizeDirection.includes("w")) {
-                newWidth = Math.max(200, resizeStartSize.width - dx);
+                newWidth = Math.max(400, resizeStartSize.width - dx);
                 newX = resizeStartPosition.x + dx;
             }
             if (resizeDirection.includes("n")) {
-                newHeight = Math.max(150, resizeStartSize.height - dy);
+                newHeight = Math.max(360, resizeStartSize.height - dy);
                 newY = resizeStartPosition.y + dy;
             }
             setSize({width: newWidth, height: newHeight});

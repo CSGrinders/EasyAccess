@@ -355,13 +355,10 @@ export function LocalFileExplorer() {
     return (
         <div className="flex h-full flex-col text-white rounded-lg overflow-hidden select-none">
             <div className="pl-4 pt-4 bg-white dark:bg-slate-800">
-                <div className="flex items-center text-sm text-gray-400">
-          <span className="text-blue-400 cursor-pointer hover:underline" onClick={goToHome}>
-            Users
-          </span>
+                <div className="flex items-center space-x-1 text-sm text-gray-400">
                     {currentPath.map((segment, index) => (
                         <React.Fragment key={index}>
-                            <ChevronRight className="h-3 w-3 mx-1 text-gray-500"/>
+                            {index !== 0 && ( <ChevronRight className="h-3 w-3 mx-1 text-gray-500"/>)}
                             <span
                                 className="text-blue-400 cursor-pointer hover:underline"
                                 onClick={() => {
@@ -489,7 +486,8 @@ export function LocalFileExplorer() {
                         </div>
                     ) : sortedItems.length > 0 ? (
                         <div
-                            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+                            className="grid grid-cols-[repeat(auto-fit,_minmax(120px,_1fr))]
+ gap-4">
                             {sortedItems.map((item) => (
                                 <div
                                     key={item.path}
