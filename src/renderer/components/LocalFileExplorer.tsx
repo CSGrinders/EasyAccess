@@ -433,7 +433,7 @@ export function LocalFileExplorer() {
             </div>
 
 
-            {selectedCount > 0 && (
+            {isSelecting && (
                 <div
                     className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border-y border-blue-100 dark:border-blue-800">
           <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
@@ -443,6 +443,7 @@ export function LocalFileExplorer() {
                         <Button
                             variant="outline"
                             size="sm"
+                            disabled={selectedCount === 0}
                             className="flex items-center gap-1 text-xs"
                             onClick={() => console.log("Copy selected items:", Array.from(selectedItems))}
                         >
@@ -452,6 +453,7 @@ export function LocalFileExplorer() {
                         <Button
                             variant="outline"
                             size="sm"
+                            disabled={selectedCount === 0}
                             className="flex items-center gap-1 text-xs"
                             onClick={() => console.log("Move selected items:", Array.from(selectedItems))}
                         >
@@ -461,6 +463,7 @@ export function LocalFileExplorer() {
                         <Button
                             variant="outline"
                             size="sm"
+                            disabled={selectedCount === 0}
                             className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
                             onClick={() => console.log("Delete selected items:", Array.from(selectedItems))}
                         >
@@ -471,15 +474,26 @@ export function LocalFileExplorer() {
                 </div>
             )}
 
-            <ScrollArea className="flex-1 pt-2 pl-4 pr-4 pb-4">
+            <ScrollArea>
                 <div
                     ref={containerRef}
-                    className="relative h-full"
+                    className="relative h-full min-h-full bg-black pt-2 pl-4 pr-4 pb-4"
                     onMouseDown={handleMouseDown}
                     //onMouseMove={handleMouseMove}
                     //onMouseUp={handleMouseUp}
                     //onMouseLeave={handleMouseUp}
                 >
+                    {isSelecting && (
+                        <div
+                            className="box-selecting"
+                            style={{
+                                left: `${selectionBox.left}px`,
+                                top: `${selectionBox.top}px`,
+                                width: `${selectionBox.width}px`,
+                                height: `${selectionBox.height}px`,
+                            }}
+                        />
+                    )}
                     {isLoading ? (
                         <div className="flex justify-center items-center h-32">
                             <RefreshCw className="h-8 w-8 text-blue-400 animate-spin"/>
