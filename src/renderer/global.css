@@ -33,7 +33,7 @@ body {
     background-color: rgba(59, 130, 246, 0.2);
     border: 1px dashed rgba(59, 130, 246, 0.6);
     border-radius: 2px;
-    z-index: 999;
+    z-index: 1000;
 }
 
 :root {

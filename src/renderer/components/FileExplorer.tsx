@@ -202,14 +202,6 @@ export function FileExplorer() {
             return;
         }
 
-        const scrollArea = containerRef.current;
-        if (scrollArea) {
-            if (e.clientX >= scrollArea.clientWidth + scrollArea.offsetLeft ||
-                e.clientY >= scrollArea.clientHeight + scrollArea.offsetTop) {
-                return;
-            }
-        }
-
 
         const additive = e.ctrlKey || e.metaKey;
         setIsAdditiveDrag(additive);
@@ -233,33 +225,6 @@ export function FileExplorer() {
         setSelectionEnd({x, y});
         setSelectionBox({left: x, top: y, width: 0, height: 0});
     }
-
-    const handleMouseMove = (e: React.MouseEvent) => {
-        if (!isSelecting || !containerRef.current) return;
-
-        const rect = containerRef.current.getBoundingClientRect();
-        const currentX = Math.max(0, Math.min(rect.width  - 1, e.clientX - rect.left));
-        const currentY = Math.max(0, Math.min(rect.height - 1, e.clientY - rect.top));
-
-        setSelectionEnd({x: currentX, y: currentY});
-
-        const newSelectionBox = {
-            left: Math.min(selectionStart.x, currentX),
-            top: Math.min(selectionStart.y, currentY),
-            width: Math.abs(currentX - selectionStart.x),
-            height: Math.abs(currentY - selectionStart.y),
-        };
-        setSelectionBox(newSelectionBox);
-        updateSelectedItemsFromBox(newSelectionBox);
-    }
-
-
-    const handleMouseUp = () => {
-        if (isSelecting) {
-            setIsSelecting(false);
-        }
-    }
-
 
     const updateSelectedItemsFromBox = useCallback((box: {
         left: number;
@@ -298,6 +263,44 @@ export function FileExplorer() {
             setSelectedItems(itemsCurrentlyInBox);
         }
     }, [isSelecting, isAdditiveDrag, selectionSnapshotRef]);
+
+    const handleMouseMove = useCallback((e: React.MouseEvent | MouseEvent) => {
+        if (!isSelecting || !containerRef.current) return;
+
+        const rect = containerRef.current.getBoundingClientRect();
+        const currentX = Math.max(0, Math.min(rect.width  - 1, e.clientX - rect.left));
+        const currentY = Math.max(0, Math.min(rect.height - 1, e.clientY - rect.top));
+
+        setSelectionEnd({x: currentX, y: currentY});
+
+        const newSelectionBox = {
+            left: Math.min(selectionStart.x, currentX),
+            top: Math.min(selectionStart.y, currentY),
+            width: Math.abs(currentX - selectionStart.x),
+            height: Math.abs(currentY - selectionStart.y),
+        };
+        setSelectionBox(newSelectionBox);
+
+        const scrollThreshold = 50;
+        const scrollAmount = 5;
+        if (e.clientY < rect.top + scrollThreshold) {
+            containerRef.current.scrollTop -= scrollAmount;
+        } else if (e.clientY > rect.bottom - scrollThreshold) {
+            containerRef.current.scrollTop += scrollAmount;
+        }
+
+
+        updateSelectedItemsFromBox(newSelectionBox);
+    }, [isSelecting, selectionStart, updateSelectedItemsFromBox]);
+
+
+    const handleMouseUp = () => {
+        if (isSelecting) {
+            setIsSelecting(false);
+        }
+    }
+
+
 
     useEffect(() => {
         const globalMouseMove = (e: MouseEvent) => {
@@ -476,7 +479,7 @@ export function FileExplorer() {
 
                 <div
                     ref={containerRef}
-                    className="relative h-full  bg-black pt-2 pl-4 pr-4 pb-4 overflow-y-auto "
+                    className="relative h-full bg-black pt-2 pl-4 pr-4 pb-4 overflow-y-auto "
                     onMouseDown={handleMouseDown}
                     //onMouseMove={handleMouseMove}
                     //onMouseUp={handleMouseUp}
@@ -484,7 +487,7 @@ export function FileExplorer() {
                 >
                     {isSelecting && (
                         <div
-                            className="box-selecting overflow-hidden"
+                            className="box-selecting overflow-hidden z-10"
                             style={{
                                 left: `${selectionBox.left}px`,
                                 top: `${selectionBox.top}px`,
