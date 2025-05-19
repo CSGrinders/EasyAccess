@@ -11,7 +11,7 @@ export function CloudItem({ icon, label, onClick }: CloudItem) {
         <div className="relative group" onClick={onClick}>
             <div
                 className=
-          "flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-200 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+          "flex flex-col items-center justify-center w-20 h-15 rounded-xl transition-all duration-200 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
                 
             >
                 {icon}

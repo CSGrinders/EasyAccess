@@ -1,13 +1,10 @@
 // preload.ts - Bridge between main and renderer processes
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FileSystemItem } from '../types/fileSystem'
-import { AuthTokens } from './token_storage';
+import { CloudType } from '../types/cloudType';
 
 contextBridge.exposeInMainWorld('electronAPI', {
-    googleAuth: () => ipcRenderer.invoke('google-auth'),
-    saveAuthTokens: (tokens: AuthTokens) => ipcRenderer.invoke('save-auth-tokens', tokens),
-    getAuthTokens: () => ipcRenderer.invoke('get-auth-tokens'),
-    clearAuthTokens: () => ipcRenderer.invoke('clear-auth-tokens'),
+    loadAuthTokens: (cloudType: CloudType) => ipcRenderer.invoke('load-auth-tokens', cloudType),
 });
 
 contextBridge.exposeInMainWorld('fsApi', {

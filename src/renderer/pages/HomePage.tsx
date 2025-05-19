@@ -6,6 +6,7 @@ import {CanvasContainer} from "@Components/CanvasContainer";
 import {StorageBox} from "@Components/StorageBox";
 import { type StorageBoxData } from "@Types/box";
 import {FaGoogleDrive} from "react-icons/fa";
+import StorageSideWindow from '@/components/StorageSideWindow';
 
 const test = {
     folders: ["Documents", "Pictures", "Downloads", "Desktop"],
@@ -21,6 +22,11 @@ const HomePage = () => {
     const [nextZIndex, setNextZIndex] = useState(4);
     const canvasVwpRef = useRef<HTMLDivElement>({} as HTMLDivElement);
     const [canvasVwpSize, setCanvasViewportSize] = useState({ width: 0, height: 0 });
+    const [showStorageWindow, setShowStorageWindow] = useState(false);
+    
+    const toggleShowSideWindow = () => {
+        setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
+    };
 
     const [storageBoxes, setStorageBoxes] = useState<StorageBoxData[]>([
         {
@@ -113,34 +119,36 @@ const HomePage = () => {
                 </div>
             </header>
             <main className="flex flex-1 overflow-hidden" ref={canvasVwpRef}>
-                <ActionBar action={action} setAction={setAction}/>
-                {canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
-                    <CanvasContainer
-                        zoomLevel={zoomLevel}
-                        isPanMode={isPanMode}
-                        className="relative"
-                        position={position}
-                        setPosition={setPosition}
-                        boxMaximized={isMaximized}
-                    >
-                        {storageBoxes.map((box) => (
-                            <StorageBox
-                                key={box.id}
-                                box={box}
-                                onClose={removeWindow}
-                                onFocus={bringToFront}
-                                viewportSize={canvasVwpSize}
-                                viewportRef={canvasVwpRef as React.RefObject<HTMLDivElement>}
-                                canvasZoom={zoomLevel}
-                                canvasPan={position}
-                                isMaximized={isMaximized}
-                                setIsMaximized={setIsMaximized}
-                            />
-                        ))}
-                    </CanvasContainer>
-                ) : (
-                    <div className="flex-1 flex items-center justify-center">Loading canvas...</div>
-                )}
+            <ActionBar action={action} setAction={setAction} toggleShowSideWindow={toggleShowSideWindow}/>
+            <div className="relative flex flex-1">
+                    <StorageSideWindow show={showStorageWindow}/>
+                    {canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
+                        <CanvasContainer
+                            zoomLevel={zoomLevel}
+                            isPanMode={isPanMode}
+                            className="relative"
+                            position={position}
+                            setPosition={setPosition}
+                            boxMaximized={isMaximized}
+                        >
+                            {storageBoxes.map((box) => (
+                                <StorageBox
+                                    key={box.id}
+                                    box={box}
+                                    onClose={removeWindow}
+                                    onFocus={bringToFront}
+                                    viewportSize={canvasVwpSize}
+                                    viewportRef={canvasVwpRef as React.RefObject<HTMLDivElement>}
+                                    canvasZoom={zoomLevel}
+                                    canvasPan={position}
+                                    setIsMaximized={setIsMaximized}
+                                />
+                            ))}
+                        </CanvasContainer>
+                    ) : (
+                        <div className="flex-1 flex items-center justify-center">Loading canvas...</div>
+                    )}
+            </div>
             </main>
         </div>
     );

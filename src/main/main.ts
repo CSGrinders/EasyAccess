@@ -1,15 +1,9 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
-import { saveAuthTokens, getAuthTokens, clearAuthTokens } from './token_storage';
-import dotenv from 'dotenv';
-import ElectronGoogleOAuth2 from '@getstation/electron-google-oauth2';
+import { loadAuthTokens } from './token_storage';
+import { CloudType } from "../types/cloudType";
 
-
-dotenv.config();
-
-const clientId = process.env.GOOGLE_CLIENT_ID;
-const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
 const createWindow = () => {
     const win = new BrowserWindow({
@@ -38,32 +32,10 @@ app.whenReady().then(() => {
     createWindow();
 });
 
-ipcMain.handle('google-auth', async (event) => {
-    if (!clientId || !clientSecret) {
-        throw new Error("Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in environment variables");
-    }
-    const myApiOauth = new ElectronGoogleOAuth2(
-        clientId,
-        clientSecret,
-        ['https://www.googleapis.com/auth/drive.metadata.readonly'],
-        { successRedirectURL: 'https://www.alesgsanudoo.com/en' }, // TODO: redirect uri...
-    );
-    const token = await myApiOauth.openAuthWindowAndGetTokens();
-    console.log("Access Token: ", token.access_token);
-    return token;
+ipcMain.handle('load-auth-tokens', async (event, cloudType: CloudType) => {
+    loadAuthTokens(cloudType);
 });
 
-ipcMain.handle('save-auth-tokens', async (event, tokens) => {
-    saveAuthTokens(tokens);
-});
-
-ipcMain.handle('get-auth-tokens', async (event) => {
-    return getAuthTokens();
-});
-
-ipcMain.handle('clear-auth-tokens', async (event) => {
-    clearAuthTokens();
-});
 
 ipcMain.handle('read-directory', async (_e, dirPath: string) => {
     const items = await fs.promises.readdir(dirPath, { withFileTypes: true })
