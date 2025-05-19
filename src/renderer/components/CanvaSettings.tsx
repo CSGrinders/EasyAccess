@@ -1,5 +1,3 @@
-"use client"
-
 import type React from "react"
 import {Toggle} from "@/components/ui/toggle"
 import {Eye, LayoutGrid, Maximize, Minimize, Move, ZoomIn, ZoomOut} from "lucide-react"
