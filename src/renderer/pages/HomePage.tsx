@@ -16,6 +16,7 @@ const HomePage = () => {
     const [zoomLevel, setZoomLevel] = useState(1);
     const [isPanMode, setIsPanMode] = useState(false);
     const [action, setAction] = useState("dashboard");
+    const [isMaximized, setIsMaximized] = useState(false);
     const [position, setPosition] = useState({x: 0, y: 0});
     const [nextZIndex, setNextZIndex] = useState(4);
     const canvasVwpRef = useRef<HTMLDivElement>({} as HTMLDivElement);
@@ -120,6 +121,7 @@ const HomePage = () => {
                         className="relative"
                         position={position}
                         setPosition={setPosition}
+                        boxMaximized={isMaximized}
                     >
                         {storageBoxes.map((box) => (
                             <StorageBox
@@ -131,6 +133,8 @@ const HomePage = () => {
                                 viewportRef={canvasVwpRef as React.RefObject<HTMLDivElement>}
                                 canvasZoom={zoomLevel}
                                 canvasPan={position}
+                                isMaximized={isMaximized}
+                                setIsMaximized={setIsMaximized}
                             />
                         ))}
                     </CanvasContainer>

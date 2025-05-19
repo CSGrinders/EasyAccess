@@ -16,6 +16,7 @@ export interface CanvasContainerProps {
     onPositionChange?: (position: Position) => void
     position: Position
     setPosition: React.Dispatch<React.SetStateAction<Position>>
+    boxMaximized: boolean
 }
 
 export interface CanvaSettingsProps {

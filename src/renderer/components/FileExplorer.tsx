@@ -22,7 +22,7 @@ import {ScrollArea} from "@/components/ui/scroll-area"
 import {Button} from "@/components/ui/button"
 import {cn} from "@/lib/utils"
 
-export function LocalFileExplorer() {
+export function FileExplorer() {
     const [items, setItems] = useState<FileSystemItem[]>([])
     const [cwd, setCwd] = useState<string>("")
     const [history, setHistory] = useState<string[]>([])
@@ -198,7 +198,7 @@ export function LocalFileExplorer() {
 
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        if ((e.target as HTMLElement).closest(".file-item") || e.button !== 0) {
+        if ((e.target as HTMLElement).closest("file-item") || e.button !== 0) {
             return;
         }
 
@@ -225,8 +225,8 @@ export function LocalFileExplorer() {
         if (!container) return;
 
         const rect = container.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const x = Math.max(0, Math.min(rect.width  - 1, e.clientX - rect.left));
+        const y = Math.max(0, Math.min(rect.height - 1, e.clientY - rect.top));
 
         setIsSelecting(true);
         setSelectionStart({x, y});
@@ -238,8 +238,8 @@ export function LocalFileExplorer() {
         if (!isSelecting || !containerRef.current) return;
 
         const rect = containerRef.current.getBoundingClientRect();
-        const currentX = e.clientX - rect.left;
-        const currentY = e.clientY - rect.top;
+        const currentX = Math.max(0, Math.min(rect.width  - 1, e.clientX - rect.left));
+        const currentY = Math.max(0, Math.min(rect.height - 1, e.clientY - rect.top));
 
         setSelectionEnd({x: currentX, y: currentY});
 
@@ -353,7 +353,7 @@ export function LocalFileExplorer() {
     const selectedCount = selectedItems.size
 
     return (
-        <div className="flex h-full flex-col text-white rounded-lg overflow-hidden select-none">
+        <div className="flex h-full w-full flex-col text-white rounded-lg overflow-hidden select-none">
             <div className="pl-4 pt-4 bg-white dark:bg-slate-800">
                 <div className="flex items-center space-x-1 text-sm text-gray-400">
                     {currentPath.map((segment, index) => (
@@ -474,10 +474,9 @@ export function LocalFileExplorer() {
                 </div>
             )}
 
-            <ScrollArea>
                 <div
                     ref={containerRef}
-                    className="relative h-full min-h-full bg-black pt-2 pl-4 pr-4 pb-4"
+                    className="relative h-full  bg-black pt-2 pl-4 pr-4 pb-4 overflow-y-auto "
                     onMouseDown={handleMouseDown}
                     //onMouseMove={handleMouseMove}
                     //onMouseUp={handleMouseUp}
@@ -485,7 +484,7 @@ export function LocalFileExplorer() {
                 >
                     {isSelecting && (
                         <div
-                            className="box-selecting"
+                            className="box-selecting overflow-hidden"
                             style={{
                                 left: `${selectionBox.left}px`,
                                 top: `${selectionBox.top}px`,
@@ -556,7 +555,6 @@ export function LocalFileExplorer() {
                     )}
 
                 </div>
-            </ScrollArea>
         </div>
     )
 }

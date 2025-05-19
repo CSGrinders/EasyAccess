@@ -14,6 +14,7 @@ export function CanvasContainer({
                                     onPositionChange,
                                     position,
                                     setPosition,
+                                    boxMaximized
                                 }: CanvasContainerProps) {
     const containerRef = useRef<HTMLDivElement>(null)
     const [isDragging, setIsDragging] = useState(false)
@@ -158,27 +159,30 @@ export function CanvasContainer({
                 </div>
             </div>
 
-            <div className="fixed bottom-4 right-4 flex flex-col gap-3" style={{zIndex: 9999}}>
-                <div className={`relative flex justify-end group ${isVisible ? "opacity-100" : "opacity-0"}`}>
-                    <Button
-                        size="icon"
-                        onClick={goCenter}
-                        className="group flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs px-3 py-1.5 border border-blue-500/30 transition-all duration-300 hover:shadow-lg hover:scale-105 rounded-full shadow-lg"
+            {!boxMaximized && (
+
+                <div className="fixed bottom-4 right-4 flex flex-col gap-3" style={{zIndex: 9999}}>
+                    <div className={`relative flex justify-end group ${isVisible ? "opacity-100" : "opacity-0"}`}>
+                        <Button
+                            size="icon"
+                            onClick={goCenter}
+                            className="group flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs px-3 py-1.5 border border-blue-500/30 transition-all duration-300 hover:shadow-lg hover:scale-105 rounded-full shadow-lg"
+                        >
+                            <Crosshair className="h-3.5 w-3.5 text-white group-hover:animate-pulse"/>
+                        </Button>
+
+                        <span
+                            className="absolute select-none bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10"
+                        >Go Center</span>
+                    </div>
+
+                    <div
+                        className="select-none bg-slate-800 text-slate-200 text-xs px-3 py-1.5 rounded-md shadow-lg border border-slate-700"
                     >
-                        <Crosshair className="h-3.5 w-3.5 text-white group-hover:animate-pulse"/>
-                    </Button>
-
-                    <span
-                        className="absolute select-none bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10"
-                    >Go Center</span>
+                        Position: {Math.round(position.x)}, {Math.round(position.y)}
+                    </div>
                 </div>
-
-                <div
-                    className="select-none bg-slate-800 text-slate-200 text-xs px-3 py-1.5 rounded-md shadow-lg border border-slate-700"
-                >
-                    Position: {Math.round(position.x)}, {Math.round(position.y)}
-                </div>
-            </div>
+            )}
         </div>
     )
 }

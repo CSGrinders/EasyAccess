@@ -9,9 +9,8 @@ import {
     DropdownMenuTrigger,
     DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
-import {ScrollArea} from "@/components/ui/scroll-area"
 import {StorageBoxProps, WINDOW_SIZES} from "@Types/box";
-import {LocalFileExplorer} from "@Components/LocalFileExplorer";
+import {FileExplorer} from "@Components/FileExplorer";
 
 export function StorageBox({
                                box,
@@ -21,13 +20,14 @@ export function StorageBox({
                                viewportRef,
                                canvasZoom,
                                canvasPan,
+                               isMaximized,
+                               setIsMaximized,
                            }: StorageBoxProps) {
     const {id, title, content, type, icon} = box;
     const [position, setPosition] = useState(box.position);
     const [size, setSize] = useState(box.size);
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({x: 0, y: 0});
-    const [isMaximized, setIsMaximized] = useState(false);
     const [previousState, setPreviousState] = useState({position: box.position, size: box.size});
     const [isResizing, setIsResizing] = useState(false);
     const [resizeDirection, setResizeDirection] = useState<string | null>(null);
@@ -181,7 +181,7 @@ export function StorageBox({
         <div
             ref={boxRef}
             className={cn(
-                "absolute bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden transition-opacity",
+                "absolute flex flex-col bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden transition-opacity",
                 isDragging && "cursor-grabbing",
                 isMaximized ? "border-blue-500 dark:border-blue-400" : "rounded-xl"
             )}
@@ -266,12 +266,12 @@ export function StorageBox({
                 </div>
             </div>
 
-            <div className="h-[calc(100%-48px)] overflow-auto bg-slate-50 dark:bg-slate-900/50">
-                <ScrollArea className="flex-1">
-                        {type == "local" ?  (
-                            <LocalFileExplorer/>
-                        ) : (<></>)}
-                </ScrollArea>
+            <div className="flex flex-1 overflow-hidden bg-slate-50 dark:bg-slate-900/50">
+                {type == "local" ?  (
+                            <>
+                            <FileExplorer/>
+                            </>
+                ) : (<></>)}
             </div>
 
             {!isMaximized && (

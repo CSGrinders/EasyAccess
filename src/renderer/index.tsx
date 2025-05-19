@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import HomePage from '@Pages/HomePage';
-import {LocalFileExplorer} from "@Components/LocalFileExplorer";
+import {FileExplorer} from "@Components/FileExplorer";
 import "./global.css";
 import Titlebar from "@Components/Titlebar";
 

@@ -16,6 +16,8 @@ export interface StorageBoxProps {
     viewportRef: React.RefObject<HTMLDivElement>;
     canvasZoom: number;
     canvasPan: { x: number; y: number };
+    isMaximized: boolean;
+    setIsMaximized: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export interface StorageBoxData {
