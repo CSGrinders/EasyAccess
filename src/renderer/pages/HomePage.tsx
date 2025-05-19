@@ -141,6 +141,7 @@ const HomePage = () => {
                                     viewportRef={canvasVwpRef as React.RefObject<HTMLDivElement>}
                                     canvasZoom={zoomLevel}
                                     canvasPan={position}
+                                    isMaximized={isMaximized}
                                     setIsMaximized={setIsMaximized}
                                 />
                             ))}
