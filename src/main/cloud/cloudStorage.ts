@@ -24,6 +24,7 @@ export interface CloudStorage {
 
     connect(): Promise<void>;
     readDir(dir: string): Promise<FileSystemItem[]>; //TODO
+    readFile(filePath: string): Promise<string>
     getAccountId(): string;
     getAuthToken(): AuthTokens | null;
 }

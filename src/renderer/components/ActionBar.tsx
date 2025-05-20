@@ -5,7 +5,6 @@ import {NavItem} from "@Components/ui/navItem";
 import { CloudItem } from "./ui/cloudItem";
 import { FaDropbox, FaGoogleDrive } from "react-icons/fa";
 import { SiIcloud } from "react-icons/si";
-import StorageSideWindow from "./StorageSideWindow";
 
 interface ActionBarProps {
     action: string

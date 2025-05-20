@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CloudItem } from "./ui/cloudItem";
-import { FaDropbox, FaGoogleDrive } from "react-icons/fa";
+import { FaDropbox, FaGoogleDrive} from "react-icons/fa";
+import { TbBrandOnedrive } from "react-icons/tb";
 import { SiIcloud } from "react-icons/si";
 import {StorageWideWindowProps} from "@Types/box";
 import { CloudType } from "../../types/cloudType";
@@ -13,6 +14,7 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
     const [toAddAccount, setToAddAccount] = useState<string | null>(null);
     const [availableAccounts, setAvailableAccounts] = useState<string[]>([]);
 
+    // when the user selects an account from the popup / or connects a new account, this effect will be triggered
     useEffect(() => {
         const fetchData = async () => {
             if (toAddAccount) {
@@ -38,22 +40,21 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
                         addStorage(
                             "cloud",
                             `OneDrive: ${toAddAccount}`,
-                            <FaGoogleDrive className="h-6 w-6" />); // TODO: replace with OneDrive icon
-                        break;
-                    case CloudType.ICloud:
-                        console.log("ICloud account connected:", toAddAccount);
-                        addStorage(
-                            "cloud",
-                            `ICloud: ${toAddAccount}`,
-                            <SiIcloud className="h-6 w-6" />);
+                            <TbBrandOnedrive className="h-6 w-6" />); // TODO: replace with OneDrive icon
                         break;
                     default:
                         console.log("No account connected");
                 }
 
-                // Fetch files/folders from the root of the selected account
-                const files = await (window as any).electronAPI.readDirectory(toAddCloudType, toAddAccount, "root");
-                console.log("Files in the root directory:", files);
+                try {
+                    // Fetch files/folders from the root of the selected account
+                    const files = await (window as any).electronAPI.readDirectory(toAddCloudType, toAddAccount, "/easyAccess/temp1");
+                    // const temp_fileContent = await (window as any).electronAPI.readFile(toAddCloudType, toAddAccount, "");
+                    console.log("Files in the root directory:", files);
+                    // console.log("File content:", temp_fileContent);
+                } catch (error) {
+                    console.error("Error fetching files:", error);
+                }
                 setToAddAccount(null);
             } else {
                 console.log("No account selected");
@@ -86,7 +87,7 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
             } else {
                 console.log('Google Drive account not connected, connecting...');
                 // no need to show popup, just connect new account
-                await connectAddCloudAccount(CloudType.GoogleDrive);
+                await connectNewCloudAccount(CloudType.GoogleDrive);
             }
         } catch (error) {
             console.error('Login error:', error)
@@ -116,7 +117,7 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
             } else {
                 console.log('DropBox account not connected, connecting...');
                 // no need to show popup, just connect new account
-                await connectAddCloudAccount(CloudType.Dropbox);
+                await connectNewCloudAccount(CloudType.Dropbox);
             }
         } catch (error) {
             console.error('Login error:', error)
@@ -124,38 +125,37 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
         setToAddAccount("testDropBoxAccount"); // temporary
     }
 
-    const handleICloudClick = async () => {
+    const handleOneDriveClick = async () => {
         // TODO added for testing
         // await (window as any).electronAPI.clearAuthTokens(); 
-        console.log('icloud clicked')
-        // change selected cloud type to icloud
-        setToAddCloudType(CloudType.ICloud);
-        // TODO implement getConnectedCloudAccounts for icloud
+        console.log('onedrive clicked')
+
+        // change selected cloud type to google drive
+        setToAddCloudType(CloudType.OneDrive);
         try {
             // if not exist in store, load token from google
             // if exist in store, load token from store
-            const accountIds: Array<string> = await (window as any).electronAPI.getConnectedCloudAccounts(CloudType.ICloud);
+            const accountIds: Array<string> = await (window as any).electronAPI.getConnectedCloudAccounts(CloudType.OneDrive);
 
             console.log('accountIds: ', accountIds);
 
             if (accountIds && accountIds.length > 0) {
-                console.log('ICloud account already connected');
+                console.log('OneDrive account already connected');
 
                 // show connected accounts on POP UP UI
                 setAvailableAccounts(accountIds);
                 setShowAccountPopup(true);
             } else {
-                console.log('ICloud account not connected, connecting...');
+                console.log('OneDrive account not connected, connecting...');
                 // no need to show popup, just connect new account
-                await connectAddCloudAccount(CloudType.ICloud);
+                await connectNewCloudAccount(CloudType.OneDrive);
             }
         } catch (error) {
             console.error('Login error:', error)
         }
-        setToAddAccount("testICloudAccount"); // temporary
     }
 
-    const connectAddCloudAccount = async (cloudType: CloudType) => {
+    const connectNewCloudAccount = async (cloudType: CloudType) => {
         const accountId = await (window as any).electronAPI.connectNewCloudAccount(cloudType);
         setToAddAccount(accountId);
     }
@@ -177,12 +177,12 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
                 onClick={() => handleDropBoxClick()}
             />
             <CloudItem
-                icon={<SiIcloud className="h-5 w-5" />}
-                label="iCloud"
-                onClick={() => handleICloudClick()}
+                icon={<TbBrandOnedrive className="h-5 w-5" />}
+                label="OneDrive"
+                onClick={() => handleOneDriveClick()}
             />
             {/* Add your sidebar content here */}
-            <PopupAccounts open={showAccountPopup} setOpen={setShowAccountPopup} setSelectedAccount={setToAddAccount} availableAccounts={availableAccounts} connectAddNewAccount={connectAddCloudAccount}/>
+            <PopupAccounts open={showAccountPopup} setOpen={setShowAccountPopup} setSelectedAccount={setToAddAccount} availableAccounts={availableAccounts} connectAddNewAccount={connectNewCloudAccount}/>
         </div>
     );
 };

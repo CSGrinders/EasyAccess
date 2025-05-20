@@ -2,9 +2,11 @@ import ElectronGoogleOAuth2 from '@getstation/electron-google-oauth2';
 import dotenv from 'dotenv';
 
 import { CloudStorage, AuthTokens, isValidToken } from './cloudStorage';
+import { saveCloudAccountLocaStorage } from './cloudManager';
 import { OAuth2Client } from 'google-auth-library';
 import { drive_v3, google } from 'googleapis';
 import { FileSystemItem } from "../../types/fileSystem";
+import { CloudType } from '../../types/cloudType';
 
 dotenv.config();
 
@@ -33,7 +35,37 @@ export class GoogleDriveStorage implements CloudStorage {
     }
   }
 
+  // convert the directory path to a folder ID that is used in the Google Drive API
+  private async getFolderId(dir: string): Promise<string> {
+    const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    
+    const dirs = dir.split('/');
+
+    let currentFolderId = 'root';
+
+    for (const folderName of dirs) {
+      if (folderName === '') continue; // Skip empty parts (e.g., leading slash)
+      
+      const res = await drive.files.list({
+        q: `'${currentFolderId}' in parents and name='${folderName}' and mimeType='application/vnd.google-apps.folder'`,
+        fields: 'files(id)',
+      });
+
+      const files = res.data.files;
+      if (files && files.length > 0) {
+        currentFolderId = files[0].id || '';
+      } else {
+        throw new Error(`Folder "${folderName}" not found`);
+      }
+    }
+    return currentFolderId;
+  }
+
   async readDir(dir: string): Promise<FileSystemItem[]> {
+
+    const folderId = await this.getFolderId(dir);
+
     const allFiles: FileSystemItem[] = [];
     try {
       const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
@@ -42,20 +74,24 @@ export class GoogleDriveStorage implements CloudStorage {
   
       do {
         const res: { data: drive_v3.Schema$FileList } = await drive.files.list({
-          q: `'${dir}' in parents`, // Use folder ID
+          q: `'${folderId}' in parents`, // Use folder ID
           pageSize: 1000,
           fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, size)',
           pageToken: nextPageToken,
         });
   
         const files = res.data.files || [];
-        const mappedFiles: FileSystemItem[] = files.map(file => ({
-          name: file.name ?? '',
-          isDirectory: file.mimeType === 'application/vnd.google-apps.folder',
-          path: file.id ?? '',
-          size: file.size ? Number(file.size) : undefined,
-          modifiedTime: file.modifiedTime ? new Date(file.modifiedTime).getTime() : undefined,
-        }));
+        const mappedFiles: FileSystemItem[] = files.map(file => {
+          const filePath = dir === '/' ? `/${file.name}` : `${dir}/${file.name}`;
+        
+          return {
+            name: file.name ?? '',
+            isDirectory: file.mimeType === 'application/vnd.google-apps.folder',
+            path: filePath,
+            size: file.size ? Number(file.size) : undefined,
+            modifiedTime: file.modifiedTime ? new Date(file.modifiedTime).getTime() : undefined,
+          }
+        });
   
         allFiles.push(...mappedFiles);
         nextPageToken = res.data.nextPageToken || undefined;
@@ -67,6 +103,40 @@ export class GoogleDriveStorage implements CloudStorage {
       return [];
     }
   }
+
+  async readFile(filePath: string): Promise<string> {
+    // TODO: Implement readFile for Google Drive
+    const allFiles: FileSystemItem[] = [];
+    try {
+      const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
+      const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+      const res = await drive.files.get(
+        {
+          fileId: filePath,
+          alt: 'media',
+        },
+        {
+          responseType: 'stream',
+        }
+      );
+
+      const chunks: Buffer[] = [];
+      return new Promise((resolve, reject) => {
+        res.data
+          .on('data', (chunk) => chunks.push(chunk))
+          .on('end', () => resolve(Buffer.concat(chunks).toString()))
+          .on('error', (error) => {
+            console.error('Error reading file stream:', error);
+            reject('');
+          });
+      });
+    } catch (error) {
+      console.error('Google Drive API error:', error);
+      return '';
+    }
+  }
+
   getAccountId(): string {
     return this.accountId || '';
   }
@@ -132,6 +202,23 @@ export class GoogleDriveStorage implements CloudStorage {
       refresh_token,
       expiry_date,
     });
+
+    const { access_token: newAccessToken, refresh_token: newRefreshToken, expiry_date: newExpiryDate } = oauth2Client.credentials;
+    if (!newAccessToken || !newRefreshToken || !newExpiryDate) {
+      console.error('Invalid credentials received from Google OAuth');
+      throw new Error('Invalid credentials');
+    }
+    saveCloudAccountLocaStorage(
+      CloudType.GoogleDrive,
+      this.accountId || '',
+      {
+        access_token: newAccessToken,
+        refresh_token: newRefreshToken,
+        expiry_date: newExpiryDate,
+      }
+    );
+
+    console.log('New access token:', newAccessToken);
   
     return oauth2Client;
   }

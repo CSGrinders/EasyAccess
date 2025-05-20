@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
-import { clearStore, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts } from './cloud/cloudManager';
+import { readFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore } from './cloud/cloudManager';
 import { CloudType } from "../types/cloudType";
 
 
@@ -43,6 +43,9 @@ ipcMain.handle('get-connected-cloud-accounts', async (_e, cloudType: CloudType) 
 });
 ipcMain.handle('cloud-read-directory', async (_e, cloudType: CloudType, accountId: string, dir: string) => {
     return readDirectory(cloudType, accountId, dir);
+});
+ipcMain.handle('cloud-read-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
+    return readFile(cloudType, accountId, filePath);
 });
 
 ipcMain.handle('read-directory', async (_e, dirPath: string) => {

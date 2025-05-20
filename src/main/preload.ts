@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('get-connected-cloud-accounts', cloudType) as Promise<string[] | null>,
     readDirectory: (cloudType: CloudType, accountId: string, dir: string) =>
         ipcRenderer.invoke('cloud-read-directory', cloudType, accountId, dir) as Promise<FileSystemItem[]>,
+    readFile: (cloudType: CloudType, accountId: string, filePath: string) =>
+        ipcRenderer.invoke('cloud-read-file', cloudType, accountId, filePath) as Promise<string>,
 });
 
 contextBridge.exposeInMainWorld('fsApi', {

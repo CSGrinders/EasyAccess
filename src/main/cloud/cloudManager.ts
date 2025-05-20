@@ -7,6 +7,8 @@ import Store from 'electron-store';
 import { AuthTokens, CloudStorage } from './cloudStorage';
 import { GoogleDriveStorage } from './googleStorage';
 import { FileSystemItem } from "../../types/fileSystem";
+import { OneDriveStorage } from "./onedriveStorage";
+import { BrowserWindow } from "electron";
 
 export const store = new Store();
 
@@ -38,9 +40,15 @@ export async function loadStoredAccounts(): Promise<void> {
       const accountId = decodeAccountId(encodedAccountId); 
       
       try {
-        const tokens: AuthTokens = typeof tokenData === 'string'
-          ? JSON.parse(tokenData)
-          : tokenData as AuthTokens;
+        // const tokens: AuthTokens = typeof tokenData === 'string'
+        //   ? JSON.parse(tokenData)
+        //   : tokenData as AuthTokens;
+
+        const tokens: AuthTokens | null = !tokenData
+          ? null
+          : typeof tokenData === 'string'
+            ? JSON.parse(tokenData)
+            : tokenData as AuthTokens;
 
         console.log(`Cloud: ${cloudType}, Account ID: ${accountId}`, tokens);
         
@@ -52,7 +60,7 @@ export async function loadStoredAccounts(): Promise<void> {
             cloudStorageInstance = new GoogleDriveStorage();
             break;
           case CloudType.OneDrive:
-            // cloudStorageInstance = new OneDriveStorage();
+            cloudStorageInstance = new OneDriveStorage();
             break;
           case CloudType.Dropbox:
             // cloudStorageInstance = new iCloudStorage();
@@ -92,11 +100,8 @@ export async function connectNewCloudAccount(cloudType: CloudType) : Promise<str
       break;
     case CloudType.OneDrive:
       console.log('Cloud type is OneDrive');
+      cloudStorageInstance = new OneDriveStorage();
       // cloudStorageInstance = new OneDriveStorage();
-      break;
-    case CloudType.ICloud:
-      console.log('Cloud type is ICloud');
-      // cloudStorageInstance = new ICloudStorage();
       break;
     default:
       console.error('Cloud type is not supported');
@@ -114,7 +119,9 @@ export async function connectNewCloudAccount(cloudType: CloudType) : Promise<str
   // get the auth tokens and accountId from the cloudStorageInstance
   const authTokens = cloudStorageInstance.getAuthToken();
   const accountId = cloudStorageInstance.getAccountId();
-  if (authTokens && accountId) {
+
+  // TODO allow null authTokens?
+  if (accountId) {
     // Save the account to local storage
     await saveCloudAccountLocaStorage(cloudType, accountId, authTokens);
     // Add the account to StoredAccounts
@@ -162,9 +169,25 @@ export async function readDirectory(CloudType: CloudType, accountId: string, dir
   return [];
 }
 
+export async function readFile(CloudType: CloudType, accountId: string, filePath: string): Promise<string> { // TODO return list of files?
+  // TODO: implement readFile for each cloud type
+  console.log('Getting files from cloud account:', CloudType, accountId, filePath);
+  const accounts = StoredAccounts.get(CloudType);
+  if (accounts) {
+    for (const account of accounts) {
+      if (account.getAccountId() === accountId) {
+        return await account.readFile(filePath);
+      }
+    }
+  }
+  console.log(`No ${CloudType} accounts found`);
+  return '';
+}
+
 // TODO: implement encryption for local storage, or we don't need it?
-async function saveCloudAccountLocaStorage(cloudType: CloudType, accountId: string, tokens: AuthTokens): Promise<void> {
+export async function saveCloudAccountLocaStorage(cloudType: CloudType, accountId: string, tokens: AuthTokens | null): Promise<void> {
   try {
+    // token is null on onedrive
     const serializedTokens = JSON.stringify(tokens);
   
     store.set(`${cloudType}.${encodeAccountId(accountId)}`, serializedTokens);
