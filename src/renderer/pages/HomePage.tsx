@@ -85,7 +85,7 @@ const HomePage = () => {
         };
     }, [canvasVwpRef.current]);
 
-    const addStorageBox = (type: string, title: string, icon: React.ReactNode) => {
+    const addStorageBox = (type: string, title: string, icon: React.ReactNode, cloudType?: CloudType, accountId?: string) => {
         const newStorageBox: StorageBoxData = {
             id: nextBoxId,
             title: title,
@@ -95,6 +95,8 @@ const HomePage = () => {
             position: { x: 0, y: 0 },
             size: { width: 400, height: 300 },
             zIndex: nextZIndex,
+            cloudType: cloudType,
+            accountId: accountId,
         };
         setStorageBoxes([...storageBoxes, newStorageBox]);
         setNextBoxId(nextBoxId + 1);

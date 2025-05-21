@@ -271,7 +271,11 @@ export function StorageBox({
                             <>
                             <FileExplorer/>
                             </>
-                ) : (<></>)}
+                ) : (
+                    <>
+                    <FileExplorer cloudType={box.cloudType} accountId={box.accountId}/>
+                    </>
+                )}
             </div>
 
             {!isMaximized && (

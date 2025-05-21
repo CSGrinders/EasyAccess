@@ -3,3 +3,5 @@ export enum CloudType {
     Dropbox = 'Dropbox',
     OneDrive = 'OneDrive'
 }
+
+export const CLOUD_HOME = "Home"

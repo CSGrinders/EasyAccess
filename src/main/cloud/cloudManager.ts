@@ -2,7 +2,7 @@
 This file works as a middleman between the main process and the cloud storage providers.
 */
 
-import { CloudType } from "../../types/cloudType";
+import { CLOUD_HOME, CloudType } from "../../types/cloudType";
 import Store from 'electron-store';
 import { AuthTokens, CloudStorage } from './cloudStorage';
 import { GoogleDriveStorage } from './googleStorage';
@@ -158,6 +158,7 @@ export async function getConnectedCloudAccounts(cloudType: CloudType) : Promise<
 export async function readDirectory(CloudType: CloudType, accountId: string, dir: string): Promise<FileSystemItem[]> { // TODO return list of files?
   console.log('Getting files from cloud account:', CloudType, accountId, dir);
   const accounts = StoredAccounts.get(CloudType);
+  dir = dir.replace(CLOUD_HOME, "");
   if (accounts) {
     for (const account of accounts) {
       if (account.getAccountId() === accountId) {

@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { FileSystemItem } from '../types/fileSystem'
 import { CloudType } from '../types/cloudType';
 
-contextBridge.exposeInMainWorld('electronAPI', {
+contextBridge.exposeInMainWorld('cloudFsApi', {
     connectNewCloudAccount: (cloudType: CloudType) =>
         ipcRenderer.invoke('connect-new-cloud-account', cloudType) as Promise<string | null>,
     getConnectedCloudAccounts: (cloudType: CloudType) =>

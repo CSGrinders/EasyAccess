@@ -6,7 +6,7 @@ import { saveCloudAccountLocaStorage } from './cloudManager';
 import { OAuth2Client } from 'google-auth-library';
 import { drive_v3, google } from 'googleapis';
 import { FileSystemItem } from "../../types/fileSystem";
-import { CloudType } from '../../types/cloudType';
+import { CLOUD_HOME, CloudType } from '../../types/cloudType';
 
 dotenv.config();
 
@@ -87,7 +87,7 @@ export class GoogleDriveStorage implements CloudStorage {
           return {
             name: file.name ?? '',
             isDirectory: file.mimeType === 'application/vnd.google-apps.folder',
-            path: filePath,
+            path: CLOUD_HOME + filePath,
             size: file.size ? Number(file.size) : undefined,
             modifiedTime: file.modifiedTime ? new Date(file.modifiedTime).getTime() : undefined,
           }

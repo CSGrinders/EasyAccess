@@ -1,6 +1,7 @@
 import { CloudStorage,AuthTokens, isValidToken } from './cloudStorage';
 import { FileSystemItem } from "../../types/fileSystem";
 import { Client } from "@microsoft/microsoft-graph-client";
+import { CLOUD_HOME, CloudType } from '../../types/cloudType';
 const {
   DataProtectionScope,
   Environment,
@@ -213,7 +214,7 @@ export class OneDriveStorage implements CloudStorage {
         return {
           name: item.name,
           isDirectory: !!item.folder,
-          path: itemPath,
+          path: CLOUD_HOME + itemPath,
           size: item.size || 0,
           modifiedTime: modifiedTime
         };

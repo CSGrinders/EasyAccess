@@ -1,4 +1,5 @@
 import type React from "react";
+import { CloudType } from "./cloudType";
 
 export const WINDOW_SIZES = {
     medium: {width: 480, height: 360},
@@ -32,11 +33,13 @@ export interface StorageBoxData {
     }
     icon?: React.ReactNode
     zIndex: number
+    cloudType?: CloudType
+    accountId?: string
 }
 
 export interface StorageWideWindowProps {
     show: boolean
-    addStorage: (type: string, title: string, icon: React.ReactNode) => void
+    addStorage: (type: string, title: string, icon: React.ReactNode, cloudType?: CloudType, accountId?: string) => void
 }
 
 

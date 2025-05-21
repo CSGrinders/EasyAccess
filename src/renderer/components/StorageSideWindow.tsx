@@ -26,21 +26,30 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
                         addStorage(
                             "cloud",
                             `Google Drive: ${toAddAccount}`,
-                            <FaGoogleDrive className="h-6 w-6" />);
+                            <FaGoogleDrive className="h-6 w-6" />,
+                            CloudType.GoogleDrive,
+                            toAddAccount
+                        );
                         break;
                     case CloudType.Dropbox:
                         console.log("Dropbox account connected:", toAddAccount);
                         addStorage(
                             "cloud",
                             `Dropbox: ${toAddAccount}`,
-                            <FaDropbox className="h-6 w-6" />);
+                            <FaDropbox className="h-6 w-6" />,
+                            CloudType.Dropbox,
+                            toAddAccount
+                        );
                         break;
                     case CloudType.OneDrive:
                         console.log("OneDrive account connected:", toAddAccount);
                         addStorage(
                             "cloud",
                             `OneDrive: ${toAddAccount}`,
-                            <TbBrandOnedrive className="h-6 w-6" />); // TODO: replace with OneDrive icon
+                            <TbBrandOnedrive className="h-6 w-6" />,
+                            CloudType.OneDrive,
+                            toAddAccount
+                        ); 
                         break;
                     default:
                         console.log("No account connected");
@@ -48,9 +57,9 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
 
                 try {
                     // Fetch files/folders from the root of the selected account
-                    const files = await (window as any).electronAPI.readDirectory(toAddCloudType, toAddAccount, "/easyAccess/temp1");
+                    // const files = await (window as any).electronAPI.readDirectory(toAddCloudType, toAddAccount, "/easyAccess/temp1");
                     // const temp_fileContent = await (window as any).electronAPI.readFile(toAddCloudType, toAddAccount, "");
-                    console.log("Files in the root directory:", files);
+                    // console.log("Files in the root directory:", files);
                     // console.log("File content:", temp_fileContent);
                 } catch (error) {
                     console.error("Error fetching files:", error);
@@ -74,7 +83,7 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
         try {
             // if not exist in store, load token from google
             // if exist in store, load token from store
-            const accountIds: Array<string> = await (window as any).electronAPI.getConnectedCloudAccounts(CloudType.GoogleDrive);
+            const accountIds: Array<string> = await (window as any).cloudFsApi.getConnectedCloudAccounts(CloudType.GoogleDrive);
 
             console.log('accountIds: ', accountIds);
 
@@ -104,7 +113,7 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
         try {
             // if not exist in store, load token from google
             // if exist in store, load token from store
-            const accountIds: Array<string> = await (window as any).electronAPI.getConnectedCloudAccounts(CloudType.Dropbox);
+            const accountIds: Array<string> = await (window as any).cloudFsApi.getConnectedCloudAccounts(CloudType.Dropbox);
 
             console.log('accountIds: ', accountIds);
 
@@ -135,7 +144,7 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
         try {
             // if not exist in store, load token from google
             // if exist in store, load token from store
-            const accountIds: Array<string> = await (window as any).electronAPI.getConnectedCloudAccounts(CloudType.OneDrive);
+            const accountIds: Array<string> = await (window as any).cloudFsApi.getConnectedCloudAccounts(CloudType.OneDrive);
 
             console.log('accountIds: ', accountIds);
 
@@ -156,7 +165,7 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
     }
 
     const connectNewCloudAccount = async (cloudType: CloudType) => {
-        const accountId = await (window as any).electronAPI.connectNewCloudAccount(cloudType);
+        const accountId = await (window as any).cloudFsApi.connectNewCloudAccount(cloudType);
         setToAddAccount(accountId);
     }
 
