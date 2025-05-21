@@ -86,6 +86,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
     useEffect(() => {
         if (!cwd) return
 
+        setIsLoading(true)
         if (cloudType && accountId) {
             // Fetch files from the cloud account
             (window as any).cloudFsApi.readDirectory(cloudType, accountId, cwd)
@@ -102,7 +103,6 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                 })
         } else {
             // Fetch files from the local directory
-            setIsLoading(true)
             window.fsApi
                 .readDirectory(cwd)
                 .then((files) => {
