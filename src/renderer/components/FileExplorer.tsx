@@ -240,7 +240,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
 
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        if ((e.target as HTMLElement).closest("file-item") || e.button !== 0) {
+        if ((e.target as HTMLElement).closest(".file-item") || e.button !== 0) {
             return;
         }
 

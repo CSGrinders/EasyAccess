@@ -1,4 +1,4 @@
-import type React from "react"
+import React, {memo} from "react"
 import {useState, useEffect, useRef} from "react"
 import {X, Maximize2, Minimize2, ChevronDown, Folder} from "lucide-react"
 import {cn} from "@/lib/utils"
@@ -12,7 +12,17 @@ import {
 import {StorageBoxProps, WINDOW_SIZES} from "@Types/box";
 import {FileExplorer} from "@Components/FileExplorer";
 
-export function StorageBox({
+
+export const StorageBox = memo(StorageBoxInner, areEqual);
+function areEqual(prev: StorageBoxProps, next: StorageBoxProps) {
+    return (
+        prev.box      === next.box &&
+        prev.isMaximized === next.isMaximized &&
+        prev.viewportSize === next.viewportSize
+    );
+}
+
+function StorageBoxInner({
                                box,
                                onClose,
                                onFocus,
@@ -143,7 +153,7 @@ export function StorageBox({
     };
 
     const applyPresetSize = (presetKey: keyof typeof WINDOW_SIZES) => {
-        if (isMaximized) setIsMaximized(false); // Restore from maximized if applying preset
+        if (isMaximized) setIsMaximized(false);
         const newSize = WINDOW_SIZES[presetKey];
         setSize(newSize);
     };
@@ -181,13 +191,12 @@ export function StorageBox({
         <div
             ref={boxRef}
             className={cn(
-                "absolute flex flex-col bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden transition-opacity",
-                isDragging && "cursor-grabbing",
+                "box-container absolute flex flex-col bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden transition-opacity",
+                isDragging && "cursor-grabbing", "will-change-transform",
                 isMaximized ? "border-blue-500 dark:border-blue-400" : "rounded-xl"
             )}
             style={{
-                left: `${position.x}px`,
-                top: `${position.y}px`,
+                transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
                 width: `${size.width}px`,
                 height: `${size.height}px`,
                 zIndex: box.zIndex,
