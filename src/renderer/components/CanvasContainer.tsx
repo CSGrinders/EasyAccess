@@ -1,12 +1,13 @@
 import type React from "react";
-import { useState, useRef, useEffect, useCallback } from "react";
-import { cn } from "@/lib/utils";
-import { Crosshair } from "lucide-react";
-import { Button } from "@Components/ui/button";
-import { CANVAS_SIZE, CanvasContainerProps, Position } from "@Types/canvas";
+import {useCallback, useEffect, useRef, useState} from "react";
+import {cn} from "@/lib/utils";
+import {Crosshair} from "lucide-react";
+import {Button} from "@Components/ui/button";
+import {CANVAS_SIZE, CanvasContainerProps, Position} from "@Types/canvas";
 
 export function CanvasContainer({
                                     zoomLevel,
+                                    setZoomLevel,
                                     isPanMode = false,
                                     children,
                                     className,
@@ -19,15 +20,16 @@ export function CanvasContainer({
     const translateRef = useRef<HTMLDivElement>(null);
     const posRef = useRef<Position>(controlledPos);
     const [isDragging, setIsDragging] = useState(false);
-    const [dragStart, setDragStart] = useState<Position>({ x: 0, y: 0 });
-    const [dragStartPos, setDragStartPos] = useState<Position>({ x: 0, y: 0 });
+    const [dragStart, setDragStart] = useState<Position>({x: 0, y: 0});
+    const [dragStartPos, setDragStartPos] = useState<Position>({x: 0, y: 0});
     const [isAnimating, setIsAnimating] = useState(false);
     const [isVisible, setIsVisible] = useState(false);
     const initialPosition = useRef(controlledPos);
-    const velocityRef = useRef<Position>({ x: 0, y: 0 });
+    const velocityRef = useRef<Position>({x: 0, y: 0});
     const frameRef = useRef<number | null>(null);
     const FRICTION = 0.5;
     const MIN_V = 0.07;
+    const PINCH = 0.005;
 
     const applyTransform = (p: Position) => {
         if (translateRef.current) {
@@ -38,7 +40,7 @@ export function CanvasContainer({
     const step = useCallback(() => {
         const v = velocityRef.current;
         if (Math.abs(v.x) < MIN_V && Math.abs(v.y) < MIN_V) {
-            velocityRef.current = { x: 0, y: 0 };
+            velocityRef.current = {x: 0, y: 0};
             frameRef.current = null;
             setPosition(posRef.current);
             onPositionChange?.(posRef.current);
@@ -52,7 +54,7 @@ export function CanvasContainer({
         };
         applyTransform(posRef.current);
 
-        velocityRef.current = { x: v.x * FRICTION, y: v.y * FRICTION };
+        velocityRef.current = {x: v.x * FRICTION, y: v.y * FRICTION};
         frameRef.current = requestAnimationFrame(step);
     }, [setPosition, onPositionChange]);
 
@@ -60,7 +62,7 @@ export function CanvasContainer({
         if (!isPanMode || isAnimating) return;
         e.preventDefault();
         setIsDragging(true);
-        setDragStart({ x: e.clientX, y: e.clientY });
+        setDragStart({x: e.clientX, y: e.clientY});
         setDragStartPos(posRef.current);
     };
 
@@ -89,7 +91,14 @@ export function CanvasContainer({
     const wheelListener = useCallback(
         (e: WheelEvent) => {
             if (isAnimating) return;
-            if (e.ctrlKey) return;
+            if (e.ctrlKey) {
+                e.preventDefault();
+                const zoomDelta = -e.deltaY * PINCH;
+                setZoomLevel(prev => {
+                    return Math.min(2, Math.max(0.5, prev + zoomDelta));
+                });
+                return;
+            }
 
             const target = e.target as HTMLElement | null;
             if (target && target.closest(".box-container")) return;
@@ -117,12 +126,12 @@ export function CanvasContainer({
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
-        el.addEventListener("wheel", wheelListener, { passive: false });
+        el.addEventListener("wheel", wheelListener, {passive: false});
         return () => el.removeEventListener("wheel", wheelListener);
     }, [wheelListener]);
 
     useEffect(() => {
-        const { x: ix, y: iy } = initialPosition.current;
+        const {x: ix, y: iy} = initialPosition.current;
         setIsVisible(controlledPos.x !== ix || controlledPos.y !== iy);
         posRef.current = controlledPos;
         applyTransform(controlledPos);
@@ -151,7 +160,7 @@ export function CanvasContainer({
             <div
                 ref={containerRef}
                 className={`absolute w-full h-full ${isPanMode ? "cursor-grab" : ""}`}
-                style={{ transform: `scale(${zoomLevel})`, overscrollBehavior: "contain" }}
+                style={{transform: `scale(${zoomLevel})`, overscrollBehavior: "contain"}}
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={stopDragging}
@@ -189,21 +198,21 @@ export function CanvasContainer({
                     />
                     <div
                         className="absolute"
-                        style={{ left: `${CANVAS_SIZE / 2}px`, top: `${CANVAS_SIZE / 2}px` }}
+                        style={{left: `${CANVAS_SIZE / 2}px`, top: `${CANVAS_SIZE / 2}px`}}
                     >
                         {children}
                     </div>
                 </div>
             </div>
             {!boxMaximized && (
-                <div className="fixed bottom-4 right-4 flex flex-col gap-3" style={{ zIndex: 9999 }}>
+                <div className="fixed bottom-4 right-4 flex flex-col gap-3" style={{zIndex: 9999}}>
                     <div className={`relative flex justify-end group ${isVisible ? "opacity-100" : "opacity-0"}`}>
                         <Button
                             size="icon"
                             onClick={goCenter}
                             className="group flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs px-3 py-1.5 border border-blue-500/30 transition-all duration-300 hover:shadow-lg hover:scale-105 rounded-full shadow-lg"
                         >
-                            <Crosshair className="h-3.5 w-3.5 text-white group-hover:animate-pulse" />
+                            <Crosshair className="h-3.5 w-3.5 text-white group-hover:animate-pulse"/>
                         </Button>
                         <span
                             className="absolute select-none bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10"
@@ -212,7 +221,8 @@ export function CanvasContainer({
             </span>
                     </div>
 
-                    <div className="select-none bg-slate-800 text-slate-200 text-xs px-3 py-1.5 rounded-md shadow-lg border border-slate-700">
+                    <div
+                        className="select-none bg-slate-800 text-slate-200 text-xs px-3 py-1.5 rounded-md shadow-lg border border-slate-700">
                         Position: {Math.round(controlledPos.x)}, {Math.round(controlledPos.y)}
                     </div>
                 </div>

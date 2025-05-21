@@ -146,6 +146,7 @@ const HomePage = () => {
                     {canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
                         <CanvasContainer
                             zoomLevel={zoomLevel}
+                            setZoomLevel={setZoomLevel}
                             isPanMode={isPanMode}
                             className="relative"
                             position={position}

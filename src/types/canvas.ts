@@ -10,6 +10,7 @@ export interface Position {
 
 export interface CanvasContainerProps {
     zoomLevel: number
+    setZoomLevel: React.Dispatch<React.SetStateAction<number>>
     isPanMode?: boolean
     children: React.ReactNode
     className?: string
