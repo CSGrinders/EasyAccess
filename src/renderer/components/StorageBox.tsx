@@ -1,5 +1,3 @@
-"use client"
-
 import type React from "react"
 import {useState, useEffect, useRef} from "react"
 import {X, Maximize2, Minimize2, ChevronDown, Folder} from "lucide-react"
@@ -11,16 +9,25 @@ import {
     DropdownMenuTrigger,
     DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
-import {ScrollArea} from "@/components/ui/scroll-area"
 import {StorageBoxProps, WINDOW_SIZES} from "@Types/box";
+import {FileExplorer} from "@Components/FileExplorer";
 
-export function StorageBox({box, onClose, onFocus, viewportSize, viewportRef, canvasZoom, canvasPan,}: StorageBoxProps) {
-    const {id, title, content, icon} = box;
+export function StorageBox({
+                               box,
+                               onClose,
+                               onFocus,
+                               viewportSize,
+                               viewportRef,
+                               canvasZoom,
+                               canvasPan,
+                               isMaximized,
+                               setIsMaximized,
+                           }: StorageBoxProps) {
+    const {id, title, content, type, icon} = box;
     const [position, setPosition] = useState(box.position);
     const [size, setSize] = useState(box.size);
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({x: 0, y: 0});
-    const [isMaximized, setIsMaximized] = useState(false);
     const [previousState, setPreviousState] = useState({position: box.position, size: box.size});
     const [isResizing, setIsResizing] = useState(false);
     const [resizeDirection, setResizeDirection] = useState<string | null>(null);
@@ -70,17 +77,17 @@ export function StorageBox({box, onClose, onFocus, viewportSize, viewportRef, ca
             let newY = resizeStartPosition.y;
 
             if (resizeDirection.includes("e")) {
-                newWidth = Math.max(200, resizeStartSize.width + dx);
+                newWidth = Math.max(400, resizeStartSize.width + dx);
             }
             if (resizeDirection.includes("s")) {
-                newHeight = Math.max(150, resizeStartSize.height + dy);
+                newHeight = Math.max(360, resizeStartSize.height + dy);
             }
             if (resizeDirection.includes("w")) {
-                newWidth = Math.max(200, resizeStartSize.width - dx);
+                newWidth = Math.max(400, resizeStartSize.width - dx);
                 newX = resizeStartPosition.x + dx;
             }
             if (resizeDirection.includes("n")) {
-                newHeight = Math.max(150, resizeStartSize.height - dy);
+                newHeight = Math.max(360, resizeStartSize.height - dy);
                 newY = resizeStartPosition.y + dy;
             }
             setSize({width: newWidth, height: newHeight});
@@ -174,7 +181,7 @@ export function StorageBox({box, onClose, onFocus, viewportSize, viewportRef, ca
         <div
             ref={boxRef}
             className={cn(
-                "absolute bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden transition-opacity",
+                "absolute flex flex-col bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden transition-opacity",
                 isDragging && "cursor-grabbing",
                 isMaximized ? "border-blue-500 dark:border-blue-400" : "rounded-xl"
             )}
@@ -259,11 +266,12 @@ export function StorageBox({box, onClose, onFocus, viewportSize, viewportRef, ca
                 </div>
             </div>
 
-            <div className="p-4 h-[calc(100%-48px)] overflow-auto bg-slate-50 dark:bg-slate-900/50">
-                <ScrollArea className="flex-1 p-4">
-                    <div className="space-y-1">
-                    </div>
-                </ScrollArea>
+            <div className="flex flex-1 overflow-hidden bg-slate-50 dark:bg-slate-900/50">
+                {type == "local" ?  (
+                            <>
+                            <FileExplorer/>
+                            </>
+                ) : (<></>)}
             </div>
 
             {!isMaximized && (

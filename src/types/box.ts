@@ -1,7 +1,6 @@
 import type React from "react";
 
 export const WINDOW_SIZES = {
-    small: {width: 320, height: 240},
     medium: {width: 480, height: 360},
     large: {width: 640, height: 480},
     xl: {width: 800, height: 600},
@@ -17,6 +16,8 @@ export interface StorageBoxProps {
     viewportRef: React.RefObject<HTMLDivElement>;
     canvasZoom: number;
     canvasPan: { x: number; y: number };
+    isMaximized: boolean;
+    setIsMaximized: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export interface StorageBoxData {
