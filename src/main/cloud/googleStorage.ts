@@ -24,7 +24,7 @@ export class GoogleDriveStorage implements CloudStorage {
   accountId?: string | undefined;
   AuthToken?: AuthTokens | null | undefined;
 
-  async connect(): Promise<void> {
+  async connect(): Promise<void | any> {
     const authTokens = await this.authenticateGoogle();
     if (authTokens) {
       this.AuthToken = authTokens.token;

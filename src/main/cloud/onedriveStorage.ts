@@ -116,7 +116,7 @@ export class OneDriveStorage implements CloudStorage {
     return this.account;
   }
 
-  async connect(): Promise<void> {
+  async connect(): Promise<void | any> {
     if (!this.client) {
       await this.initClient();
     }
