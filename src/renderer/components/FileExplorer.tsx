@@ -21,8 +21,14 @@ import {Input} from "@/components/ui/input"
 import {ScrollArea} from "@/components/ui/scroll-area"
 import {Button} from "@/components/ui/button"
 import {cn} from "@/lib/utils"
+import { CLOUD_HOME, CloudType } from "../../types/cloudType"
 
-export function FileExplorer() {
+interface FileExplorerProps {
+    cloudType?: CloudType
+    accountId?: string
+}
+
+export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
     const [items, setItems] = useState<FileSystemItem[]>([])
     const [cwd, setCwd] = useState<string>("")
     const [history, setHistory] = useState<string[]>([])
@@ -58,10 +64,20 @@ export function FileExplorer() {
 
     useEffect(() => {
         const fetchHome = async () => {
-            const homePath = window.fsApi.getHome()
-            setCwd(homePath)
-            setHistory([homePath])
-            setHistoryIndex(0)
+            // cloud home directory
+            if (cloudType && accountId) {
+                console.log("Fetching home directory from cloud account:", cloudType, accountId);
+                console.log("Current directory:", cwd);
+                setCwd(CLOUD_HOME)
+                setHistory([CLOUD_HOME])
+                setHistoryIndex(0)
+            } else {
+                // local home directory
+                const homePath = await window.fsApi.getHome()
+                setCwd(homePath)
+                setHistory([homePath])
+                setHistoryIndex(0)
+            }
         }
 
         fetchHome().then(r => console.log("Directory fetched"))
@@ -70,29 +86,49 @@ export function FileExplorer() {
     useEffect(() => {
         if (!cwd) return
 
-        setIsLoading(true)
-        window.fsApi
-            .readDirectory(cwd)
-            .then((files) => {
-                setItems(files)
-                updatePathSegments(cwd)
-                setIsLoading(false)
-                setSelectedItems(new Set())
-                setLastSelectedItem(null)
-            })
-            .catch((err) => {
-                console.error(err)
-                setIsLoading(false)
-            })
+        if (cloudType && accountId) {
+            // Fetch files from the cloud account
+            (window as any).cloudFsApi.readDirectory(cloudType, accountId, cwd)
+                .then((files: FileSystemItem[]) => {
+                    setItems(files)
+                    updatePathSegments(cwd)
+                    setIsLoading(false)
+                    setSelectedItems(new Set())
+                    setLastSelectedItem(null)
+                })
+                .catch((err: Error) => {
+                    console.error(err)
+                    setIsLoading(false)
+                })
+        } else {
+            // Fetch files from the local directory
+            setIsLoading(true)
+            window.fsApi
+                .readDirectory(cwd)
+                .then((files) => {
+                    setItems(files)
+                    updatePathSegments(cwd)
+                    setIsLoading(false)
+                    setSelectedItems(new Set())
+                    setLastSelectedItem(null)
+                })
+                .catch((err) => {
+                    console.error(err) 
+                    setIsLoading(false)
+                })
+        }
+        
     }, [cwd])
 
     const updatePathSegments = (path: string) => {
         // Split path into segments
         const segments = path.split(/[/\\]/).filter(Boolean)
         setCurrentPath(segments)
+        console.log("Current path segments:", segments)
     }
 
     const navigateTo = (path: string) => {
+        console.log("Navigating to:", path)
         // Add to history
         const newHistory = history.slice(0, historyIndex + 1)
         newHistory.push(path)
@@ -116,8 +152,14 @@ export function FileExplorer() {
     }
 
     const goToHome = async () => {
-        const homePath = await window.fsApi.getHome()
-        navigateTo(homePath)
+        if (cloudType && accountId) {
+            console.log("Navigating to home directory of cloud account:", cloudType, accountId);
+            navigateTo(CLOUD_HOME)
+        } else {
+            console.log("Navigating to local home directory");
+            const homePath = await window.fsApi.getHome()
+            navigateTo(homePath)
+        }
     }
 
     const navigateUp = () => {
@@ -366,6 +408,7 @@ export function FileExplorer() {
                                 className="text-blue-400 cursor-pointer hover:underline"
                                 onClick={() => {
                                     const path = "/" + currentPath.slice(0, index + 1).join("/")
+                                    
                                     navigateTo(path)
                                 }}
                             >
@@ -504,12 +547,12 @@ export function FileExplorer() {
                         <div
                             className="grid grid-cols-[repeat(auto-fit,_minmax(120px,_1fr))]
  gap-4">
-                            {sortedItems.map((item) => (
+                            {sortedItems.map((item, index) => (
                                 <div
-                                    key={item.path}
+                                    key={item.path + index}
                                     ref={(el) => {
-                                        if (el) itemRefs.current.set(item.path, el)
-                                        else itemRefs.current.delete(item.path)
+                                        if (el) itemRefs.current.set(item.path + index, el)
+                                        else itemRefs.current.delete(item.path + index)
                                     }}
                                     onClick={(e) => handleItemClick(e, item)}
                                     onDoubleClick={(e) => {

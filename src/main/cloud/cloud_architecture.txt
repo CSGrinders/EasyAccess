@@ -1,0 +1,34 @@
+CloudStorage	(Interface)
+Variable
+    Account Id
+    Authenticated Token (for api calls)
+Functions
+    Connect
+        Go through cloud’s authentication process and save account Id and Authenticated Token
+    readDir(dir)
+        Return files from the given path by call api with Authenticated Token
+    Get Account Id
+    Get Cloud Type
+
+CloudManager
+Variable
+    List <CloudStorage> StoredAccounts
+        Cloud accounts stored in the app
+        Accounts stored in the local storage (electron)
+Functions
+    LoadStoredAccounts
+        Traverse electron local storage to load all stored accounts into StoredAccounts
+    ConnectCloudAccount (CloudType)
+        Create New CloudStorage Class
+        Call its connect function
+        Save it in StoredAccounts
+        Store it into local storage (electron)
+            Key
+                cloudType:accountId
+            Value
+                Object (accessToken, refreshToken, expireDate)
+    GetConnectedCloudAccounts(CloudType)
+        Return all connected account ids based on cloud type
+    readDir(CloudType, accountId, dir)
+        Call corresponding cloud account’s readDir function
+    Other File System functions…

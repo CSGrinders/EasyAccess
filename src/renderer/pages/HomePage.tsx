@@ -7,6 +7,7 @@ import {StorageBox} from "@Components/StorageBox";
 import { type StorageBoxData } from "@Types/box";
 import {FaGoogleDrive} from "react-icons/fa";
 import StorageSideWindow from '@/components/StorageSideWindow';
+import { CloudType } from '@Types/cloudType';
 
 const test = {
     folders: ["Documents", "Pictures", "Downloads", "Desktop"],
@@ -23,6 +24,7 @@ const HomePage = () => {
     const canvasVwpRef = useRef<HTMLDivElement>({} as HTMLDivElement);
     const [canvasVwpSize, setCanvasViewportSize] = useState({ width: 0, height: 0 });
     const [showStorageWindow, setShowStorageWindow] = useState(false);
+    const [nextBoxId, setNextBoxId] = useState(3);
     
     const toggleShowSideWindow = () => {
         setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
@@ -83,6 +85,25 @@ const HomePage = () => {
         };
     }, [canvasVwpRef.current]);
 
+    const addStorageBox = (type: string, title: string, icon: React.ReactNode, cloudType?: CloudType, accountId?: string) => {
+        const newStorageBox: StorageBoxData = {
+            id: nextBoxId,
+            title: title,
+            type: type,
+            content: test, // Replace 'test' with actual content if needed
+            icon: icon,
+            position: { x: 0, y: 0 },
+            size: { width: 400, height: 300 },
+            zIndex: nextZIndex,
+            cloudType: cloudType,
+            accountId: accountId,
+        };
+        setStorageBoxes([...storageBoxes, newStorageBox]);
+        setNextBoxId(nextBoxId + 1);
+        setNextZIndex(nextZIndex + 1);
+        setShowStorageWindow(false); // Close the storage window after adding
+    };
+
     const removeWindow = (id: number) => {
         setStorageBoxes(storageBoxes.filter((w) => w.id !== id));
     };
@@ -121,7 +142,7 @@ const HomePage = () => {
             <main className="flex flex-1 overflow-hidden" ref={canvasVwpRef}>
             <ActionBar action={action} setAction={setAction} toggleShowSideWindow={toggleShowSideWindow}/>
             <div className="relative flex flex-1">
-                    <StorageSideWindow show={showStorageWindow}/>
+                    <StorageSideWindow show={showStorageWindow} addStorage={addStorageBox}/>
                     {canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
                         <CanvasContainer
                             zoomLevel={zoomLevel}

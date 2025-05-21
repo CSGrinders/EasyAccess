@@ -3,8 +3,15 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { FileSystemItem } from '../types/fileSystem'
 import { CloudType } from '../types/cloudType';
 
-contextBridge.exposeInMainWorld('electronAPI', {
-    loadAuthTokens: (cloudType: CloudType) => ipcRenderer.invoke('load-auth-tokens', cloudType),
+contextBridge.exposeInMainWorld('cloudFsApi', {
+    connectNewCloudAccount: (cloudType: CloudType) =>
+        ipcRenderer.invoke('connect-new-cloud-account', cloudType) as Promise<string | null>,
+    getConnectedCloudAccounts: (cloudType: CloudType) =>
+        ipcRenderer.invoke('get-connected-cloud-accounts', cloudType) as Promise<string[] | null>,
+    readDirectory: (cloudType: CloudType, accountId: string, dir: string) =>
+        ipcRenderer.invoke('cloud-read-directory', cloudType, accountId, dir) as Promise<FileSystemItem[]>,
+    readFile: (cloudType: CloudType, accountId: string, filePath: string) =>
+        ipcRenderer.invoke('cloud-read-file', cloudType, accountId, filePath) as Promise<string>,
 });
 
 contextBridge.exposeInMainWorld('fsApi', {
