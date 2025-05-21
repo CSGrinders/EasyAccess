@@ -22,7 +22,7 @@ export interface CloudStorage {
     accountId?: string;
     AuthToken?: AuthTokens | null;
 
-    connect(): Promise<void>;
+    connect(): Promise<void | any>;
     readDir(dir: string): Promise<FileSystemItem[]>; //TODO
     readFile(filePath: string): Promise<string>
     getAccountId(): string;

@@ -9,6 +9,7 @@ import { GoogleDriveStorage } from './googleStorage';
 import { FileSystemItem } from "../../types/fileSystem";
 import { OneDriveStorage } from "./onedriveStorage";
 import { BrowserWindow } from "electron";
+import { DropboxStorage } from "./dropboxStorage";
 
 export const store = new Store();
 
@@ -63,7 +64,7 @@ export async function loadStoredAccounts(): Promise<void> {
             cloudStorageInstance = new OneDriveStorage();
             break;
           case CloudType.Dropbox:
-            // cloudStorageInstance = new iCloudStorage();
+            cloudStorageInstance = new DropboxStorage();
             break;
           default:
             console.warn(`Unsupported cloud type: ${cloudType}`);
@@ -96,6 +97,7 @@ export async function connectNewCloudAccount(cloudType: CloudType) : Promise<str
       break;
     case CloudType.Dropbox:
       console.log('Cloud type is Dropbox');
+      cloudStorageInstance = new DropboxStorage();
       // cloudStorageInstance = new DropboxStorage();
       break;
     case CloudType.OneDrive:
@@ -115,6 +117,7 @@ export async function connectNewCloudAccount(cloudType: CloudType) : Promise<str
 
   // oauth2 authentication process ==> get tokens and accountId for the cloudStorageInstance
   await cloudStorageInstance.connect();
+  console.log('Connected to cloud account:', cloudType);
 
   // get the auth tokens and accountId from the cloudStorageInstance
   const authTokens = cloudStorageInstance.getAuthToken();

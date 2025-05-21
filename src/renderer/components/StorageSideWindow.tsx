@@ -131,7 +131,6 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
         } catch (error) {
             console.error('Login error:', error)
         }
-        setToAddAccount("testDropBoxAccount"); // temporary
     }
 
     const handleOneDriveClick = async () => {
