@@ -109,15 +109,15 @@ const HomePage = () => {
     };
 
     const bringToFront = (id: number) => {
-        setStorageBoxes(
-            storageBoxes.map((window) => {
+        setStorageBoxes((prevBoxes) => // prevBoxes ensures the latest state of storageBoxes / conflict with addStorageBox
+            prevBoxes.map((window) => {
                 if (window.id === id) {
                     return { ...window, zIndex: nextZIndex };
                 }
                 return window;
             }),
         );
-        setNextZIndex(nextZIndex + 1);
+        setNextZIndex((prevZIndex) => prevZIndex + 1);
     };
 
     return (
