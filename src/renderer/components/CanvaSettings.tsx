@@ -6,7 +6,7 @@ import {Slider} from "@/components/ui/slider"
 import {CanvaSettingsProps} from "@Types/canvas";
 
 
-const CanvaSettings = ({zoomLevel, setZoomLevel, isPanMode, setIsPanMode}: CanvaSettingsProps) => {
+const CanvaSettings = ({zoomLevel, setZoomLevel, isPanMode, setIsPanMode, isBoxMaximized}: CanvaSettingsProps) => {
 
     // Zoom in
     const zoomIn = () => {
@@ -36,6 +36,7 @@ const CanvaSettings = ({zoomLevel, setZoomLevel, isPanMode, setIsPanMode}: Canva
     return (
         <div className="flex items-center gap-2">
             <Toggle
+                disabled={isBoxMaximized}
                 className={`mr-2 hover:bg-slate-100 dark:hover:bg-slate-700 ${isPanMode ? "bg-slate-100 dark:bg-slate-700" : ""}`}
                 aria-label="Toggle pan mode" pressed={isPanMode} onPressedChange={setIsPanMode}>
                 <Move className={`h-4 w-4 ${isPanMode ? "text-blue-600" : "text-slate-500"}`}/>

@@ -176,7 +176,6 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
     })
     const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-
     const filteredItems = searchQuery
         ? items.filter(
             (item) =>
