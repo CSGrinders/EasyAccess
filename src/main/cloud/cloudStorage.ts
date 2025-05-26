@@ -5,7 +5,7 @@ Each provider should contain its own authentication tokens (access token, refres
 Each provider has its own authentication method and file retrieval process.
 */
 
-import { FileSystemItem } from "../../types/fileSystem";
+import { FileContent, FileSystemItem } from "../../types/fileSystem";
 
 export type AuthTokens = {
     access_token: string;
@@ -24,7 +24,9 @@ export interface CloudStorage {
 
     connect(): Promise<void | any>;
     readDir(dir: string): Promise<FileSystemItem[]>; //TODO
-    readFile(filePath: string): Promise<string>
+    // readFile(filePath: string): Promise<string>
+    getFile(filePath: string): Promise<FileContent>; //TODO
+    postFile(fileName: string, folderPath: string, type: string, data: Buffer): Promise<void>; //TODO
     getAccountId(): string;
     getAuthToken(): AuthTokens | null;
 }

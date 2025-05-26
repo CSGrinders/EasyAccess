@@ -8,6 +8,12 @@ export interface FileSystemItem {
     modifiedTime?: number
 }
 
+export interface FileContent {
+    name: string
+    content: Buffer
+    type: string
+}
+
 declare global {
     interface Window {
         fsApi: {

@@ -1,8 +1,9 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
-import { readFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore } from './cloud/cloudManager';
-import { CloudType } from "../types/cloudType";
+import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile } from './cloud/cloudManager';
+import { CloudType } from "@Types/cloudType";
+import { FileContent } from '@Types/fileSystem';
 
 
 const createWindow = () => {
@@ -44,8 +45,11 @@ ipcMain.handle('get-connected-cloud-accounts', async (_e, cloudType: CloudType) 
 ipcMain.handle('cloud-read-directory', async (_e, cloudType: CloudType, accountId: string, dir: string) => {
     return readDirectory(cloudType, accountId, dir);
 });
-ipcMain.handle('cloud-read-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
-    return readFile(cloudType, accountId, filePath);
+ipcMain.handle('cloud-get-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
+    return getFile(cloudType, accountId, filePath);
+});
+ipcMain.handle('cloud-post-file', async (_e, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer) => {
+    return postFile(cloudType, accountId, fileName, folderPath, data);
 });
 
 ipcMain.handle('read-directory', async (_e, dirPath: string) => {
@@ -59,6 +63,20 @@ ipcMain.handle('read-directory', async (_e, dirPath: string) => {
     })))
 })
 
-ipcMain.handle('read-file', async (_e, filePath: string) => {
-    return fs.promises.readFile(filePath, 'utf8')
+ipcMain.handle('get-file', async (_e, filePath: string) => {
+    console.log('Reading file:', filePath);
+    const data = await fs.promises.readFile(filePath);
+    const fileContent: FileContent = {
+        name: filePath.split(path.sep).pop() || '', // Get the file name from the path
+        content: data, 
+        type: filePath.split('.').pop() || 'txt', // Get the file extension or default to 'txt'
+    };
+
+    return fileContent;
+})
+
+ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, data: Buffer) => {
+    console.log('Posting file:', fileName, folderPath, data);
+    const filePath = path.join(folderPath, fileName);
+    fs.writeFileSync(filePath, data);
 })

@@ -6,10 +6,12 @@ import { CLOUD_HOME, CloudType } from "../../types/cloudType";
 import Store from 'electron-store';
 import { AuthTokens, CloudStorage } from './cloudStorage';
 import { GoogleDriveStorage } from './googleStorage';
-import { FileSystemItem } from "../../types/fileSystem";
+import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { OneDriveStorage } from "./onedriveStorage";
 import { BrowserWindow } from "electron";
 import { DropboxStorage } from "./dropboxStorage";
+
+const mime = require('mime-types');
 
 export const store = new Store();
 
@@ -173,19 +175,45 @@ export async function readDirectory(CloudType: CloudType, accountId: string, dir
   return [];
 }
 
-export async function readFile(CloudType: CloudType, accountId: string, filePath: string): Promise<string> { // TODO return list of files?
+
+  // filePath: /HOME/dir/temp.txt
+  // returns the file content in base64 format
+export async function getFile(CloudType: CloudType, accountId: string, filePath: string): Promise<FileContent | null> { // TODO return list of files?
   // TODO: implement readFile for each cloud type
+  filePath = filePath.replace(CLOUD_HOME, "");
   console.log('Getting files from cloud account:', CloudType, accountId, filePath);
   const accounts = StoredAccounts.get(CloudType);
   if (accounts) {
     for (const account of accounts) {
       if (account.getAccountId() === accountId) {
-        return await account.readFile(filePath);
+        return await account.getFile(filePath);
       }
     }
   }
   console.log(`No ${CloudType} accounts found`);
-  return '';
+  return null;
+}
+
+// post the file content (Buffer) to the cloud
+// filePath: /HOME/dir/temp.txt
+// data: Buffer
+export async function postFile(CloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer): Promise<void> { // TODO return list of files?
+  // TODO: implement readFile for each cloud type
+  
+  folderPath = folderPath.replace(CLOUD_HOME, "");
+
+  console.log('Getting files from cloud account:', CloudType, accountId, fileName, folderPath);
+  const accounts = StoredAccounts.get(CloudType);
+  if (accounts) {
+    for (const account of accounts) {
+      if (account.getAccountId() === accountId) {
+        const type = mime.lookup(fileName) || 'application/octet-stream'; // default to binary if no mime type found
+        return await account.postFile(fileName, folderPath, type, data);
+      }
+    }
+  }
+  console.log(`No ${CloudType} accounts found`);
+  return;
 }
 
 // TODO: implement encryption for local storage, or we don't need it?

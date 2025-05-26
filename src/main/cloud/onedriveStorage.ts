@@ -1,7 +1,8 @@
 import { CloudStorage,AuthTokens, isValidToken } from './cloudStorage';
-import { FileSystemItem } from "../../types/fileSystem";
+import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
+import { file } from 'googleapis/build/src/apis/file';
 const {
   DataProtectionScope,
   Environment,
@@ -237,15 +238,80 @@ export class OneDriveStorage implements CloudStorage {
     }
   }
 
-  async readFile(filePath: string): Promise<string> {
-    // TODO: Implement readFile for Google Drive
-    console.error('readFile not implemented for Google Drive');
-    throw new Error('Not implemented');
-  }
   getAccountId(): string {
     return this.accountId || '';
   }
   getAuthToken(): AuthTokens | null {
     return this.AuthToken || null;
+  }
+
+  async getFile(filePath: string): Promise<FileContent> {
+    if (!this.graphClient) {
+      await this.initAccount();
+    }
+    
+    if (!this.graphClient) {
+      console.error('Graph client is not initialized');
+      return Promise.reject(new Error('Graph client is not initialized'));
+    }
+    
+    const apiPath = `/me/drive/root:/${filePath.replace(/^\//, '')}`; // remove leading slash if exists, to avoid double slashes
+    
+    console.log(`Querying OneDrive API path: ${apiPath}`);
+
+    try {
+      const metadataResponse = await this.graphClient.api(apiPath).get();
+      console.log('Response from OneDrive API (metadata):', metadataResponse);
+
+      if (!metadataResponse) {
+        throw new Error('File not found');
+      }
+
+      const fileType = metadataResponse.file.mimeType;
+      const fileName = metadataResponse.name;
+
+      const dataResponse = await this.graphClient.api(apiPath + ":/content").responseType("arraybuffer").get();
+      console.log('Response from OneDrive API (data):', dataResponse);
+
+      if (!dataResponse) {
+        throw new Error('File not found');
+      }
+
+      const fileData = Buffer.from(dataResponse as ArrayBuffer);
+
+      const fileContent: FileContent = {
+        name: fileName,
+        content: fileData,
+        type: fileType,
+      };
+
+      return fileContent;
+    } catch (error) {
+      console.error('Error getting file from OneDrive:', error);
+      throw error;
+    }
+  }
+
+  async postFile(fileName: string, folderPath: string, type: string, data: Buffer): Promise<void> {
+    if (!this.graphClient) {
+      await this.initAccount();
+    }
+    
+    if (!this.graphClient) {
+      console.error('Graph client is not initialized');
+      return Promise.reject(new Error('Graph client is not initialized'));
+    }
+
+    const apiPath = `/me/drive/root:/${folderPath.replace(/^\//, '')}/${fileName}:/content`; // remove leading slash if exists, to avoid double slashes
+    
+    console.log(`Querying OneDrive API path: ${apiPath}`);
+
+    try {
+      const response = await this.graphClient.api(apiPath).put(data);
+      console.log('Response from OneDrive API (upload):', response);
+    } catch (error) {
+      console.error('Error getting file from OneDrive:', error);
+      throw error;
+    }
   }
 }

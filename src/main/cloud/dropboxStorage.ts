@@ -1,9 +1,10 @@
 import { CloudStorage,AuthTokens, isValidToken } from './cloudStorage';
-import { FileSystemItem } from "../../types/fileSystem";
+import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
 import { BrowserWindow } from 'electron';
 import { Dropbox } from 'dropbox';
+const mime = require('mime-types');
 
 const DROPBOX_APP_KEY = process.env.DROPBOX_KEY;
 const DROPBOX_APP_SECRET = process.env.DROPBOX_SECRET;
@@ -163,5 +164,95 @@ export class DropboxStorage implements CloudStorage {
     }
     getAuthToken(): AuthTokens | null {
         return this.AuthToken || null;
+    }
+    async getFile(filePath: string): Promise<FileContent> {
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            return Promise.reject('Dropbox client is not initialized');
+        }
+        console.log('filePath', filePath);
+        
+        const response = await fetch('https://content.dropboxapi.com/2/files/download', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.AuthToken?.access_token}`,
+                'Dropbox-API-Arg': JSON.stringify({ path: filePath })
+            }
+        });
+
+        const metadataResponse = await fetch('https://api.dropboxapi.com/2/files/get_metadata', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${this.AuthToken?.access_token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ path: filePath })
+        });
+    
+        const metadata = await metadataResponse.json();
+    
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+    
+        // Use arrayBuffer() instead of buffer()
+        const arrayBuffer = await response.arrayBuffer();
+
+        console.log('metadata', metadata);
+        
+        const buffer = Buffer.from(arrayBuffer as ArrayBuffer);
+        const name = filePath.split('/').pop() || 'file';
+        const type = mime.lookup(name) || 'application/octet-stream';
+        
+        console.log('Buffer:', buffer, name, type);
+
+        if (!buffer) {
+            console.error('Buffer is empty');
+            return Promise.reject('Buffer is empty');
+        }
+
+        const fileContent: FileContent = {
+            name: name,
+            type: type,
+            content: buffer,
+        };
+        return fileContent;
+    }
+
+    async postFile(fileName: string, folderPath: string, type: string, data: Buffer): Promise<void> {
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            return Promise.reject('Dropbox client is not initialized');
+        }
+        console.log('folderPath: ', folderPath);
+        
+
+        /*
+        curl -X POST https://content.dropboxapi.com/2/files/upload \
+            --header "Authorization: Bearer <get access token>" \
+            --header "Dropbox-API-Arg: {\"autorename\":false,\"mode\":\"add\",\"mute\":false,\"path\":\"/Homework/math/Matrices.txt\",\"strict_conflict\":false}" \
+            --header "Content-Type: application/octet-stream" \
+            --data-binary @local_file.txt
+        */
+
+        const response = await fetch('https://content.dropboxapi.com/2/files/upload', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.AuthToken?.access_token}`,
+                'Dropbox-API-Arg': JSON.stringify({ path: folderPath + '/' + fileName, mode: 'add', autorename: true, mute: false }),
+                'Content-Type': 'application/octet-stream'
+            },
+            body: data
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Dropbox API error: ${response.status} - ${errorText}`);
+        }
+    
+        console.log(`File "${fileName}" uploaded successfully to "${folderPath}"`);
     }
 }

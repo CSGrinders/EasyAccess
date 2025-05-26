@@ -1,5 +1,5 @@
 import React, {useState, useRef, useEffect} from 'react';
-import {HardDrive} from "lucide-react"
+import {CloudLightning, HardDrive} from "lucide-react"
 import CanvaSettings from "@Components/CanvaSettings";
 import ActionBar from "@Components/ActionBar";
 import {CanvasContainer} from "@Components/CanvasContainer";
@@ -8,6 +8,7 @@ import { type StorageBoxData } from "@Types/box";
 import {FaGoogleDrive} from "react-icons/fa";
 import StorageSideWindow from '@/components/StorageSideWindow';
 import { CloudType } from '@Types/cloudType';
+import { FileContent } from '@Types/fileSystem';
 
 const test = {
     folders: ["Documents", "Pictures", "Downloads", "Desktop"],
@@ -25,6 +26,66 @@ const HomePage = () => {
     const [canvasVwpSize, setCanvasViewportSize] = useState({ width: 0, height: 0 });
     const [showStorageWindow, setShowStorageWindow] = useState(false);
     const [nextBoxId, setNextBoxId] = useState(3);
+
+    const [fileContentCache, setFileContentCache] = useState<FileContent | null>(null);
+
+    const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
+        if (!fileContentCache) {
+            console.log("No file content to upload");
+            return;
+        }
+        console.log("Uploading file content:", cloudType, accountId, fileContentCache);
+
+        if (!cloudType || !accountId) {
+            // local file system
+            console.log("local file system, call postFile from local file system: ", parentPath, fileContentCache);
+
+            (window as any).fsApi.postFile(fileContentCache.name, parentPath, fileContentCache.content)
+                .then(() => {
+                    console.log("File uploaded successfully")
+                }
+                ).catch((err: Error) => {
+                    console.error(err)
+                }
+            )
+        } else {
+            (window as any).cloudFsApi.postFile(cloudType, accountId, fileContentCache.name, parentPath, fileContentCache.content)
+                .then(() => {
+                    console.log("File uploaded successfully")
+                }
+                ).catch((err: Error) => {
+                    console.error(err)
+                }
+            )
+        }
+    }
+
+    const tempGetFile = (filePath: string, cloudType?: CloudType, accountId?: string) => {
+        if (!cloudType || !accountId) {
+            // local file system
+            console.log("local file system, call getFile from local file system:", filePath);
+            (window as any).fsApi.getFile(filePath)
+                    .then((fileContent: FileContent) => {
+                        console.log("File content:", fileContent);
+                        setFileContentCache(fileContent);
+                    })
+                    .catch((err: Error) => {
+                        console.error(err)
+                    })
+            return;
+        } else {
+            console.log("Fetching file content from cloud account:", cloudType, accountId, filePath);
+            (window as any).cloudFsApi.getFile(cloudType, accountId, filePath)
+                    .then((fileContent: FileContent) => {
+                        console.log("File content:", fileContent);
+                        setFileContentCache(fileContent);
+
+                    })
+                    .catch((err: Error) => {
+                        console.error(err)
+                    })
+        }
+    }
     
     const toggleShowSideWindow = () => {
         setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
@@ -165,6 +226,8 @@ const HomePage = () => {
                                     canvasPan={position}
                                     isMaximized={isMaximized}
                                     setIsMaximized={setIsMaximized}
+                                    tempPostFile={tempPostFile}
+                                    tempGetFile={tempGetFile}
                                 />
                             ))}
                         </CanvasContainer>

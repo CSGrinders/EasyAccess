@@ -16,7 +16,7 @@ import {
     Trash,
     Move,
 } from "lucide-react"
-import type {FileSystemItem} from "@Types/fileSystem"
+import type {FileContent, FileSystemItem} from "@Types/fileSystem"
 import {Input} from "@/components/ui/input"
 import {ScrollArea} from "@/components/ui/scroll-area"
 import {Button} from "@/components/ui/button"
@@ -26,9 +26,12 @@ import { CLOUD_HOME, CloudType } from "../../types/cloudType"
 interface FileExplorerProps {
     cloudType?: CloudType
     accountId?: string
+    tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void
+    tempGetFile?: (filePath: string, cloudType?: CloudType, accountId?: string) => void
+    // tempGetFile?: (fileContent: FileContent) => void
 }
 
-export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
+export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: FileExplorerProps) {
     const [items, setItems] = useState<FileSystemItem[]>([])
     const [cwd, setCwd] = useState<string>("")
     const [history, setHistory] = useState<string[]>([])
@@ -44,6 +47,8 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
     const [selectionEnd, setSelectionEnd] = useState({x: 0, y: 0})
     const [selectionBox, setSelectionBox] = useState({left: 0, top: 0, width: 0, height: 0})
     const [isAdditiveDrag, setIsAdditiveDrag] = useState(false);
+    const [clickedItem, setClickedItem] = useState<FileSystemItem | null>(null);
+
     const selectionSnapshotRef = useRef<Set<string>>(new Set());
 
     const containerRef = useRef<HTMLDivElement>(null)
@@ -191,6 +196,32 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
             navigateTo(item.path)
             return
         }
+
+        if (!item.isDirectory) {
+            // If it's a file, set it as the clicked item
+            console.log("Clicked on file:", item.name);
+            setClickedItem(item)
+        }
+
+
+        // console.log("Fetching file content from cloud account:", cloudType, accountId, item.path);
+        // try {
+        //     (window as any).cloudFsApi.getFile(cloudType, accountId, item.path)
+        //         .then((fileContent: FileContent) => {
+        //             console.log("File content:", fileContent);
+        //             setFileBuffer(fileContent.content)
+        //             setFileName(fileContent.name)
+        //             setFileType(fileContent.type)
+        //             const blob = new Blob([fileContent.content], { type: fileContent.type });
+        //             const url = URL.createObjectURL(blob);
+        //             setFileUrl(url);
+        //         });
+        // } catch (err) {
+        //     console.error(err)
+        // }
+        // console.log("Opening file:", fileUrl)
+        // if (!fileUrl) return
+        // const newWindow = window.open(fileUrl, "_blank");
 
         const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
@@ -418,6 +449,61 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                     ))}
                 </div>
             </div>
+
+            <Button onClick={() => {
+
+                if (!tempGetFile || !clickedItem) {
+                    console.error("tempGetFile is not defined Or clickedItem is null");
+                    return;
+                }
+
+                console.log("Fetching file content:", cloudType, accountId, clickedItem.path);
+
+                if (cloudType && accountId) {
+                    tempGetFile(clickedItem.path, cloudType, accountId);
+                } else {
+                    // For local file system, just pass the current directory
+                    tempGetFile(clickedItem.path);
+                } 
+
+                // (window as any).cloudFsApi.getFile(cloudType, accountId, clickedItem.path)
+                //     .then((fileContent: FileContent) => {
+                //         console.log("File content:", fileContent);
+                //         if (tempGetFile) {
+                //             tempGetFile(fileContent)
+                //         }
+                //     })
+                //     .catch((err: Error) => {
+                //         console.error(err)
+                //     })
+            }}>
+                    testing purpose get
+            </Button>
+            
+            <Button
+                onClick={() => {
+                    if (!tempPostFile) {
+                        console.error("tempPostFile is not defined");
+                        return;
+                    }
+
+                    if (cloudType && accountId) {
+                        tempPostFile(cwd, cloudType, accountId);
+                    } else {
+                        // For local file system, just pass the current
+                        // directory as the parent path
+                        if (cwd) {
+                            tempPostFile(cwd);
+                        } else {
+                            // Handle the case where cwd is not defined
+                            console.error("cwd is not defined");
+                        }
+                    }
+                }}
+            >
+                testing purpose post
+            </Button>
+
 
             {/* Navigation and search */}
             <div className="flex items-center gap-1 p-4 bg-white dark:bg-slate-800">

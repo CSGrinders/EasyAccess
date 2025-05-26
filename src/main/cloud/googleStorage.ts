@@ -5,9 +5,9 @@ import { CloudStorage, AuthTokens, isValidToken } from './cloudStorage';
 import { saveCloudAccountLocaStorage } from './cloudManager';
 import { OAuth2Client } from 'google-auth-library';
 import { drive_v3, google } from 'googleapis';
-import { FileSystemItem } from "../../types/fileSystem";
+import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
-
+const { Readable } = require('stream');
 dotenv.config();
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -60,6 +60,48 @@ export class GoogleDriveStorage implements CloudStorage {
       }
     }
     return currentFolderId;
+  }
+
+  // convert the directory path to a folder ID that is used in the Google Drive API
+  private async getFileId(filePath: string): Promise<string> {
+    const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    
+    const dirs = filePath.split('/');
+
+    let currentFolderId = 'root';
+
+    for (const folderName of dirs) {
+      if (folderName === '') continue; // Skip empty parts (e.g., leading slash)
+
+      if (folderName === dirs[dirs.length - 1]) {
+        // If it's the last part, we want to get the file ID
+        const res = await drive.files.list({
+          q: `'${currentFolderId}' in parents and name='${folderName}'`,
+          fields: 'files(id)',
+        });
+
+        const files = res.data.files;
+        if (files && files.length > 0) {
+          return files[0].id || '';
+        } else {
+          throw new Error(`File "${folderName}" not found`);
+        }
+      }
+      
+      const res = await drive.files.list({
+        q: `'${currentFolderId}' in parents and name='${folderName}' and mimeType='application/vnd.google-apps.folder'`,
+        fields: 'files(id)',
+      });
+
+      const files = res.data.files;
+      if (files && files.length > 0) {
+        currentFolderId = files[0].id || '';
+      } else {
+        throw new Error(`Folder "${folderName}" not found`);
+      }
+    }
+    throw new Error(`File "${filePath}" not found`);
   }
 
   async readDir(dir: string): Promise<FileSystemItem[]> {
@@ -221,5 +263,69 @@ export class GoogleDriveStorage implements CloudStorage {
     console.log('New access token:', newAccessToken);
   
     return oauth2Client;
+  }
+
+  async getFile(filePath: string): Promise<FileContent> {
+    const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const fileId = await this.getFileId(filePath);
+    try {
+      const result = await drive.files.get({
+        fileId: fileId,
+        fields: 'mimeType'
+      });
+      const mimeType = result.data.mimeType; // maybe use mimetype from mime-types package?
+
+      const file = await drive.files.get(
+        {
+          fileId: fileId,
+          alt: 'media',
+        }, 
+        { responseType: 'arraybuffer' }
+      );
+      const data = Buffer.from(file.data as ArrayBuffer)
+
+      if (!data || !mimeType) {
+        throw new Error('File not found or empty');
+      }
+
+      const fileContent: FileContent = {
+        name: filePath.split('/').pop() || '',
+        content: data,
+        type: mimeType, // TODO: get the correct mime type
+      };
+      return fileContent;
+    } catch (err) {
+      throw err;
+    }
+  }
+
+  async postFile(fileName: string, folderPath: string, type: string, data: Buffer): Promise<void> {
+    const straem = await this.bufferToStream(data);
+    console.log('Posting file to Google Drive:', fileName, folderPath, type);
+    console.log("Data", data);
+    const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const parentFolderId = await this.getFolderId(folderPath);
+    console.log('Parent folder ID:', parentFolderId);
+    const res = await drive.files.create({
+      requestBody: {
+        name: fileName,
+        mimeType: type,
+        parents: [parentFolderId],
+      },
+      media: {
+        mimeType: type,
+        body: straem, 
+      },
+    });
+  
+    console.log(`Uploaded file ID: ${res.data.id}`);
+  }
+  private async bufferToStream(buffer: Buffer)  {
+    const readable = new Readable();
+    readable.push(buffer);
+    readable.push(null); // Signal end of stream
+    return readable;
   }
 }
