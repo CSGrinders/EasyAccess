@@ -138,6 +138,7 @@ export class DropboxStorage implements CloudStorage {
             const entries = response.result.entries;
         
             const fileSystemItems: FileSystemItem[] = entries.map(entry => ({
+                id: CLOUD_HOME + entry.path_lower, // Use path_lower for unique ID (Dropbox does NOT allow duplicate names)
                 name: entry.name,
                 isDirectory: entry['.tag'] === 'folder',
                 path: CLOUD_HOME + entry.path_lower,

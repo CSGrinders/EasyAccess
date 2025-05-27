@@ -127,6 +127,7 @@ export class GoogleDriveStorage implements CloudStorage {
           const filePath = dir === '/' ? `/${file.name}` : `${dir}/${file.name}`;
         
           return {
+            id: file.id || '', // Use file ID as unique identifier (Google allows duplicate names)
             name: file.name ?? '',
             isDirectory: file.mimeType === 'application/vnd.google-apps.folder',
             path: CLOUD_HOME + filePath,

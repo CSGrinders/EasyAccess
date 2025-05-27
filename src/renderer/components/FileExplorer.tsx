@@ -354,8 +354,8 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
         const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
         if (e.shiftKey && lastSelectedItem) {
-            const itemsPathList = sortedItems.map((i) => i.path);
-            const currentIndex = itemsPathList.indexOf(item.path);
+            const itemsPathList = sortedItems.map((i) => i.id); // TODO item path list to item id list?
+            const currentIndex = itemsPathList.indexOf(item.id); // TODO
             const lastIndex = itemsPathList.indexOf(lastSelectedItem);
 
             if (currentIndex !== -1 && lastIndex !== -1) {
@@ -384,16 +384,16 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
             }
         } else if (ctrlOrMeta) {
             const newSelectedItemsUpdate = new Set(selectedItems);
-            if (newSelectedItemsUpdate.has(item.path)) {
-                newSelectedItemsUpdate.delete(item.path);
+            if (newSelectedItemsUpdate.has(item.id)) {
+                newSelectedItemsUpdate.delete(item.id);
             } else {
-                newSelectedItemsUpdate.add(item.path);
+                newSelectedItemsUpdate.add(item.id);
             }
             setSelectedItems(newSelectedItemsUpdate);
-            setLastSelectedItem(item.path);
+            setLastSelectedItem(item.id);
         } else {
-            setSelectedItems(new Set([item.path]));
-            setLastSelectedItem(item.path);
+            setSelectedItems(new Set([item.id]));
+            setLastSelectedItem(item.id);
         }
     }
 
@@ -437,7 +437,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
         const itemsCurrentlyInBox = new Set<string>();
         const containerRect = containerRef.current.getBoundingClientRect();
 
-        itemRefs.current.forEach((element, path) => {
+        itemRefs.current.forEach((element, id) => {
             if (!element) return;
 
             const itemRect = element.getBoundingClientRect();
@@ -452,7 +452,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                 itemRight > box.left &&
                 itemTop < box.top + box.height &&
                 itemBottom > box.top) {
-                itemsCurrentlyInBox.add(path);
+                itemsCurrentlyInBox.add(id);
             }
         });
 
@@ -512,7 +512,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
 
         dragStartPosRef.current = {x: e.clientX, y: e.clientY}
 
-        const itemElement = itemRefs.current.get(item.path)
+        const itemElement = itemRefs.current.get(item.id)
         if (itemElement) {
             const rect = itemElement.getBoundingClientRect()
             mouseOffsetRef.current = {
@@ -521,15 +521,15 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
             }
         }
 
-        setDraggedItem(item.path)
+        setDraggedItem(item.id)
 
         let itemsToDrag: string[]
-        if (selectedItems.has(item.path)) {
+        if (selectedItems.has(item.id)) {
             itemsToDrag = Array.from(selectedItems)
         } else {
-            itemsToDrag = [item.path]
-            setSelectedItems(new Set([item.path]))
-            setLastSelectedItem(item.path)
+            itemsToDrag = [item.id]
+            setSelectedItems(new Set([item.id]))
+            setLastSelectedItem(item.id)
         }
 
         setDraggedItems(itemsToDrag)
@@ -581,9 +581,9 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
             let newDropTarget: string | null = null
 
             for (const item of sortedItems) {
-                if (draggedItemsRef.current.includes(item.path)) continue
+                if (draggedItemsRef.current.includes(item.id)) continue
 
-                const itemElement = itemRefs.current.get(item.path)
+                const itemElement = itemRefs.current.get(item.id)
                 if (!itemElement) continue
 
                 const itemRect = itemElement.getBoundingClientRect()
@@ -594,7 +594,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
 
                 if (relativeX >= itemLeft && relativeX <= itemRight &&
                     relativeY >= itemTop && relativeY <= itemBottom) {
-                    newDropTarget = item.path
+                    newDropTarget = item.id
                     break
                 }
             }
@@ -638,7 +638,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
             console.log(`Moving ${itemsToMove.length} items to ${dragStateRef.current.dropTarget}`)
             console.log("Items to move:", itemsToMove)
 
-            const targetItem = sortedItems.find((item) => item.path === dragStateRef.current.dropTarget)
+            const targetItem = sortedItems.find((item) => item.id === dragStateRef.current.dropTarget)
             if (targetItem && targetItem.isDirectory) {
                 console.log(`Target directory detected: ${targetItem.name}`)
                 // implement the actual move
@@ -713,7 +713,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
             // Ctrl+A or Cmd+A:
             if ((e.ctrlKey || e.metaKey) && e.key === "a") {
                 e.preventDefault()
-                const allItems = new Set(sortedItems.map((item) => item.path))
+                const allItems = new Set(sortedItems.map((item) => item.id))
                 setSelectedItems(allItems)
             }
 
@@ -792,7 +792,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                 //     .catch((err: Error) => {
                 //         console.error(err)
                 //     })
-                }}>
+            }}>
                     testing purpose get
                 </Button>
 
@@ -956,24 +956,24 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                     <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4">
                         {sortedItems.map((item) => {
                             const IconComponent = getFileIcon(item.name, item.isDirectory);
-                            const iconColor = getIconColor(item.name, item.isDirectory, selectedItems.has(item.path), dropTarget === item.path);
+                            const iconColor = getIconColor(item.name, item.isDirectory, selectedItems.has(item.id), dropTarget === item.id);
 
                             return (
                                 <div
-                                    key={item.path}
+                                    key={item.id}
                                     ref={(el) => {
-                                        if (el) itemRefs.current.set(item.path, el)
-                                        else itemRefs.current.delete(item.path)
+                                        if (el) itemRefs.current.set(item.id, el)
+                                        else itemRefs.current.delete(item.id)
                                     }}
                                     onClick={(e) => handleItemClick(e, item)}
                                     onMouseDown={(e) => handleItemMouseDown(e, item)}
                                     className={cn(
                                         "file-item flex flex-col items-center justify-center p-3 rounded-md cursor-pointer transition-all",
-                                        selectedItems.has(item.path)
+                                        selectedItems.has(item.id)
                                             ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700"
                                             : "hover:bg-slate-100  dark:hover:bg-slate-700 border border-transparent",
-                                        dropTarget === item.path && "ring-2 ring-green-500 bg-green-100 dark:bg-green-900/30 drop-target",
-                                        draggedItems.includes(item.path) && isDragging && "opacity-50",
+                                        dropTarget === item.id && "ring-2 ring-green-500 bg-green-100 dark:bg-green-900/30 drop-target",
+                                        draggedItems.includes(item.id) && isDragging && "opacity-50",
                                     )}
                                 >
                                     <div className="w-16 h-16 flex items-center justify-center mb-2">
@@ -985,10 +985,10 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                                         className={cn(
                                             "block w-full px-1 text-sm leading-tight text-center",
                                             "break-all line-clamp-2 min-h-[2.5rem]",
-                                            selectedItems.has(item.path)
+                                            selectedItems.has(item.id)
                                                 ? "text-blue-700 dark:text-blue-300 font-medium"
                                                 : "text-slate-800 dark:text-slate-200",
-                                            dropTarget === item.path && "text-green-700 dark:text-green-300",
+                                            dropTarget === item.id && "text-green-700 dark:text-green-300",
                                         )}
                                         title={item.name}
                                     >{item.name}</span>

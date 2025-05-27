@@ -211,14 +211,17 @@ export class OneDriveStorage implements CloudStorage {
         if (item.lastModifiedDateTime) {
           modifiedTime = new Date(item.lastModifiedDateTime).getTime();
         }
-        
-        return {
+
+        const fileItem : FileSystemItem = {
+          // id: item.id, // Use the OneDrive item ID as the unique identifier
+          id: item.id, // Use the OneDrive item ID or the path as the unique identifier (One Drive allows duplicate names)
           name: item.name,
           isDirectory: !!item.folder,
           path: CLOUD_HOME + itemPath,
           size: item.size || 0,
           modifiedTime: modifiedTime
         };
+        return fileItem;
       });
       
       console.log(`Retrieved ${allFiles.length} items from OneDrive:`, allFiles);

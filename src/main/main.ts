@@ -3,7 +3,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile } from './cloud/cloudManager';
 import { CloudType } from "@Types/cloudType";
-import { FileContent } from '@Types/fileSystem';
+import { FileContent, FileSystemItem } from '@Types/fileSystem';
 
 
 const createWindow = () => {
@@ -54,13 +54,14 @@ ipcMain.handle('cloud-post-file', async (_e, cloudType: CloudType, accountId: st
 
 ipcMain.handle('read-directory', async (_e, dirPath: string) => {
     const items = await fs.promises.readdir(dirPath, { withFileTypes: true })
-    return Promise.all(items.map(async item => ({
-        name: item.name,
-        isDirectory: item.isDirectory(),
-        path: path.join(dirPath, item.name),
-        size: (await fs.promises.stat(path.join(dirPath, item.name))).size,
-        modifiedTime: (await fs.promises.stat(path.join(dirPath, item.name))).mtimeMs
-    })))
+return Promise.all(items.map(async item => ({
+    id: item.name, // Using name as a simple ID, could be improved with a unique identifier
+    name: item.name,
+    isDirectory: item.isDirectory(),
+    path: path.join(dirPath, item.name),
+    size: (await fs.promises.stat(path.join(dirPath, item.name))).size,
+    modifiedTime: (await fs.promises.stat(path.join(dirPath, item.name))).mtimeMs
+})));
 })
 
 ipcMain.handle('get-file', async (_e, filePath: string) => {
