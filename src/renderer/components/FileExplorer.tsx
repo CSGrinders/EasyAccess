@@ -672,6 +672,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                         console.error("cwd is not defined");
                     }
                 }
+                // TODO Clear the fileCache in the HomePage?
             } else if (targetItem && !targetItem.isDirectory) {
                 console.log(`Target file detected: ${targetItem.name}`)
                 // implement the actual creating of folder and move both files?
