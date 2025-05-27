@@ -68,7 +68,6 @@ export function CanvasContainer({
 
     const handleMouseMove = (e: React.MouseEvent) => {
         if (!isDragging || !isPanMode || isAnimating) return;
-
         const dx = (e.clientX - dragStart.x) / zoomLevel;
         const dy = (e.clientY - dragStart.y) / zoomLevel;
         const HALF = CANVAS_SIZE / 2;
@@ -92,6 +91,7 @@ export function CanvasContainer({
         (e: WheelEvent) => {
             if (isAnimating) return;
             if (e.ctrlKey) {
+                if (boxMaximized) return;
                 e.preventDefault();
                 const zoomDelta = -e.deltaY * PINCH;
                 setZoomLevel(prev => {
@@ -103,6 +103,7 @@ export function CanvasContainer({
             const target = e.target as HTMLElement | null;
             if (target && target.closest(".box-container")) return;
 
+            if (boxMaximized) return;
             e.preventDefault();
 
             velocityRef.current.x += -e.deltaX / zoomLevel;
@@ -110,10 +111,11 @@ export function CanvasContainer({
 
             if (!frameRef.current) frameRef.current = requestAnimationFrame(step);
         },
-        [isAnimating, zoomLevel, step],
+        [isAnimating, zoomLevel, step, boxMaximized, setZoomLevel],
     );
 
     const goCenter = () => {
+        if (boxMaximized) return;
         setIsAnimating(true);
         const center = initialPosition.current;
         posRef.current = center;
