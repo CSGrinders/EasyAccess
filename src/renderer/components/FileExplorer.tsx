@@ -535,6 +535,20 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
         setDraggedItems(itemsToDrag)
         draggedItemsRef.current = itemsToDrag
 
+        if (!tempGetFile) {
+            console.error("tempGetFile is not defined");
+            return;
+        }
+
+        console.log("Fetching file content:", cloudType, accountId, item.path);
+
+        if (cloudType && accountId) {
+            tempGetFile(item.path, cloudType, accountId);
+        } else {
+            // For local file system, just pass the current directory
+            tempGetFile(item.path);
+        }
+
         document.addEventListener("mousemove", handleItemMouseMove)
         document.addEventListener("mouseup", handleItemMouseUp)
     }
@@ -640,8 +654,24 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
 
             const targetItem = sortedItems.find((item) => item.id === dragStateRef.current.dropTarget)
             if (targetItem && targetItem.isDirectory) {
-                console.log(`Target directory detected: ${targetItem.name}`)
+                console.log(`Target directory detected: ${targetItem.path}`)
                 // implement the actual move
+                if (!tempPostFile) {
+                    console.error("tempPostFile is not defined");
+                    return;
+                }
+                if (cloudType && accountId) {
+                    tempPostFile(targetItem.path, cloudType, accountId);
+                } else {
+                    // For local file system, just pass the current
+                    // directory as the parent path
+                    if (cwd) {
+                        tempPostFile(targetItem.path);
+                    } else {
+                        // Handle the case where cwd is not defined
+                        console.error("cwd is not defined");
+                    }
+                }
             } else if (targetItem && !targetItem.isDirectory) {
                 console.log(`Target file detected: ${targetItem.name}`)
                 // implement the actual creating of folder and move both files?

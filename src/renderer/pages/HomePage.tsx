@@ -27,9 +27,12 @@ const HomePage = () => {
     const [showStorageWindow, setShowStorageWindow] = useState(false);
     const [nextBoxId, setNextBoxId] = useState(3);
 
-    const [fileContentCache, setFileContentCache] = useState<FileContent | null>(null);
+    // const [fileContentCache, setFileContentCache] = useState<FileContent | null>(null);
+
+    const fileContentCacheRef = useRef<FileContent | null>(null);
 
     const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
+        const fileContentCache = fileContentCacheRef.current; // Get the current file content from the ref
         if (!fileContentCache) {
             console.log("No file content to upload");
             return;
@@ -67,7 +70,8 @@ const HomePage = () => {
             (window as any).fsApi.getFile(filePath)
                     .then((fileContent: FileContent) => {
                         console.log("File content:", fileContent);
-                        setFileContentCache(fileContent);
+                        fileContentCacheRef.current = fileContent; // Update the ref with the new file content
+                        // setFileContentCache(fileContent);
                     })
                     .catch((err: Error) => {
                         console.error(err)
@@ -78,8 +82,8 @@ const HomePage = () => {
             (window as any).cloudFsApi.getFile(cloudType, accountId, filePath)
                     .then((fileContent: FileContent) => {
                         console.log("File content:", fileContent);
-                        setFileContentCache(fileContent);
-
+                        fileContentCacheRef.current = fileContent; // Update the ref with the new file content
+                        // setFileContentCache(fileContent);
                     })
                     .catch((err: Error) => {
                         console.error(err)
