@@ -19,7 +19,7 @@ const HomePage = () => {
     const [zoomLevel, setZoomLevel] = useState(1);
     const [isPanMode, setIsPanMode] = useState(false);
     const [action, setAction] = useState("dashboard");
-    const [isMaximized, setIsMaximized] = useState(false);
+    const [maximizedBoxes, setMaximizedBoxes] = useState<Set<number>>(new Set());
     const [position, setPosition] = useState({x: 0, y: 0});
     const [nextZIndex, setNextZIndex] = useState(4);
     const canvasVwpRef = useRef<HTMLDivElement>({} as HTMLDivElement);
@@ -185,6 +185,21 @@ const HomePage = () => {
         setNextZIndex((prevZIndex) => prevZIndex + 1);
     };
 
+    const setBoxMaximized = (boxId: number, isMaximized: boolean) => {
+        setMaximizedBoxes(prev => {
+            const newSet = new Set(prev);
+            if (isMaximized) {
+                newSet.add(boxId);
+            } else {
+                newSet.delete(boxId);
+            }
+            return newSet;
+        });
+    };
+
+    // Check if any box is maximized
+    const anyBoxMaximized = maximizedBoxes.size > 0;
+
     return (
         <div className="flex flex-col h-screen bg-white dark:bg-gray-900 text-black dark:text-white">
             <header className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-md">
@@ -201,7 +216,7 @@ const HomePage = () => {
                         </div>
                     </div>
                     <CanvaSettings zoomLevel={zoomLevel} setZoomLevel={setZoomLevel} isPanMode={isPanMode}
-                                   setIsPanMode={setIsPanMode}/>
+                                   setIsPanMode={setIsPanMode} isBoxMaximized={anyBoxMaximized}/>
                 </div>
             </header>
             <main className="flex flex-1 overflow-hidden" ref={canvasVwpRef}>
@@ -216,7 +231,7 @@ const HomePage = () => {
                             className="relative"
                             position={position}
                             setPosition={setPosition}
-                            boxMaximized={isMaximized}
+                            boxMaximized={anyBoxMaximized}
                         >
                             {storageBoxes.map((box) => (
                                 <StorageBox
@@ -228,8 +243,8 @@ const HomePage = () => {
                                     viewportRef={canvasVwpRef as React.RefObject<HTMLDivElement>}
                                     canvasZoom={zoomLevel}
                                     canvasPan={position}
-                                    isMaximized={isMaximized}
-                                    setIsMaximized={setIsMaximized}
+                                    isMaximized={maximizedBoxes.has(box.id)}
+                                    setIsMaximized={(isMaximized: boolean) => setBoxMaximized(box.id, isMaximized)}
                                     tempPostFile={tempPostFile}
                                     tempGetFile={tempGetFile}
                                 />

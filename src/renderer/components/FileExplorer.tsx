@@ -181,7 +181,6 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
     })
     const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-
     const filteredItems = searchQuery
         ? items.filter(
             (item) =>

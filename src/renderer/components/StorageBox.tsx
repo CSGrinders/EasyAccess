@@ -16,9 +16,16 @@ import {FileExplorer} from "@Components/FileExplorer";
 export const StorageBox = memo(StorageBoxInner, areEqual);
 function areEqual(prev: StorageBoxProps, next: StorageBoxProps) {
     return (
-        prev.box      === next.box &&
+        prev.box.id === next.box.id &&
+        prev.box.position === next.box.position &&
+        prev.box.size === next.box.size &&
+        prev.box.zIndex === next.box.zIndex &&
         prev.isMaximized === next.isMaximized &&
-        prev.viewportSize === next.viewportSize
+        prev.viewportSize.width === next.viewportSize.width &&
+        prev.viewportSize.height === next.viewportSize.height &&
+        prev.canvasZoom === next.canvasZoom &&
+        prev.canvasPan.x === next.canvasPan.x &&
+        prev.canvasPan.y === next.canvasPan.y
     );
 }
 
@@ -49,6 +56,35 @@ function StorageBoxInner({
 
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const boxRef = useRef<HTMLDivElement>(null);
+
+
+    const getMaximizedState = () => {
+        if (viewportSize.width > 0 && viewportSize.height > 0 && canvasZoom > 0) {
+            const maximizedWidth = viewportSize.width / canvasZoom;
+            const maximizedHeight = viewportSize.height / canvasZoom;
+
+            const newX = -canvasPan.x - (maximizedWidth / 2);
+            const newY = -canvasPan.y - (maximizedHeight / 2);
+
+            return {
+                size: { width: maximizedWidth, height: maximizedHeight },
+                position: { x: newX, y: newY }
+            };
+        }
+        return null;
+    };
+
+    // Update maximized box when canvas changes
+    useEffect(() => {
+        console.log(title);
+        if (!isMaximized) return;
+        console.log(title + "why?2");
+        const maximizedState = getMaximizedState();
+        if (maximizedState) {
+            setSize(maximizedState.size);
+            setPosition(maximizedState.position);
+        }
+    }, [isMaximized, viewportSize, canvasPan, canvasZoom]);
 
     const handleHeaderMouseDown = (e: React.MouseEvent) => {
         e.stopPropagation();

@@ -19,7 +19,7 @@ export interface StorageBoxProps {
     canvasZoom: number;
     canvasPan: { x: number; y: number };
     isMaximized: boolean;
-    setIsMaximized: React.Dispatch<React.SetStateAction<boolean>>;
+    setIsMaximized: (isMaximized: boolean) => void;
     // tempPostFile: (cloudType: CloudType, accountId: string, parentPath: string) => void;
     // tempGetFile: (fileContent: FileContent) => void;
     tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void
