@@ -44,14 +44,13 @@ function StorageBoxInner({
                               setIsMaximized
                           }: StorageBoxProps) {
    const {id, title, content, type, icon} = box;
-   // const [position, setPosition] = useState(box.position);
+
    const positionRef = useRef(box.position);
-   // const [size, setSize] = useState(box.size);
    const sizeRef = useRef(box.size);
+   const prevStateRef = useRef({position: box.position, size: box.size});
+
    const [isDragging, setIsDragging] = useState(false);
    const [dragStart, setDragStart] = useState({x: 0, y: 0});
-   // const [previousState, setPreviousState] = useState({position: box.position, size: box.size});
-   const prevStateRef = useRef({position: box.position, size: box.size});
    const [isResizing, setIsResizing] = useState(false);
    const [resizeDirection, setResizeDirection] = useState<string | null>(null);
    const [resizeStart, setResizeStart] = useState({x: 0, y: 0});
@@ -79,6 +78,15 @@ function StorageBoxInner({
         return null;
     };
 
+    // update box style based on position and size refs
+    function updateBox() {
+        if (boxRef.current) {
+            boxRef.current.style.transform = `translate3d(${positionRef.current.x}px, ${positionRef.current.y}px, 0)`;
+            boxRef.current.style.width = `${sizeRef.current.width}px`;
+            boxRef.current.style.height = `${sizeRef.current.height}px`;
+        }
+    }
+
     // Update maximized box when canvas changes
     useEffect(() => {
         console.log(title);
@@ -86,8 +94,9 @@ function StorageBoxInner({
         console.log(title + "why?2");
         const maximizedState = getMaximizedState();
         if (maximizedState) {
-            setSize(maximizedState.size);
-            setPosition(maximizedState.position);
+            sizeRef.current = maximizedState.size;
+            positionRef.current = maximizedState.position;
+            updateBox();
         }
     }, [isMaximized, viewportSize, canvasPan, canvasZoom]);
 
@@ -100,15 +109,16 @@ function StorageBoxInner({
        onFocus(id);
       
        if (isMaximized) {
+            console.log("Restoring previous state for box:", title);
            positionRef.current = prevStateRef.current.position;
-           // setSize(previousState.size);
            sizeRef.current = prevStateRef.current.size;
            setIsMaximized(false);
+            updateBox();
            return;
        }
       
        setIsDragging(true);
-       // Store the offset from mouse to top-left corner of the element
+
        setDragStart({
            x: e.clientX - positionRef.current.x,
            y: e.clientY - positionRef.current.y
@@ -141,10 +151,7 @@ function StorageBoxInner({
            // Update the ref
            positionRef.current = { x: newX, y: newY };
           
-           // Update the transform style
-           if (boxRef.current) {
-               boxRef.current.style.transform = `translate3d(${newX}px, ${newY}px, 0)`;
-           }
+            updateBox();
        } else if (isResizing && resizeDirection) {
            const dx = e.clientX - resizeStart.x;
            const dy = e.clientY - resizeStart.y;
@@ -173,22 +180,10 @@ function StorageBoxInner({
                    newY = resizeStartPosition.y + dy;
            }
           
-           // setSize({width: newWidth, height: newHeight});
            sizeRef.current = {width: newWidth, height: newHeight};
            positionRef.current = { x: newX, y: newY };
           
-           // // Update position ref for resize operations that change position
-           // if (resizeDirection.includes("w") || resizeDirection.includes("n")) {
-           //     positionRef.current = { x: newX, y: newY };
-           // }
-
-
-           // Update the transform style
-           if (boxRef.current) {
-               boxRef.current.style.transform = `translate3d(${newX}px, ${newY}px, 0)`;
-               boxRef.current.style.width = `${newWidth}px`;
-               boxRef.current.style.height = `${newHeight}px`;
-           }
+            updateBox();
        }
    };
 
@@ -200,7 +195,7 @@ function StorageBoxInner({
            boxRef.current.style.width = `${sizeRef.current.width}px`;
            boxRef.current.style.height = `${sizeRef.current.height}px`;
        }
-   }, []); // Run once on mount
+   }, []); 
 
 
    const handleResizeStart = (e: React.MouseEvent, direction: string) => {
@@ -211,13 +206,8 @@ function StorageBoxInner({
        setIsResizing(true);
        setResizeDirection(direction);
        setResizeStart({x: e.clientX, y: e.clientY});
-       // setResizeStartSize(size);
        setResizeStartSize(sizeRef.current);
        setResizeStartPosition(positionRef.current);
-       // if (boxRef.current) {
-       //     const rect = boxRef.current.getBoundingClientRect();
-       //     setResizeStartPosition({ x: rect.left, y: rect.top }); // Extract position from the ref
-       // }
    };
 
 
@@ -230,26 +220,15 @@ function StorageBoxInner({
 
 
        if (isMaximized) {
-           // setSize(previousState.size);
            sizeRef.current = prevStateRef.current.size;
            positionRef.current = prevStateRef.current.position;
            setIsMaximized(false);
            console.log("Restoring previous state:", prevStateRef.current);
-           if (boxRef.current) {
-               boxRef.current.style.transform = `translate3d(${positionRef.current.x}px, ${positionRef.current.y}px, 0)`;
-               boxRef.current.style.width = `${sizeRef.current.width}px`;
-               boxRef.current.style.height = `${sizeRef.current.height}px`;
-           }
        } else {
            prevStateRef.current = {
                position: positionRef.current,
                size: sizeRef.current
            };
-           // setPreviousState({
-           //     position: positionRef.current,
-           //     // size,
-           //     size: sizeRef.current
-           // });
 
 
            if (viewportSize.width > 0 && viewportSize.height > 0 && canvasZoom > 0) {
@@ -270,13 +249,8 @@ function StorageBoxInner({
                console.warn("Cannot maximize: viewportSize or canvasZoom is invalid.", viewportSize, canvasZoom);
            }
 
-
-           if (boxRef.current) {
-               boxRef.current.style.transform = `translate3d(${positionRef.current.x}px, ${positionRef.current.y}px, 0)`;
-               boxRef.current.style.width = `${sizeRef.current.width}px`;
-               boxRef.current.style.height = `${sizeRef.current.height}px`;
-           }
        }
+       updateBox();
    };
 
 
@@ -339,8 +313,6 @@ function StorageBoxInner({
                isMaximized ? "border-blue-500 dark:border-blue-400" : "rounded-xl"
            )}
            style={{
-               // width: `${size.width}px`,
-               // height: `${size.height}px`,
                zIndex: box.zIndex,
                opacity,
            }}
