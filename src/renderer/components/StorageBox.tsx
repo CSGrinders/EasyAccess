@@ -41,7 +41,9 @@ function StorageBoxInner({
                               canvasZoom,
                               canvasPan,
                               isMaximized,
-                              setIsMaximized
+                              setIsMaximized,
+                               tempPostFile,
+                               tempGetFile
                           }: StorageBoxProps) {
    const {id, title, content, type, icon} = box;
 
@@ -391,18 +393,17 @@ function StorageBoxInner({
            </div>
 
 
-           <div className="flex flex-1 overflow-hidden bg-slate-50 dark:bg-slate-900/50">
-               {type == "local" ?  (
-                           <>
-                           <FileExplorer/>
-                           </> // TODO: Implement local file explorer
-               ) : (
-                   <>
-                   <FileExplorer cloudType={box.cloudType} accountId={box.accountId} />
-                   </>
-               )}
-           </div>
-
+            <div className="flex flex-1 overflow-hidden bg-slate-50 dark:bg-slate-900/50">
+                {type == "local" ?  (
+                            <>
+                            <FileExplorer tempGetFile={tempGetFile} tempPostFile={tempPostFile}/> 
+                            </> // TODO: Implement local file explorer
+                ) : (
+                    <>
+                    <FileExplorer cloudType={box.cloudType} accountId={box.accountId} tempGetFile={tempGetFile} tempPostFile={tempPostFile}/>
+                    </>
+                )}
+            </div>
 
            {!isMaximized && (
                <div className="absolute bottom-1 right-2 text-xs text-slate-400 pointer-events-none">

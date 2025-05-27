@@ -796,60 +796,6 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                 </div>
             </div>
 
-
-            <Button onClick={() => {
-                if (!tempGetFile || !clickedItem) {
-                    console.error("tempGetFile is not defined Or clickedItem is null");
-                    return;
-                }
-
-                console.log("Fetching file content:", cloudType, accountId, clickedItem.path);
-
-                if (cloudType && accountId) {
-                    tempGetFile(clickedItem.path, cloudType, accountId);
-                } else {
-                    // For local file system, just pass the current directory
-                    tempGetFile(clickedItem.path);
-                } 
-
-                // (window as any).cloudFsApi.getFile(cloudType, accountId, clickedItem.path)
-                //     .then((fileContent: FileContent) => {
-                //         console.log("File content:", fileContent);
-                //         if (tempGetFile) {
-                //             tempGetFile(fileContent)
-                //         }
-                //     })
-                //     .catch((err: Error) => {
-                //         console.error(err)
-                //     })
-            }}>
-                    testing purpose get
-                </Button>
-
-                <Button
-                onClick={() => {
-                    if (!tempPostFile) {
-                        console.error("tempPostFile is not defined");
-                        return;
-                    }
-
-                    if (cloudType && accountId) {
-                        tempPostFile(cwd, cloudType, accountId);
-                    } else {
-                        // For local file system, just pass the current
-                        // directory as the parent path
-                        if (cwd) {
-                            tempPostFile(cwd);
-                        } else {
-                            // Handle the case where cwd is not defined
-                            console.error("cwd is not defined");
-                        }
-                    }
-                }}
-                >
-                testing purpose post
-                </Button>
-
             {/* Toolbar */}
             <div className="flex items-center gap-1 p-4 bg-white dark:bg-slate-800">
                 <Button
