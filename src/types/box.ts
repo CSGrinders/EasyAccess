@@ -1,6 +1,6 @@
 import type React from "react";
 import { CloudType } from "./cloudType";
-import { FileContent } from "./fileSystem";
+import {FileContent, FileSystemItem} from "./fileSystem";
 
 export const WINDOW_SIZES = {
     medium: {width: 480, height: 360},
@@ -40,6 +40,7 @@ export interface StorageBoxData {
     zIndex: number
     cloudType?: CloudType
     accountId?: string
+
 }
 
 export interface StorageWideWindowProps {
