@@ -41,7 +41,7 @@ import {
     Calendar,
     Layers
 } from "lucide-react"
-import type {FileSystemItem} from "@Types/fileSystem"
+import type {FileContent, FileSystemItem} from "@Types/fileSystem"
 import {Input} from "@/components/ui/input"
 import {Button} from "@/components/ui/button"
 import {cn} from "@/lib/utils"
@@ -50,6 +50,9 @@ import {CLOUD_HOME, CloudType} from "@Types/cloudType"
 interface FileExplorerProps {
     cloudType?: CloudType
     accountId?: string
+    tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void
+    tempGetFile?: (filePath: string, cloudType?: CloudType, accountId?: string) => void
+    // tempGetFile?: (fileContent: FileContent) => void
 }
 
 
@@ -138,7 +141,7 @@ const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected
     return "text-gray-400";
 };
 
-export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
+export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: FileExplorerProps) {
     const [items, setItems] = useState<FileSystemItem[]>([])
     const [cwd, setCwd] = useState<string>("")
     const [history, setHistory] = useState<string[]>([])
@@ -154,6 +157,8 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
     const [selectionEnd, setSelectionEnd] = useState({x: 0, y: 0})
     const [selectionBox, setSelectionBox] = useState({left: 0, top: 0, width: 0, height: 0})
     const [isAdditiveDrag, setIsAdditiveDrag] = useState(false);
+    const [clickedItem, setClickedItem] = useState<FileSystemItem | null>(null);
+
     const selectionSnapshotRef = useRef<Set<string>>(new Set());
 
     const [isDragging, setIsDragging] = useState(false)
@@ -319,11 +324,37 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
             return
         }
 
+        if (!item.isDirectory) {
+            // If it's a file, set it as the clicked item
+            console.log("Clicked on file:", item.name);
+            setClickedItem(item)
+        }
+
+
+        // console.log("Fetching file content from cloud account:", cloudType, accountId, item.path);
+        // try {
+        //     (window as any).cloudFsApi.getFile(cloudType, accountId, item.path)
+        //         .then((fileContent: FileContent) => {
+        //             console.log("File content:", fileContent);
+        //             setFileBuffer(fileContent.content)
+        //             setFileName(fileContent.name)
+        //             setFileType(fileContent.type)
+        //             const blob = new Blob([fileContent.content], { type: fileContent.type });
+        //             const url = URL.createObjectURL(blob);
+        //             setFileUrl(url);
+        //         });
+        // } catch (err) {
+        //     console.error(err)
+        // }
+        // console.log("Opening file:", fileUrl)
+        // if (!fileUrl) return
+        // const newWindow = window.open(fileUrl, "_blank");
+
         const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
         if (e.shiftKey && lastSelectedItem) {
-            const itemsPathList = sortedItems.map((i) => i.path);
-            const currentIndex = itemsPathList.indexOf(item.path);
+            const itemsPathList = sortedItems.map((i) => i.id); // TODO item path list to item id list?
+            const currentIndex = itemsPathList.indexOf(item.id); // TODO
             const lastIndex = itemsPathList.indexOf(lastSelectedItem);
 
             if (currentIndex !== -1 && lastIndex !== -1) {
@@ -352,16 +383,16 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
             }
         } else if (ctrlOrMeta) {
             const newSelectedItemsUpdate = new Set(selectedItems);
-            if (newSelectedItemsUpdate.has(item.path)) {
-                newSelectedItemsUpdate.delete(item.path);
+            if (newSelectedItemsUpdate.has(item.id)) {
+                newSelectedItemsUpdate.delete(item.id);
             } else {
-                newSelectedItemsUpdate.add(item.path);
+                newSelectedItemsUpdate.add(item.id);
             }
             setSelectedItems(newSelectedItemsUpdate);
-            setLastSelectedItem(item.path);
+            setLastSelectedItem(item.id);
         } else {
-            setSelectedItems(new Set([item.path]));
-            setLastSelectedItem(item.path);
+            setSelectedItems(new Set([item.id]));
+            setLastSelectedItem(item.id);
         }
     }
 
@@ -405,7 +436,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
         const itemsCurrentlyInBox = new Set<string>();
         const containerRect = containerRef.current.getBoundingClientRect();
 
-        itemRefs.current.forEach((element, path) => {
+        itemRefs.current.forEach((element, id) => {
             if (!element) return;
 
             const itemRect = element.getBoundingClientRect();
@@ -420,7 +451,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                 itemRight > box.left &&
                 itemTop < box.top + box.height &&
                 itemBottom > box.top) {
-                itemsCurrentlyInBox.add(path);
+                itemsCurrentlyInBox.add(id);
             }
         });
 
@@ -480,7 +511,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
 
         dragStartPosRef.current = {x: e.clientX, y: e.clientY}
 
-        const itemElement = itemRefs.current.get(item.path)
+        const itemElement = itemRefs.current.get(item.id)
         if (itemElement) {
             const rect = itemElement.getBoundingClientRect()
             mouseOffsetRef.current = {
@@ -489,19 +520,33 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
             }
         }
 
-        setDraggedItem(item.path)
+        setDraggedItem(item.id)
 
         let itemsToDrag: string[]
-        if (selectedItems.has(item.path)) {
+        if (selectedItems.has(item.id)) {
             itemsToDrag = Array.from(selectedItems)
         } else {
-            itemsToDrag = [item.path]
-            setSelectedItems(new Set([item.path]))
-            setLastSelectedItem(item.path)
+            itemsToDrag = [item.id]
+            setSelectedItems(new Set([item.id]))
+            setLastSelectedItem(item.id)
         }
 
         setDraggedItems(itemsToDrag)
         draggedItemsRef.current = itemsToDrag
+
+        if (!tempGetFile) {
+            console.error("tempGetFile is not defined");
+            return;
+        }
+
+        console.log("Fetching file content:", cloudType, accountId, item.path);
+
+        if (cloudType && accountId) {
+            tempGetFile(item.path, cloudType, accountId);
+        } else {
+            // For local file system, just pass the current directory
+            tempGetFile(item.path);
+        }
 
         document.addEventListener("mousemove", handleItemMouseMove)
         document.addEventListener("mouseup", handleItemMouseUp)
@@ -549,9 +594,9 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
             let newDropTarget: string | null = null
 
             for (const item of sortedItems) {
-                if (draggedItemsRef.current.includes(item.path)) continue
+                if (draggedItemsRef.current.includes(item.id)) continue
 
-                const itemElement = itemRefs.current.get(item.path)
+                const itemElement = itemRefs.current.get(item.id)
                 if (!itemElement) continue
 
                 const itemRect = itemElement.getBoundingClientRect()
@@ -562,7 +607,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
 
                 if (relativeX >= itemLeft && relativeX <= itemRight &&
                     relativeY >= itemTop && relativeY <= itemBottom) {
-                    newDropTarget = item.path
+                    newDropTarget = item.id
                     break
                 }
             }
@@ -606,10 +651,27 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
             console.log(`Moving ${itemsToMove.length} items to ${dragStateRef.current.dropTarget}`)
             console.log("Items to move:", itemsToMove)
 
-            const targetItem = sortedItems.find((item) => item.path === dragStateRef.current.dropTarget)
+            const targetItem = sortedItems.find((item) => item.id === dragStateRef.current.dropTarget)
             if (targetItem && targetItem.isDirectory) {
-                console.log(`Target directory detected: ${targetItem.name}`)
+                console.log(`Target directory detected: ${targetItem.path}`)
                 // implement the actual move
+                if (!tempPostFile) {
+                    console.error("tempPostFile is not defined");
+                    return;
+                }
+                if (cloudType && accountId) {
+                    tempPostFile(targetItem.path, cloudType, accountId);
+                } else {
+                    // For local file system, just pass the current
+                    // directory as the parent path
+                    if (cwd) {
+                        tempPostFile(targetItem.path);
+                    } else {
+                        // Handle the case where cwd is not defined
+                        console.error("cwd is not defined");
+                    }
+                }
+                // TODO Clear the fileCache in the HomePage?
             } else if (targetItem && !targetItem.isDirectory) {
                 console.log(`Target file detected: ${targetItem.name}`)
                 // implement the actual creating of folder and move both files?
@@ -681,7 +743,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
             // Ctrl+A or Cmd+A:
             if ((e.ctrlKey || e.metaKey) && e.key === "a") {
                 e.preventDefault()
-                const allItems = new Set(sortedItems.map((item) => item.path))
+                const allItems = new Set(sortedItems.map((item) => item.id))
                 setSelectedItems(allItems)
             }
 
@@ -733,6 +795,60 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                     ))}
                 </div>
             </div>
+
+
+            <Button onClick={() => {
+                if (!tempGetFile || !clickedItem) {
+                    console.error("tempGetFile is not defined Or clickedItem is null");
+                    return;
+                }
+
+                console.log("Fetching file content:", cloudType, accountId, clickedItem.path);
+
+                if (cloudType && accountId) {
+                    tempGetFile(clickedItem.path, cloudType, accountId);
+                } else {
+                    // For local file system, just pass the current directory
+                    tempGetFile(clickedItem.path);
+                } 
+
+                // (window as any).cloudFsApi.getFile(cloudType, accountId, clickedItem.path)
+                //     .then((fileContent: FileContent) => {
+                //         console.log("File content:", fileContent);
+                //         if (tempGetFile) {
+                //             tempGetFile(fileContent)
+                //         }
+                //     })
+                //     .catch((err: Error) => {
+                //         console.error(err)
+                //     })
+            }}>
+                    testing purpose get
+                </Button>
+
+                <Button
+                onClick={() => {
+                    if (!tempPostFile) {
+                        console.error("tempPostFile is not defined");
+                        return;
+                    }
+
+                    if (cloudType && accountId) {
+                        tempPostFile(cwd, cloudType, accountId);
+                    } else {
+                        // For local file system, just pass the current
+                        // directory as the parent path
+                        if (cwd) {
+                            tempPostFile(cwd);
+                        } else {
+                            // Handle the case where cwd is not defined
+                            console.error("cwd is not defined");
+                        }
+                    }
+                }}
+                >
+                testing purpose post
+                </Button>
 
             {/* Toolbar */}
             <div className="flex items-center gap-1 p-4 bg-white dark:bg-slate-800">
@@ -870,24 +986,24 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                     <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4">
                         {sortedItems.map((item) => {
                             const IconComponent = getFileIcon(item.name, item.isDirectory);
-                            const iconColor = getIconColor(item.name, item.isDirectory, selectedItems.has(item.path), dropTarget === item.path);
+                            const iconColor = getIconColor(item.name, item.isDirectory, selectedItems.has(item.id), dropTarget === item.id);
 
                             return (
                                 <div
-                                    key={item.path}
+                                    key={item.id}
                                     ref={(el) => {
-                                        if (el) itemRefs.current.set(item.path, el)
-                                        else itemRefs.current.delete(item.path)
+                                        if (el) itemRefs.current.set(item.id, el)
+                                        else itemRefs.current.delete(item.id)
                                     }}
                                     onClick={(e) => handleItemClick(e, item)}
                                     onMouseDown={(e) => handleItemMouseDown(e, item)}
                                     className={cn(
                                         "file-item flex flex-col items-center justify-center p-3 rounded-md cursor-pointer transition-all",
-                                        selectedItems.has(item.path)
+                                        selectedItems.has(item.id)
                                             ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700"
                                             : "hover:bg-slate-100  dark:hover:bg-slate-700 border border-transparent",
-                                        dropTarget === item.path && "ring-2 ring-green-500 bg-green-100 dark:bg-green-900/30 drop-target",
-                                        draggedItems.includes(item.path) && isDragging && "opacity-50",
+                                        dropTarget === item.id && "ring-2 ring-green-500 bg-green-100 dark:bg-green-900/30 drop-target",
+                                        draggedItems.includes(item.id) && isDragging && "opacity-50",
                                     )}
                                 >
                                     <div className="w-16 h-16 flex items-center justify-center mb-2">
@@ -899,10 +1015,10 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                                         className={cn(
                                             "block w-full px-1 text-sm leading-tight text-center",
                                             "break-all line-clamp-2 min-h-[2.5rem]",
-                                            selectedItems.has(item.path)
+                                            selectedItems.has(item.id)
                                                 ? "text-blue-700 dark:text-blue-300 font-medium"
                                                 : "text-slate-800 dark:text-slate-200",
-                                            dropTarget === item.path && "text-green-700 dark:text-green-300",
+                                            dropTarget === item.id && "text-green-700 dark:text-green-300",
                                         )}
                                         title={item.name}
                                     >{item.name}</span>
