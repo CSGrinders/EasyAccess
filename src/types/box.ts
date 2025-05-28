@@ -1,6 +1,6 @@
 import type React from "react";
 import { CloudType } from "./cloudType";
-import { FileContent } from "./fileSystem";
+import {FileContent, FileSystemItem} from "./fileSystem";
 
 export const WINDOW_SIZES = {
     medium: {width: 480, height: 360},
@@ -24,6 +24,7 @@ export interface StorageBoxProps {
     // tempGetFile: (fileContent: FileContent) => void;
     tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void
     tempGetFile?: (filePath: string, cloudType?: CloudType, accountId?: string) => void
+    onBoxTransfer?: (sourceItems: any[], targetBoxId: number, targetPath?: string) => void;
 }
 
 export interface StorageBoxData {
@@ -32,10 +33,6 @@ export interface StorageBoxData {
     type: string
     position: { x: number; y: number }
     size: { width: number; height: number }
-    content: {
-        folders: string[]
-        files: string[]
-    }
     icon?: React.ReactNode
     zIndex: number
     cloudType?: CloudType
