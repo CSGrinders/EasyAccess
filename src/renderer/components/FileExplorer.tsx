@@ -47,12 +47,16 @@ import {Button} from "@/components/ui/button"
 import {cn} from "@/lib/utils"
 import {CLOUD_HOME, CloudType} from "@Types/cloudType"
 import { Progress } from "./ui/progress"
+import {useBoxDrag} from "@/contexts/BoxDragContext";
 
 interface FileExplorerProps {
     cloudType?: CloudType
     accountId?: string
     tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void
     tempGetFile?: (filePath: string, cloudType?: CloudType, accountId?: string) => void
+    boxId: number
+    isBoxToBoxTransfer?: boolean
+    onCurrentPathChange?: (currentPath: string) => void
     // tempGetFile?: (fileContent: FileContent) => void
 }
 
@@ -142,7 +146,7 @@ const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected
     return "text-gray-400";
 };
 
-export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: FileExplorerProps) {
+export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, onCurrentPathChange}: FileExplorerProps) {
     const [items, setItems] = useState<FileSystemItem[]>([])
     const [cwd, setCwd] = useState<string>("")
     const [history, setHistory] = useState<string[]>([])
@@ -174,6 +178,8 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
     const mouseOffsetRef = useRef({x: 0, y: 0})
     const draggedItemsRef = useRef<string[]>([])
 
+    const BoxDrag = useBoxDrag();
+
     const dragStateRef = useRef({
         isDragging: false,
         dragStarted: false,
@@ -181,6 +187,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
         lastDropTarget: null as string | null
     })
     const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const boxDragTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
     const filteredItems = searchQuery
         ? items.filter(
@@ -218,6 +225,12 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
 
     useEffect(() => {
         if (!cwd) return
+
+        setIsLoading(true)
+        // Notify parent about current path change for drag box-to-box
+        if (onCurrentPathChange) {
+            onCurrentPathChange(cwd)
+        }
 
         if (cloudType && accountId) {
             // Fetch files from the cloud account
@@ -525,7 +538,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
     }
 
     const handleItemMouseDown = (e: React.MouseEvent, item: FileSystemItem) => {
-        if (e.button !== 0) return
+        if (e.button !== 0) return;
 
         dragStateRef.current = {
             isDragging: false,
@@ -559,6 +572,21 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
         setDraggedItems(itemsToDrag)
         draggedItemsRef.current = itemsToDrag
 
+        if (!tempGetFile) {
+            console.error("tempGetFile is not defined");
+            return;
+        }
+
+        console.log("Fetching file content:", cloudType, accountId, item.path);
+
+        //TODO FIX item click for getfile when is not dragging
+        if (cloudType && accountId) {
+            tempGetFile(item.path, cloudType, accountId);
+        } else {
+            // For local file system, just pass the current directory
+            tempGetFile(item.path);
+        }
+
         document.addEventListener("mousemove", handleItemMouseMove)
         document.addEventListener("mouseup", handleItemMouseUp)
     }
@@ -582,6 +610,18 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                 dragStateRef.current.isDragging = true
                 setIsDragging(true)
                 // TODO maybe implement saving the dragged items to a ref and load the contents of them here?
+
+                // Start box drag with the dragged items
+                const draggedFileItems = sortedItems.filter(item =>
+                    draggedItemsRef.current.includes(item.id)
+                );
+                BoxDrag.startBoxDrag(
+                    draggedFileItems,
+                    boxId,
+                    cloudType,
+                    accountId,
+                    { x: e.clientX, y: e.clientY }
+                );
             } else {
                 return
             }
@@ -591,6 +631,9 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
             x: e.clientX - mouseOffsetRef.current.x,
             y: e.clientY - mouseOffsetRef.current.y,
         })
+
+        //Update cotext of box drag position
+        BoxDrag.updateDragPosition({ x: e.clientX, y: e.clientY });
 
         if (throttleTimeoutRef.current) {
             clearTimeout(throttleTimeoutRef.current)
@@ -603,27 +646,33 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
             const relativeX = e.clientX - containerRect.left
             const relativeY = e.clientY - containerRect.top + containerRef.current.scrollTop
 
+            const isWithinContainer = e.clientX >= containerRect.left &&
+                e.clientX <= containerRect.right &&
+                e.clientY >= containerRect.top &&
+                e.clientY <= containerRect.bottom;
+
             let newDropTarget: string | null = null
 
-            for (const item of sortedItems) {
-                if (draggedItemsRef.current.includes(item.id)) continue
+            if (isWithinContainer) {
+                for (const item of sortedItems) {
+                    if (draggedItemsRef.current.includes(item.id)) continue
 
-                const itemElement = itemRefs.current.get(item.id)
-                if (!itemElement) continue
+                    const itemElement = itemRefs.current.get(item.id)
+                    if (!itemElement) continue
 
-                const itemRect = itemElement.getBoundingClientRect()
-                const itemLeft = itemRect.left - containerRect.left
-                const itemTop = itemRect.top - containerRect.top + containerRef.current.scrollTop
-                const itemRight = itemLeft + itemRect.width
-                const itemBottom = itemTop + itemRect.height
+                    const itemRect = itemElement.getBoundingClientRect()
+                    const itemLeft = itemRect.left - containerRect.left
+                    const itemTop = itemRect.top - containerRect.top + containerRef.current.scrollTop
+                    const itemRight = itemLeft + itemRect.width
+                    const itemBottom = itemTop + itemRect.height
 
-                if (relativeX >= itemLeft && relativeX <= itemRight &&
-                    relativeY >= itemTop && relativeY <= itemBottom) {
-                    newDropTarget = item.id
-                    break
+                    if (relativeX >= itemLeft && relativeX <= itemRight &&
+                        relativeY >= itemTop && relativeY <= itemBottom) {
+                        newDropTarget = item.id
+                        break
+                    }
                 }
             }
-
 
             updateDropTarget(newDropTarget)
 
@@ -653,6 +702,9 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
         console.log("dragStarted:", dragStateRef.current.dragStarted)
         console.log("isDragging:", dragStateRef.current.isDragging)
         console.log("dropTarget:", dragStateRef.current.dropTarget)
+
+        // Temporal variable to store the drag state before resetting it
+        const wasDragStarted = dragStateRef.current.dragStarted;
 
         // Check if this was actually a drag that should trigger a move
         if (dragStateRef.current.dragStarted &&
@@ -684,16 +736,17 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                         console.error("cwd is not defined");
                     }
                 }
+
                 // TODO Clear the fileCache in the HomePage?
             } else if (targetItem && !targetItem.isDirectory) {
                 console.log(`Target file detected: ${targetItem.name}`)
                 // implement the actual creating of folder and move both files?
             }
         } else {
-            console.log("Cancelled drag??")
+            console.log("No inner drag operation")
         }
 
-        // Reset all drag states
+        // Reset all drag states for inner drag
         setIsDragging(false)
         setDraggedItem(null)
         setDraggedItems([])
@@ -703,6 +756,26 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
             dragStarted: false,
             dropTarget: null,
             lastDropTarget: null
+        }
+
+        //Box to box cleanup
+        if (wasDragStarted && BoxDrag.dragState.isDragging) {
+
+            // Check if this was a drop (if we have a valid drop target)
+            const hasValidDropTarget = dragStateRef.current.dropTarget !== null;
+
+            if (hasValidDropTarget) {
+                boxDragTimeoutRef.current = setTimeout(() => {
+                    if (BoxDrag.dragState.isDragging) {
+                        BoxDrag.endBoxDrag();
+                    }
+                    boxDragTimeoutRef.current = null;
+                }, 100);
+            } else {
+                BoxDrag.endBoxDrag();
+            }
+        } else if (BoxDrag.dragState.isDragging) {
+            BoxDrag.endBoxDrag();
         }
     }
 
@@ -748,6 +821,12 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
             if (throttleTimeoutRef.current) {
                 clearTimeout(throttleTimeoutRef.current)
             }
+            if (boxDragTimeoutRef.current) {
+                clearTimeout(boxDragTimeoutRef.current)
+            }
+            if (isDragging) {
+                BoxDrag.endBoxDrag();
+            }
         }
     }, [])
 
@@ -768,6 +847,17 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                     setDraggedItem(null)
                     setDraggedItems([])
                     setDropTarget(null)
+
+
+                    if (boxDragTimeoutRef.current) {
+                        clearTimeout(boxDragTimeoutRef.current)
+                        boxDragTimeoutRef.current = null
+                    }
+
+
+                    if (BoxDrag.dragState.isDragging) {
+                        BoxDrag.endBoxDrag();
+                    }
                 }
                 if (isSelecting) {
                     setIsSelecting(false)
@@ -922,21 +1012,6 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                     />
                 )}
 
-                {isDragging && (
-                    <div
-                        className="fixed pointer-events-none z-50 bg-blue-500 text-white px-3 py-1.5 rounded-md shadow-lg opacity-90"
-                        style={{
-                            left: `${dragPreviewPos.x}px`,
-                            top: `${dragPreviewPos.y}px`,
-                            transform: "translate3d(0,0,0)",
-                        }}
-                    >
-            <span className="text-sm font-medium">
-              {draggedItems.length} {draggedItems.length === 1 ? "item" : "items"}
-            </span>
-                    </div>
-                )}
-
                 {isOpeningBrowser ? (
                     // TODO: change this to something else?
                         <div className="flex justify-center items-center h-full">
@@ -952,7 +1027,6 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                             {sortedItems.map((item) => {
                                 const IconComponent = getFileIcon(item.name, item.isDirectory);
                                 const iconColor = getIconColor(item.name, item.isDirectory, selectedItems.has(item.id), dropTarget === item.id);
-
                                 return (
                                     <div
                                         key={item.id}
@@ -961,13 +1035,14 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                                             else itemRefs.current.delete(item.id)
                                         }}
                                         onClick={(e) => handleItemClick(e, item)}
-                                        onPointerDown={(e) => handleItemMouseDown(e, item)}
+                                        onMouseDown={(e) => handleItemMouseDown(e, item)}
                                         className={cn(
                                             "file-item flex flex-col items-center justify-center p-3 rounded-md cursor-pointer transition-all",
-                                            // "will-change-transform will-change-background-color",
                                             selectedItems.has(item.id)
                                                 ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700"
-                                                : "hover:bg-slate-100  dark:hover:bg-slate-700 border border-transparent",
+                                                : !isBoxToBoxTransfer
+                                                    ? "hover:bg-slate-100  dark:hover:bg-slate-700 border border-transparent"
+                                                    : "border border-transparent",
                                             dropTarget === item.id && "ring-2 ring-green-500 bg-green-100 dark:bg-green-900/30 drop-target",
                                             draggedItems.includes(item.id) && isDragging && "opacity-50",
                                         )}
