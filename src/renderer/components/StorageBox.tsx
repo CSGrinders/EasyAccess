@@ -32,6 +32,9 @@ function areEqual(prev: StorageBoxProps, next: StorageBoxProps) {
     );
 }
 
+const MIN_BOX_WIDTH = 400;
+const MIN_BOX_HEIGHT = 360;
+
 
 function StorageBoxInner({
                              box,
@@ -216,38 +219,60 @@ function StorageBoxInner({
             positionRef.current = { x: newX, y: newY };
 
             updateBox();
-        } else if (isResizing && resizeDirection) {
-            const dx = e.clientX - resizeStart.x;
-            const dy = e.clientY - resizeStart.y;
+       } else if (isResizing && resizeDirection) {
+           const dx = e.clientX - resizeStart.x;
+           const dy = e.clientY - resizeStart.y;
 
 
-            let newWidth = resizeStartSize.width;
-            let newHeight = resizeStartSize.height;
-            let newX = resizeStartPosition.x;
-            let newY = resizeStartPosition.y;
+           let newWidth = resizeStartSize.width;
+           let newHeight = resizeStartSize.height;
+           let newX = resizeStartPosition.x;
+           let newY = resizeStartPosition.y;
 
 
-            if (resizeDirection.includes("e")) {
-                newWidth = Math.max(400, resizeStartSize.width + dx);
-            }
-            if (resizeDirection.includes("s")) {
-                newHeight = Math.max(360, resizeStartSize.height + dy);
-            }
-            if (resizeDirection.includes("w")) {
-                newWidth = Math.max(400, resizeStartSize.width - dx);
-                if (dx < 0)
+           if (resizeDirection.includes("e")) {
+               newWidth = Math.max(MIN_BOX_WIDTH, resizeStartSize.width + dx);
+           }
+           if (resizeDirection.includes("s")) {
+               newHeight = Math.max(MIN_BOX_HEIGHT, resizeStartSize.height + dy);
+           }
+           if (resizeDirection.includes("w")) {
+               newWidth = Math.max(MIN_BOX_WIDTH, resizeStartSize.width - dx);
+               // cursor on the west side
+               if (dx < 0) {
+                // when the size increases to the left, x should be adjusted
                     newX = resizeStartPosition.x + dx;
-            }
-            if (resizeDirection.includes("n")) {
-                newHeight = Math.max(360, resizeStartSize.height - dy);
-                if (dy < 0)
-                    newY = resizeStartPosition.y + dy;
-            }
-
-            sizeRef.current = {width: newWidth, height: newHeight};
-            positionRef.current = { x: newX, y: newY };
-
-            updateBox();
+                } else {
+                    // when the size decrease to the right, x should be fixed if width is 400, minimum width
+                    // otherwise, it should be updated according to the dx
+                    if (newWidth > MIN_BOX_WIDTH) {
+                        newX = resizeStartPosition.x + dx;
+                    }
+                    else if (newWidth <= MIN_BOX_WIDTH) {
+                        newX = positionRef.current.x;
+                    }
+                }
+               
+           }
+           if (resizeDirection.includes("n")) {
+               newHeight = Math.max(MIN_BOX_HEIGHT, resizeStartSize.height - dy);
+               if (dy < 0) {
+                   newY = resizeStartPosition.y + dy;
+               } else {
+                    // when the size decrease to the right, x should be fixed if width is 400, minimum width
+                    // otherwise, it should be updated according to the dx
+                    if (newHeight > MIN_BOX_HEIGHT) {
+                        newY = resizeStartPosition.y + dy;
+                    }
+                    else if (newHeight <= MIN_BOX_HEIGHT) {
+                        newY = positionRef.current.y;
+                    }
+               }
+           }
+          
+           sizeRef.current = {width: newWidth, height: newHeight};
+           positionRef.current = { x: newX, y: newY };
+           updateBox();
         }
     };
 
