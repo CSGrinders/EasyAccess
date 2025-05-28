@@ -28,3 +28,7 @@ contextBridge.exposeInMainWorld('fsApi', {
     postFile: (fileName: string, folderPath: string, data: Buffer) =>
         ipcRenderer.invoke('post-file', fileName, folderPath, data) as Promise<void>
 })
+
+contextBridge.exposeInMainWorld('electronAPI', {
+    openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url) as Promise<{ success: boolean, error?: any }>
+});

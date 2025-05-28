@@ -1,9 +1,10 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile } from './cloud/cloudManager';
 import { CloudType } from "@Types/cloudType";
 import { FileContent, FileSystemItem } from '@Types/fileSystem';
+import mime from 'mime';
 
 
 const createWindow = () => {
@@ -67,14 +68,28 @@ return Promise.all(items.map(async item => ({
 ipcMain.handle('get-file', async (_e, filePath: string) => {
     console.log('Reading file:', filePath);
     const data = await fs.promises.readFile(filePath);
+
+    const mimeType = mime.lookup(filePath) || 'application/octet-stream'; // Fallback to generic binary
+
     const fileContent: FileContent = {
         name: filePath.split(path.sep).pop() || '', // Get the file name from the path
         content: data, 
-        type: filePath.split('.').pop() || 'txt', // Get the file extension or default to 'txt'
+        type: mimeType, // Get the file extension or default to 'txt'
     };
 
     return fileContent;
 })
+
+// Handle opening external URLs
+ipcMain.handle('open-external-url', async (event, url) => {
+    try {
+        await shell.openExternal(url);
+        return { success: true };
+    } catch (error: any) {
+        console.error('Failed to open external URL:', error);
+        return { success: false, error: error };
+    }
+});
 
 ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, data: Buffer) => {
     console.log('Posting file:', fileName, folderPath, data);

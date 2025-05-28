@@ -46,6 +46,7 @@ import {Input} from "@/components/ui/input"
 import {Button} from "@/components/ui/button"
 import {cn} from "@/lib/utils"
 import {CLOUD_HOME, CloudType} from "@Types/cloudType"
+import { Progress } from "./ui/progress"
 
 interface FileExplorerProps {
     cloudType?: CloudType
@@ -157,7 +158,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
     const [selectionEnd, setSelectionEnd] = useState({x: 0, y: 0})
     const [selectionBox, setSelectionBox] = useState({left: 0, top: 0, width: 0, height: 0})
     const [isAdditiveDrag, setIsAdditiveDrag] = useState(false);
-    const [clickedItem, setClickedItem] = useState<FileSystemItem | null>(null);
+    const [isOpeningBrowser, setIsOpeningBrowser] = useState(false);
 
     const selectionSnapshotRef = useRef<Set<string>>(new Set());
 
@@ -218,7 +219,6 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
     useEffect(() => {
         if (!cwd) return
 
-        setIsLoading(true)
         if (cloudType && accountId) {
             // Fetch files from the cloud account
             (window as any).cloudFsApi.readDirectory(cloudType, accountId, cwd)
@@ -251,6 +251,50 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
         }
 
     }, [cwd])
+
+    // This can be in each file explorer component, 
+    // since it gets the file content and open it, 
+    // instead of saving it for uploading to other window later
+    const openFile = async (e: React.MouseEvent, item: FileSystemItem) => {
+        e.preventDefault();
+        setIsOpeningBrowser(true);
+        let fileContent: FileContent | null = null;
+        if (!cloudType || !accountId) {
+            // For local file system, just pass the current
+            console.log("Opening local file:", item.path);
+            fileContent =  await (window as any).fsApi.getFile(item.path);
+        } else {
+            console.log("Opening cloud file:", item.path);
+            fileContent = await (window as any).cloudFsApi.getFile(cloudType, accountId, item.path);
+        }
+
+        if (!fileContent) {
+            console.log("No file content to open");
+            return;
+        }
+        console.log("Opening file:", fileContent);
+        if (fileContent.url) {
+            const response = await (window as any).electronAPI.openExternalUrl(fileContent.url);
+            if (response && response.success) {
+                console.log("File URL opened successfully:", fileContent.url);
+            } else {
+                console.error("Failed to open file URL:", fileContent.url, response?.error);
+            }
+        } else {
+            console.error("File URL is undefined, create blob URL instead");
+            // Create a blob URL for the file content
+            if (!fileContent.content) {
+                console.error("File content is undefined, cannot create blob URL");
+                return;
+            }
+            const blob = new Blob([fileContent.content], { type: fileContent.type });
+            const blobUrl = URL.createObjectURL(blob);
+            // open the blob URL in a new tab
+            window.open(blobUrl, '_blank');
+        }
+        setIsOpeningBrowser(false);
+    }
+
 
     const updatePathSegments = (path: string) => {
         // Split path into segments
@@ -319,36 +363,17 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
     const handleItemClick = (e: React.MouseEvent, item: FileSystemItem) => {
 
         // Double click to navigate into directory
-        if (e.detail === 2 && item.isDirectory) {
-            navigateTo(item.path)
+        if (e.detail === 2) {
+            if (!item.isDirectory) {
+                openFile(e, item)
+            } else {
+                navigateTo(item.path)
+            }
             return
         }
 
-        if (!item.isDirectory) {
-            // If it's a file, set it as the clicked item
-            console.log("Clicked on file:", item.name);
-            setClickedItem(item)
-        }
+        console.log("Item clicked:", item)
 
-
-        // console.log("Fetching file content from cloud account:", cloudType, accountId, item.path);
-        // try {
-        //     (window as any).cloudFsApi.getFile(cloudType, accountId, item.path)
-        //         .then((fileContent: FileContent) => {
-        //             console.log("File content:", fileContent);
-        //             setFileBuffer(fileContent.content)
-        //             setFileName(fileContent.name)
-        //             setFileType(fileContent.type)
-        //             const blob = new Blob([fileContent.content], { type: fileContent.type });
-        //             const url = URL.createObjectURL(blob);
-        //             setFileUrl(url);
-        //         });
-        // } catch (err) {
-        //     console.error(err)
-        // }
-        // console.log("Opening file:", fileUrl)
-        // if (!fileUrl) return
-        // const newWindow = window.open(fileUrl, "_blank");
 
         const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
@@ -534,20 +559,6 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
         setDraggedItems(itemsToDrag)
         draggedItemsRef.current = itemsToDrag
 
-        if (!tempGetFile) {
-            console.error("tempGetFile is not defined");
-            return;
-        }
-
-        console.log("Fetching file content:", cloudType, accountId, item.path);
-
-        if (cloudType && accountId) {
-            tempGetFile(item.path, cloudType, accountId);
-        } else {
-            // For local file system, just pass the current directory
-            tempGetFile(item.path);
-        }
-
         document.addEventListener("mousemove", handleItemMouseMove)
         document.addEventListener("mouseup", handleItemMouseUp)
     }
@@ -570,6 +581,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                 dragStateRef.current.dragStarted = true
                 dragStateRef.current.isDragging = true
                 setIsDragging(true)
+                // TODO maybe implement saving the dragged items to a ref and load the contents of them here?
             } else {
                 return
             }
@@ -628,6 +640,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
 
 
     const handleItemMouseUp = () => {
+        // TODO maybe implement removing the ref for dragged items?
         document.removeEventListener("mousemove", handleItemMouseMove)
         document.removeEventListener("mouseup", handleItemMouseUp)
 
@@ -924,60 +937,68 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile}: 
                     </div>
                 )}
 
-                {isLoading ? (
-                    <div className="flex justify-center items-center h-full">
-                        <RefreshCw className="h-8 w-8 text-blue-400 animate-spin"/>
-                    </div>
-                ) : sortedItems.length > 0 ? (
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4">
-                        {sortedItems.map((item) => {
-                            const IconComponent = getFileIcon(item.name, item.isDirectory);
-                            const iconColor = getIconColor(item.name, item.isDirectory, selectedItems.has(item.id), dropTarget === item.id);
-
-                            return (
-                                <div
-                                    key={item.id}
-                                    ref={(el) => {
-                                        if (el) itemRefs.current.set(item.id, el)
-                                        else itemRefs.current.delete(item.id)
-                                    }}
-                                    onClick={(e) => handleItemClick(e, item)}
-                                    onMouseDown={(e) => handleItemMouseDown(e, item)}
-                                    className={cn(
-                                        "file-item flex flex-col items-center justify-center p-3 rounded-md cursor-pointer transition-all",
-                                        selectedItems.has(item.id)
-                                            ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700"
-                                            : "hover:bg-slate-100  dark:hover:bg-slate-700 border border-transparent",
-                                        dropTarget === item.id && "ring-2 ring-green-500 bg-green-100 dark:bg-green-900/30 drop-target",
-                                        draggedItems.includes(item.id) && isDragging && "opacity-50",
-                                    )}
-                                >
-                                    <div className="w-16 h-16 flex items-center justify-center mb-2">
-                                        <IconComponent
-                                            className={cn("h-14 w-14", iconColor)}
-                                        />
-                                    </div>
-                                    <span
-                                        className={cn(
-                                            "block w-full px-1 text-sm leading-tight text-center",
-                                            "break-all line-clamp-2 min-h-[2.5rem]",
-                                            selectedItems.has(item.id)
-                                                ? "text-blue-700 dark:text-blue-300 font-medium"
-                                                : "text-slate-800 dark:text-slate-200",
-                                            dropTarget === item.id && "text-green-700 dark:text-green-300",
-                                        )}
-                                        title={item.name}
-                                    >{item.name}</span>
-                                </div>
-                            )
-                        })}
-                    </div>
+                {isOpeningBrowser ? (
+                    // TODO: change this to something else?
+                        <div className="flex justify-center items-center h-full">
+                            <RefreshCw className="h-8 w-8 text-blue-400 animate-spin"/>
+                        </div>
                 ) : (
-                    <div
-                        className="flex flex-col items-center justify-center h-full text-slate-800 dark:text-slate-200">
-                        <FolderIcon className="w-16 h-16 mb-4 opacity-30"/>
-                        <p>This folder is empty</p>
-                    </div>
+                    isLoading ? (
+                        <div className="flex justify-center items-center h-full">
+                            <RefreshCw className="h-8 w-8 text-blue-400 animate-spin"/>
+                        </div>
+                    ) : sortedItems.length > 0 ? (
+                        <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4">
+                            {sortedItems.map((item) => {
+                                const IconComponent = getFileIcon(item.name, item.isDirectory);
+                                const iconColor = getIconColor(item.name, item.isDirectory, selectedItems.has(item.id), dropTarget === item.id);
+
+                                return (
+                                    <div
+                                        key={item.id}
+                                        ref={(el) => {
+                                            if (el) itemRefs.current.set(item.id, el)
+                                            else itemRefs.current.delete(item.id)
+                                        }}
+                                        onClick={(e) => handleItemClick(e, item)}
+                                        onPointerDown={(e) => handleItemMouseDown(e, item)}
+                                        className={cn(
+                                            "file-item flex flex-col items-center justify-center p-3 rounded-md cursor-pointer transition-all",
+                                            // "will-change-transform will-change-background-color",
+                                            selectedItems.has(item.id)
+                                                ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700"
+                                                : "hover:bg-slate-100  dark:hover:bg-slate-700 border border-transparent",
+                                            dropTarget === item.id && "ring-2 ring-green-500 bg-green-100 dark:bg-green-900/30 drop-target",
+                                            draggedItems.includes(item.id) && isDragging && "opacity-50",
+                                        )}
+                                    >
+                                        <div className="w-16 h-16 flex items-center justify-center mb-2">
+                                            <IconComponent
+                                                className={cn("h-14 w-14", iconColor)}
+                                            />
+                                        </div>
+                                        <span
+                                            className={cn(
+                                                "block w-full px-1 text-sm leading-tight text-center",
+                                                "break-all line-clamp-2 min-h-[2.5rem]",
+                                                selectedItems.has(item.id)
+                                                    ? "text-blue-700 dark:text-blue-300 font-medium"
+                                                    : "text-slate-800 dark:text-slate-200",
+                                                dropTarget === item.id && "text-green-700 dark:text-green-300",
+                                            )}
+                                            title={item.name}
+                                        >{item.name}</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    ) : (
+                        <div
+                            className="flex flex-col items-center justify-center h-full text-slate-800 dark:text-slate-200">
+                            <FolderIcon className="w-16 h-16 mb-4 opacity-30"/>
+                            <p>This folder is empty</p>
+                        </div>
+                    )
                 )}
             </div>
         </div>

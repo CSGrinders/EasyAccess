@@ -277,25 +277,48 @@ export class GoogleDriveStorage implements CloudStorage {
       });
       const mimeType = result.data.mimeType; // maybe use mimetype from mime-types package?
 
-      const file = await drive.files.get(
-        {
-          fileId: fileId,
-          alt: 'media',
-        }, 
-        { responseType: 'arraybuffer' }
-      );
-      const data = Buffer.from(file.data as ArrayBuffer)
+      try {
+        const file = await drive.files.get(
+          {
+            fileId: fileId,
+            alt: 'media',
+          }, 
+          { responseType: 'arraybuffer' }
+        );
+        const data = Buffer.from(file.data as ArrayBuffer)
 
-      if (!data || !mimeType) {
-        throw new Error('File not found or empty');
+        if (!data || !mimeType) {
+          throw new Error('File not found or empty');
+        }
+
+        const fileContent: FileContent = {
+          name: filePath.split('/').pop() || '',
+          content: data,
+          type: mimeType, // TODO: get the correct mime type
+        };
+        return fileContent;
+      } catch (err) {
+        console.warn('Binary content download failed, returning file URL:', err);
+        let fileUrl = `https://drive.google.com/uc?id=${fileId}`;
+        if (mimeType === 'application/vnd.google-apps.document') {
+          fileUrl = `https://docs.google.com/document/d/${fileId}/edit`;
+        } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+            fileUrl = `https://docs.google.com/spreadsheets/d/${fileId}/edit`;
+        }
+        console.log('File URL:', fileUrl);
+        if (!fileUrl) {
+          throw new Error('File URL not found');
+        }
+
+        const fileContent: FileContent = {
+          name: filePath.split('/').pop() || '',
+          url: fileUrl,
+          type: mimeType || 'application/octet-stream', // default to binary if no mime type found
+        };
+        
+        // Return the file content with URL
+        return fileContent;
       }
-
-      const fileContent: FileContent = {
-        name: filePath.split('/').pop() || '',
-        content: data,
-        type: mimeType, // TODO: get the correct mime type
-      };
-      return fileContent;
     } catch (err) {
       throw err;
     }
@@ -323,6 +346,7 @@ export class GoogleDriveStorage implements CloudStorage {
   
     console.log(`Uploaded file ID: ${res.data.id}`);
   }
+
   private async bufferToStream(buffer: Buffer)  {
     const readable = new Readable();
     readable.push(buffer);

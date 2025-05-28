@@ -11,8 +11,9 @@ export interface FileSystemItem {
 
 export interface FileContent {
     name: string
-    content: Buffer
-    type: string
+    content?: Buffer // Content of the file as a Buffer (Google Doc content is not available as a Buffer / url is provided instead) 
+    type: string // mime type of the file (e.g., 'text/plain', 'application/pdf')
+    url?: string // Optional URL for the file if available
 }
 
 declare global {
