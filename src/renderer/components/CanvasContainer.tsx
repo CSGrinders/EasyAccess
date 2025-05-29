@@ -98,7 +98,7 @@ export function CanvasContainer({
         }
 
         dragCheckTimeoutRef.current = setTimeout(() => {
-            if (!BoxDrag.dragState.isDragging) return;
+            if (!BoxDrag.isDragging) return;
 
             // Check if the drop target is not a box
             const target = e.target as HTMLElement;
@@ -106,39 +106,47 @@ export function CanvasContainer({
 
             if (!isDroppedOnBox) {
                 console.log("Dropped on canvas - ending BoxDrag");
-                BoxDrag.endBoxDrag();
+                // BoxDrag.endBoxDrag();
+                BoxDrag.setIsDragging(false);
+                BoxDrag.setDragItems([], null); // Clear drag items
             }
         }, 10);
     }, [BoxDrag]);
 
     // Handler for mouse leave the entire document/window
     const handleMouseLeave = useCallback((e: MouseEvent) => {
-        if (!BoxDrag.dragState.isDragging) return;
+        if (!BoxDrag.isDragging) return;
 
         if (e.target === document.documentElement || e.target === document.body) {
             console.log("Mouse left document - ending BoxDrag");
-            BoxDrag.endBoxDrag();
+            // BoxDrag.endBoxDrag();
+            BoxDrag.setIsDragging(false);
+            BoxDrag.setDragItems([], null); // Clear drag items
         }
     }, [BoxDrag]);
 
     // Handler for window blur events
     const handleWindowBlur = useCallback(() => {
-        if (BoxDrag.dragState.isDragging) {
+        if (BoxDrag.isDragging) {
             console.log("Window lost focus - ending BoxDrag");
-            BoxDrag.endBoxDrag();
+            // BoxDrag.endBoxDrag();
+            BoxDrag.setIsDragging(false);
+            BoxDrag.setDragItems([], null); // Clear drag items
         }
     }, [BoxDrag]);
 
     // Handler for canvas clicks during drag
     const handleCanvasClick = useCallback((e: React.MouseEvent) => {
-        if (!BoxDrag.dragState.isDragging) return;
+        if (!BoxDrag.isDragging) return;
 
         const target = e.target as HTMLElement;
         const isClickedOnBox = target.closest('.box-container');
 
         if (!isClickedOnBox) {
             console.log("Clicked on canvas during drag - ending BoxDrag");
-            BoxDrag.endBoxDrag();
+            // BoxDrag.endBoxDrag();
+            BoxDrag.setIsDragging(false);
+            BoxDrag.setDragItems([], null); // Clear drag items
         }
     }, [BoxDrag]);
 
@@ -215,7 +223,7 @@ export function CanvasContainer({
     }, []);
 
     useEffect(() => {
-        if (BoxDrag.dragState.isDragging) {
+        if (BoxDrag.isDragging) {
             document.addEventListener('mouseup', handleCanvasDrop);
             document.addEventListener('dragend', handleCanvasDrop);
             document.addEventListener('mouseleave', handleMouseLeave);
@@ -231,7 +239,7 @@ export function CanvasContainer({
         } else {
             cleanupDragTimeout();
         }
-    }, [BoxDrag.dragState.isDragging, handleCanvasDrop, handleMouseLeave, handleWindowBlur, cleanupDragTimeout]);
+    }, [BoxDrag.isDragging, handleCanvasDrop, handleMouseLeave, handleWindowBlur, cleanupDragTimeout]);
 
     useEffect(() => {
         return () => {

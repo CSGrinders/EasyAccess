@@ -1,6 +1,6 @@
 import React, {memo} from "react"
 import {useState, useEffect, useRef} from "react"
-import {X, Maximize2, Minimize2, ChevronDown, Folder} from "lucide-react"
+import {X, Maximize2, Minimize2, ChevronDown, Folder, Box} from "lucide-react"
 import {cn} from "@/lib/utils"
 import {
     DropdownMenu,
@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {StorageBoxProps, WINDOW_SIZES} from "@Types/box";
 import {FileExplorer} from "@Components/FileExplorer";
-import {useBoxDrag} from "@/contexts/BoxDragContext";
+import {TargetLocation, useBoxDrag} from "@/contexts/BoxDragContext";
 
 
 
@@ -103,7 +103,7 @@ function StorageBoxInner({
     // Handle drag box to box drag detection
     useEffect(() => {
         const handleDragOver = (e: MouseEvent) => {
-            if (!boxRef.current || !BoxDrag.dragState.isDragging) return;
+            if (!boxRef.current || !BoxDrag.isDragging) return;
 
             const rect = boxRef.current.getBoundingClientRect();
             const isOverBox = e.clientX >= rect.left &&
@@ -111,13 +111,17 @@ function StorageBoxInner({
                 e.clientY >= rect.top &&
                 e.clientY <= rect.bottom;
 
-            const isValidTarget = BoxDrag.isValidDropTarget(id);
+            // const isValidTarget = BoxDrag.isValidDropTarget(id);
 
-            setIsDropZoneActive(isOverBox && isValidTarget);
+            setIsDropZoneActive(isOverBox); // && isValidTarget);
+
+            // TODO implement
+            // set the target location (box id, folder path within the box)
+            BoxDrag.setTarget({} as TargetLocation); 
         };
 
         const handleDrop = (e: MouseEvent) => {
-            if (!BoxDrag.dragState.isDragging) {
+            if (!BoxDrag.isDragging) {
                 return;
             }
 
@@ -132,20 +136,22 @@ function StorageBoxInner({
                 if (isDroppedOnBox) {
                     if (isDropZoneActive) {
                         console.log("Box drop detected on box:", id);
-                        console.log("Dropped items:", BoxDrag.dragState.draggedItems);
+                        console.log("Dropped items:", BoxDrag.dragItems);
 
                         // Call the box transfer handler in HomePage
                         if (onBoxTransfer) {
-                            onBoxTransfer(BoxDrag.dragState.draggedItems, id, currentPath);
+                            // onBoxTransfer(BoxDrag.dragItems, id, currentPath); TODO
                         }
                     }
-                    BoxDrag.endBoxDrag();
+                    // BoxDrag.endBoxDrag();
+                    BoxDrag.setDragItems([], null);
+                    BoxDrag.setIsDragging(false);
                     setIsDropZoneActive(false);
                 }
             }
         };
 
-        if (BoxDrag.dragState.isDragging) {
+        if (BoxDrag.isDragging) {
             document.addEventListener('mousemove', handleDragOver);
             document.addEventListener('mouseup', handleDrop);
         }
@@ -154,7 +160,7 @@ function StorageBoxInner({
             document.removeEventListener('mousemove', handleDragOver);
             document.removeEventListener('mouseup', handleDrop);
         };
-    }, [BoxDrag.dragState.isDragging, id, box.cloudType, box.accountId, isDropZoneActive]);
+    }, [BoxDrag.isDragging, id, box.cloudType, box.accountId, isDropZoneActive]);
 
     // Update maximized box when canvas changes
     useEffect(() => {

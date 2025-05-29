@@ -39,7 +39,8 @@ import {
     Globe,
     Mail,
     Calendar,
-    Layers
+    Layers,
+    Box
 } from "lucide-react"
 import type {FileContent, FileSystemItem} from "@Types/fileSystem"
 import {Input} from "@/components/ui/input"
@@ -169,7 +170,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
     const [isDragging, setIsDragging] = useState(false)
     const [draggedItem, setDraggedItem] = useState<string | null>(null)
     const [draggedItems, setDraggedItems] = useState<string[]>([])
-    const [dragPreviewPos, setDragPreviewPos] = useState({x: 0, y: 0})
+    // const [dragPreviewPos, setDragPreviewPos] = useState({x: 0, y: 0})
     const [dropTarget, setDropTarget] = useState<string | null>(null)
 
     const containerRef = useRef<HTMLDivElement>(null)
@@ -591,15 +592,17 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
         document.addEventListener("mouseup", handleItemMouseUp)
     }
 
-    const updateDropTarget = useCallback((newDropTarget: string | null) => {
-        if (dragStateRef.current.lastDropTarget !== newDropTarget) {
-            dragStateRef.current.lastDropTarget = newDropTarget
-            dragStateRef.current.dropTarget = newDropTarget
-            setDropTarget(newDropTarget)
-        }
-    }, [])
+    // const updateDropTarget = useCallback((newDropTarget: string | null) => {
+    //     console.log("Updating drop target:", newDropTarget)
+    //     if (dragStateRef.current.lastDropTarget !== newDropTarget) {
+    //         dragStateRef.current.lastDropTarget = newDropTarget
+    //         dragStateRef.current.dropTarget = newDropTarget
+    //         setDropTarget(newDropTarget)
+    //     }
+    // }, [])
 
     const handleItemMouseMove = (e: MouseEvent) => {
+        console.log("handleItemMouseMove")
         if (!dragStateRef.current.dragStarted) {
             const dx = e.clientX - dragStartPosRef.current.x
             const dy = e.clientY - dragStartPosRef.current.y
@@ -615,25 +618,18 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
                 const draggedFileItems = sortedItems.filter(item =>
                     draggedItemsRef.current.includes(item.id)
                 );
-                BoxDrag.startBoxDrag(
+                BoxDrag.setDragItems(
                     draggedFileItems,
                     boxId,
                     cloudType,
-                    accountId,
-                    { x: e.clientX, y: e.clientY }
+                    accountId
                 );
+                BoxDrag.setIsDragging(true);
+                console.log("Box drag started with items:", draggedFileItems, boxId, cloudType, accountId);
             } else {
                 return
             }
         }
-
-        setDragPreviewPos({
-            x: e.clientX - mouseOffsetRef.current.x,
-            y: e.clientY - mouseOffsetRef.current.y,
-        })
-
-        //Update cotext of box drag position
-        BoxDrag.updateDragPosition({ x: e.clientX, y: e.clientY });
 
         if (throttleTimeoutRef.current) {
             clearTimeout(throttleTimeoutRef.current)
@@ -654,6 +650,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
             let newDropTarget: string | null = null
 
             if (isWithinContainer) {
+                console.log("Mouse is within container, checking for drop target")
                 for (const item of sortedItems) {
                     if (draggedItemsRef.current.includes(item.id)) continue
 
@@ -674,7 +671,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
                 }
             }
 
-            updateDropTarget(newDropTarget)
+            // updateDropTarget(newDropTarget)
 
             const scrollThreshold = 60
             const scrollAmount = 10
@@ -759,23 +756,29 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
         }
 
         //Box to box cleanup
-        if (wasDragStarted && BoxDrag.dragState.isDragging) {
+        if (wasDragStarted && BoxDrag.isDragging) {
 
             // Check if this was a drop (if we have a valid drop target)
             const hasValidDropTarget = dragStateRef.current.dropTarget !== null;
 
             if (hasValidDropTarget) {
                 boxDragTimeoutRef.current = setTimeout(() => {
-                    if (BoxDrag.dragState.isDragging) {
-                        BoxDrag.endBoxDrag();
+                    if (BoxDrag.isDragging) {
+                        // BoxDrag.endBoxDrag();
+                        BoxDrag.setDragItems([], null);
+                        BoxDrag.setIsDragging(false);
                     }
                     boxDragTimeoutRef.current = null;
                 }, 100);
             } else {
-                BoxDrag.endBoxDrag();
+                // BoxDrag.endBoxDrag();
+                BoxDrag.setDragItems([], null);
+                BoxDrag.setIsDragging(false);
             }
-        } else if (BoxDrag.dragState.isDragging) {
-            BoxDrag.endBoxDrag();
+        } else if (BoxDrag.isDragging) {
+            // BoxDrag.endBoxDrag();
+            BoxDrag.setDragItems([], null);
+            BoxDrag.setIsDragging(false);
         }
     }
 
@@ -825,7 +828,9 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
                 clearTimeout(boxDragTimeoutRef.current)
             }
             if (isDragging) {
-                BoxDrag.endBoxDrag();
+                // BoxDrag.endBoxDrag();
+                BoxDrag.setDragItems([], null);
+                BoxDrag.setIsDragging(false);
             }
         }
     }, [])
@@ -855,8 +860,10 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
                     }
 
 
-                    if (BoxDrag.dragState.isDragging) {
-                        BoxDrag.endBoxDrag();
+                    if (BoxDrag.isDragging) {
+                        // BoxDrag.endBoxDrag();
+                        BoxDrag.setDragItems([], null);
+                        BoxDrag.setIsDragging(false);
                     }
                 }
                 if (isSelecting) {
