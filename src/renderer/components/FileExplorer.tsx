@@ -650,7 +650,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
             let newDropTarget: string | null = null
 
             if (isWithinContainer) {
-                console.log("Mouse is within container, checking for drop target")
+                // console.log("Mouse is within container, checking for drop target")
                 for (const item of sortedItems) {
                     if (draggedItemsRef.current.includes(item.id)) continue
 
@@ -665,7 +665,12 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
 
                     if (relativeX >= itemLeft && relativeX <= itemRight &&
                         relativeY >= itemTop && relativeY <= itemBottom) {
-                        newDropTarget = item.id
+                        console.log("Mouse is over item:", item.name)
+                        // newDropTarget = item.id;
+                        BoxDrag.setTarget({
+                            boxId: boxId,
+                            folderPath: item.path
+                        });
                         break
                     }
                 }
@@ -699,6 +704,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
         console.log("dragStarted:", dragStateRef.current.dragStarted)
         console.log("isDragging:", dragStateRef.current.isDragging)
         console.log("dropTarget:", dragStateRef.current.dropTarget)
+        console.log("dropTarget2:", BoxDrag.target.boxId, BoxDrag.target.folderPath)
 
         // Temporal variable to store the drag state before resetting it
         const wasDragStarted = dragStateRef.current.dragStarted;

@@ -112,8 +112,10 @@ function StorageBoxInner({
                 e.clientY <= rect.bottom;
 
             // const isValidTarget = BoxDrag.isValidDropTarget(id);
+            // Check if the target is a valid drop target (the box is not the source box)
+            const isValidTarget = BoxDrag.isDragging && BoxDrag.sourceBoxId != id;
 
-            setIsDropZoneActive(isOverBox); // && isValidTarget);
+            setIsDropZoneActive(isOverBox && isValidTarget);
 
             // TODO implement
             // set the target location (box id, folder path within the box)

@@ -14,6 +14,7 @@ export interface TargetLocation {
 
 export interface BoxDragContextType {
     isDragging: boolean;
+    sourceBoxId: number | null;
     dragPreviewRef: React.RefObject<HTMLDivElement | null>;
     dragItems: DragItems;
     target: TargetLocation;
@@ -44,6 +45,7 @@ export const BoxDragProvider: React.FC<BoxDragProviderProps> = ({ children }) =>
     });
     const [drag, setDrag] = useState<boolean>(false);
     const targetRef = useRef<TargetLocation>({} as TargetLocation);
+    const sourceBoxIdRef = useRef<number | null>(null); // Store the source box ID
 
     const setDragItems = useCallback(
         (items: FileSystemItem[], sourceBoxId: number | null) => {
@@ -51,6 +53,7 @@ export const BoxDragProvider: React.FC<BoxDragProviderProps> = ({ children }) =>
                 items,
                 sourceBoxId
             });
+            sourceBoxIdRef.current = sourceBoxId; // Store the source box ID
         },
         []
     );
@@ -67,6 +70,7 @@ export const BoxDragProvider: React.FC<BoxDragProviderProps> = ({ children }) =>
 
     const contextValue: BoxDragContextType = {
         isDragging: drag,
+        sourceBoxId: sourceBoxIdRef.current,
         dragPreviewRef,
         dragItems,
         target: targetRef.current,
