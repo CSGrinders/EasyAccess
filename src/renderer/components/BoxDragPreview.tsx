@@ -26,9 +26,9 @@ export const BoxDragPreview = ({ zoomLevel }: { zoomLevel: number }) => {
         return () => window.removeEventListener('mousemove', handleMouseMove);
     }, [isDragging, zoomLevel]);
 
-    useEffect(() => {
-        console.log('BoxDragPreview rendered or re-rendered');
-    });
+    // useEffect(() => {
+    //     console.log('BoxDragPreview rendered or re-rendered');
+    // });
 
 
     if (!isDragging || dragItems.items.length === 0) {

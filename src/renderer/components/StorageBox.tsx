@@ -104,6 +104,7 @@ function StorageBoxInner({
     useEffect(() => {
         const handleDragOver = (e: MouseEvent) => {
             if (!boxRef.current || !BoxDrag.isDragging) return;
+            console.log("handleDragOver");
 
             const rect = boxRef.current.getBoundingClientRect();
             const isOverBox = e.clientX >= rect.left &&
@@ -117,12 +118,18 @@ function StorageBoxInner({
 
             setIsDropZoneActive(isOverBox && isValidTarget);
 
-            // TODO implement
+            // TODO maybe not update if not over box is not changed?
             // set the target location (box id, folder path within the box)
-            BoxDrag.setTarget({} as TargetLocation); 
+            BoxDrag.setTarget({
+                boxId: id,
+                targetPath: currentPath, // Assuming currentPath is the folder path within the box
+                // No specific target ID for box-to-box transfer
+            }); 
         };
 
         const handleDrop = (e: MouseEvent) => {
+            document.removeEventListener('mousemove', handleDragOver);
+            document.removeEventListener('mouseup', handleDrop);
             if (!BoxDrag.isDragging) {
                 return;
             }
@@ -138,12 +145,14 @@ function StorageBoxInner({
                 if (isDroppedOnBox) {
                     if (isDropZoneActive) {
                         console.log("Box drop detected on box:", id);
-                        console.log("Dropped items:", BoxDrag.dragItems);
+                        console.log("BoxDrag Context:", BoxDrag);
+
+                        tempPostFile?.(currentPath, box.cloudType, box.accountId);
 
                         // Call the box transfer handler in HomePage
-                        if (onBoxTransfer) {
+                        // if (onBoxTransfer) {
                             // onBoxTransfer(BoxDrag.dragItems, id, currentPath); TODO
-                        }
+                        // }
                     }
                     // BoxDrag.endBoxDrag();
                     BoxDrag.setDragItems([], null);
@@ -157,11 +166,6 @@ function StorageBoxInner({
             document.addEventListener('mousemove', handleDragOver);
             document.addEventListener('mouseup', handleDrop);
         }
-
-        return () => {
-            document.removeEventListener('mousemove', handleDragOver);
-            document.removeEventListener('mouseup', handleDrop);
-        };
     }, [BoxDrag.isDragging, id, box.cloudType, box.accountId, isDropZoneActive]);
 
     // Update maximized box when canvas changes

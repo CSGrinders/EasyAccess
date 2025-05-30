@@ -1,4 +1,7 @@
-"use client"
+/*
+TODO
+Fix id (BoxDrag.target?.boxId) number vs string with item.id 
+*/
 
 import React, {useEffect, useState, useRef, useCallback} from "react"
 import {
@@ -49,6 +52,7 @@ import {cn} from "@/lib/utils"
 import {CLOUD_HOME, CloudType} from "@Types/cloudType"
 import { Progress } from "./ui/progress"
 import {useBoxDrag} from "@/contexts/BoxDragContext";
+import { postFile } from "src/main/cloud/cloudManager"
 
 interface FileExplorerProps {
     cloudType?: CloudType
@@ -58,7 +62,6 @@ interface FileExplorerProps {
     boxId: number
     isBoxToBoxTransfer?: boolean
     onCurrentPathChange?: (currentPath: string) => void
-    // tempGetFile?: (fileContent: FileContent) => void
 }
 
 
@@ -167,12 +170,6 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
 
     const selectionSnapshotRef = useRef<Set<string>>(new Set());
 
-    const [isDragging, setIsDragging] = useState(false)
-    const [draggedItem, setDraggedItem] = useState<string | null>(null)
-    const [draggedItems, setDraggedItems] = useState<string[]>([])
-    // const [dragPreviewPos, setDragPreviewPos] = useState({x: 0, y: 0})
-    const [dropTarget, setDropTarget] = useState<string | null>(null)
-
     const containerRef = useRef<HTMLDivElement>(null)
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map())
     const dragStartPosRef = useRef({x: 0, y: 0})
@@ -181,14 +178,11 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
 
     const BoxDrag = useBoxDrag();
 
-    const dragStateRef = useRef({
-        isDragging: false,
-        dragStarted: false,
-        dropTarget: null as string | null,
-        lastDropTarget: null as string | null
-    })
     const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null)
     const boxDragTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const localDragStartedRef = useRef<boolean>(false)
+    const localIsDraggingRef = useRef<boolean>(false)
+    const localTargetRef = useRef<{ boxId: number; targetPath: string, targetId?: string } | null>(null)
 
     const filteredItems = searchQuery
         ? items.filter(
@@ -358,13 +352,31 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
     }
 
     const refreshDirectory = () => {
-        if (cwd) {
-            setIsLoading(true)
+        setIsLoading(true)
+        if (cloudType && accountId) {
+            // Fetch files from the cloud account
+            (window as any).cloudFsApi.readDirectory(cloudType, accountId, cwd)
+                .then((files: FileSystemItem[]) => {
+                    setItems(files)
+                    updatePathSegments(cwd)
+                    setIsLoading(false)
+                    setSelectedItems(new Set())
+                    setLastSelectedItem(null)
+                })
+                .catch((err: Error) => {
+                    console.error(err)
+                    setIsLoading(false)
+                })
+        } else {
+            // Fetch files from the local directory
             window.fsApi
                 .readDirectory(cwd)
                 .then((files) => {
                     setItems(files)
+                    updatePathSegments(cwd)
                     setIsLoading(false)
+                    setSelectedItems(new Set())
+                    setLastSelectedItem(null)
                 })
                 .catch((err) => {
                     console.error(err)
@@ -541,13 +553,6 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
     const handleItemMouseDown = (e: React.MouseEvent, item: FileSystemItem) => {
         if (e.button !== 0) return;
 
-        dragStateRef.current = {
-            isDragging: false,
-            dragStarted: false,
-            dropTarget: null,
-            lastDropTarget: null
-        }
-
         dragStartPosRef.current = {x: e.clientX, y: e.clientY}
 
         const itemElement = itemRefs.current.get(item.id)
@@ -559,8 +564,6 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
             }
         }
 
-        setDraggedItem(item.id)
-
         let itemsToDrag: string[]
         if (selectedItems.has(item.id)) {
             itemsToDrag = Array.from(selectedItems)
@@ -570,48 +573,24 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
             setLastSelectedItem(item.id)
         }
 
-        setDraggedItems(itemsToDrag)
         draggedItemsRef.current = itemsToDrag
-
-        if (!tempGetFile) {
-            console.error("tempGetFile is not defined");
-            return;
-        }
-
-        console.log("Fetching file content:", cloudType, accountId, item.path);
-
-        //TODO FIX item click for getfile when is not dragging
-        if (cloudType && accountId) {
-            tempGetFile(item.path, cloudType, accountId);
-        } else {
-            // For local file system, just pass the current directory
-            tempGetFile(item.path);
-        }
 
         document.addEventListener("mousemove", handleItemMouseMove)
         document.addEventListener("mouseup", handleItemMouseUp)
     }
 
-    // const updateDropTarget = useCallback((newDropTarget: string | null) => {
-    //     console.log("Updating drop target:", newDropTarget)
-    //     if (dragStateRef.current.lastDropTarget !== newDropTarget) {
-    //         dragStateRef.current.lastDropTarget = newDropTarget
-    //         dragStateRef.current.dropTarget = newDropTarget
-    //         setDropTarget(newDropTarget)
-    //     }
-    // }, [])
 
     const handleItemMouseMove = (e: MouseEvent) => {
-        console.log("handleItemMouseMove")
-        if (!dragStateRef.current.dragStarted) {
+        if (!localDragStartedRef.current && !localIsDraggingRef.current) {
+            console.log("Not dragging, checking for drag start")
             const dx = e.clientX - dragStartPosRef.current.x
             const dy = e.clientY - dragStartPosRef.current.y
             const distance = Math.sqrt(dx * dx + dy * dy)
-
             if (distance > 5) {
-                dragStateRef.current.dragStarted = true
-                dragStateRef.current.isDragging = true
-                setIsDragging(true)
+                console.log("Drag started, setting isDragging to true")
+                BoxDrag.setIsDragging(true);
+                localIsDraggingRef.current = true;
+                localDragStartedRef.current = true;
                 // TODO maybe implement saving the dragged items to a ref and load the contents of them here?
 
                 // Start box drag with the dragged items
@@ -624,9 +603,10 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
                     cloudType,
                     accountId
                 );
-                BoxDrag.setIsDragging(true);
+                tempGetFile?.(draggedFileItems.map(item => item.path).join(","), cloudType, accountId);
                 console.log("Box drag started with items:", draggedFileItems, boxId, cloudType, accountId);
             } else {
+                console.log("Distance TOoooooooooooooooooooo short:", distance)
                 return
             }
         }
@@ -636,7 +616,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
         }
 
         throttleTimeoutRef.current = setTimeout(() => {
-            if (!containerRef.current || !dragStateRef.current.isDragging) return
+            if (!containerRef.current || !localIsDraggingRef.current) return
 
             const containerRect = containerRef.current.getBoundingClientRect()
             const relativeX = e.clientX - containerRect.left
@@ -650,7 +630,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
             let newDropTarget: string | null = null
 
             if (isWithinContainer) {
-                // console.log("Mouse is within container, checking for drop target")
+                console.log("Mouse is within container, checking for drop target")
                 for (const item of sortedItems) {
                     if (draggedItemsRef.current.includes(item.id)) continue
 
@@ -669,8 +649,14 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
                         // newDropTarget = item.id;
                         BoxDrag.setTarget({
                             boxId: boxId,
-                            folderPath: item.path
+                            targetPath: item.path,
+                            targetId: item.id
                         });
+                        localTargetRef.current = {
+                            boxId: boxId,
+                            targetPath: item.path,
+                            targetId: item.id
+                        };
                         break
                     }
                 }
@@ -700,49 +686,36 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
             throttleTimeoutRef.current = null
         }
 
-        console.log("handleItemMouseUp")
-        console.log("dragStarted:", dragStateRef.current.dragStarted)
-        console.log("isDragging:", dragStateRef.current.isDragging)
-        console.log("dropTarget:", dragStateRef.current.dropTarget)
-        console.log("dropTarget2:", BoxDrag.target.boxId, BoxDrag.target.folderPath)
+        const currentBoxDragState = {
+            isDragging: BoxDrag.isDragging,
+            target: BoxDrag.target,
+            dragItems: BoxDrag.dragItems
+        };
+
+        console.log("Box drag state on mouse up:", currentBoxDragState);
 
         // Temporal variable to store the drag state before resetting it
-        const wasDragStarted = dragStateRef.current.dragStarted;
+        // const wasDragStarted = BoxDrag.dragStarted;
 
         // Check if this was actually a drag that should trigger a move
-        if (dragStateRef.current.dragStarted &&
-            dragStateRef.current.isDragging &&
-            dragStateRef.current.dropTarget) {
+        if (localIsDraggingRef.current &&
+            localTargetRef.current) {
 
             const itemsToMove = draggedItemsRef.current
 
-            console.log(`Moving ${itemsToMove.length} items to ${dragStateRef.current.dropTarget}`)
+            console.log(`Moving ${itemsToMove.length} items to ${localTargetRef.current.targetPath || "unknown target"}`)
             console.log("Items to move:", itemsToMove)
 
-            const targetItem = sortedItems.find((item) => item.id === dragStateRef.current.dropTarget)
+            const targetItem = sortedItems.find((item) => item.id === String(localTargetRef.current?.targetId));
             if (targetItem && targetItem.isDirectory) {
                 console.log(`Target directory detected: ${targetItem.path}`)
-                // implement the actual move
-                if (!tempPostFile) {
-                    console.error("tempPostFile is not defined");
-                    return;
-                }
-                if (cloudType && accountId) {
-                    tempPostFile(targetItem.path, cloudType, accountId);
-                } else {
-                    // For local file system, just pass the current
-                    // directory as the parent path
-                    if (cwd) {
-                        tempPostFile(targetItem.path);
-                    } else {
-                        // Handle the case where cwd is not defined
-                        console.error("cwd is not defined");
-                    }
-                }
+                // implement the actual move TODO
+                tempPostFile?.(targetItem.path, cloudType, accountId)
 
                 // TODO Clear the fileCache in the HomePage?
             } else if (targetItem && !targetItem.isDirectory) {
                 console.log(`Target file detected: ${targetItem.name}`)
+                tempPostFile?.(targetItem.path, cloudType, accountId)
                 // implement the actual creating of folder and move both files?
             }
         } else {
@@ -750,42 +723,49 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
         }
 
         // Reset all drag states for inner drag
-        setIsDragging(false)
-        setDraggedItem(null)
-        setDraggedItems([])
-        setDropTarget(null)
-        dragStateRef.current = {
-            isDragging: false,
-            dragStarted: false,
-            dropTarget: null,
-            lastDropTarget: null
-        }
+        // setIsDragging(false)
+        // setDraggedItem(null)
+        // setDraggedItems([])
+        // setDropTarget(null)
+        // dragStateRef.current = {
+        //     isDragging: false,
+        //     dragStarted: false,
+        //     dropTarget: null,
+        //     lastDropTarget: null
+        // }
 
         //Box to box cleanup
-        if (wasDragStarted && BoxDrag.isDragging) {
+        if (localIsDraggingRef.current) {
 
             // Check if this was a drop (if we have a valid drop target)
-            const hasValidDropTarget = dragStateRef.current.dropTarget !== null;
+            const hasValidDropTarget = BoxDrag.target !== null;
 
             if (hasValidDropTarget) {
                 boxDragTimeoutRef.current = setTimeout(() => {
                     if (BoxDrag.isDragging) {
                         // BoxDrag.endBoxDrag();
-                        BoxDrag.setDragItems([], null);
-                        BoxDrag.setIsDragging(false);
+                        // BoxDrag.setDragItems([], null);
+                        // BoxDrag.setIsDragging(false);
                     }
                     boxDragTimeoutRef.current = null;
                 }, 100);
             } else {
                 // BoxDrag.endBoxDrag();
-                BoxDrag.setDragItems([], null);
-                BoxDrag.setIsDragging(false);
+                // BoxDrag.setDragItems([], null);
+                // BoxDrag.setIsDragging(false);
             }
         } else if (BoxDrag.isDragging) {
             // BoxDrag.endBoxDrag();
-            BoxDrag.setDragItems([], null);
-            BoxDrag.setIsDragging(false);
+            // BoxDrag.setDragItems([], null);
+            // BoxDrag.setIsDragging(false);
+        } else {
+            return;
         }
+        BoxDrag.setDragItems([], null);
+        BoxDrag.setIsDragging(false);
+        localDragStartedRef.current = false;
+        localIsDraggingRef.current = false;
+        localTargetRef.current = null;
     }
 
 
@@ -833,7 +813,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
             if (boxDragTimeoutRef.current) {
                 clearTimeout(boxDragTimeoutRef.current)
             }
-            if (isDragging) {
+            if (BoxDrag.isDragging) {
                 // BoxDrag.endBoxDrag();
                 BoxDrag.setDragItems([], null);
                 BoxDrag.setIsDragging(false);
@@ -853,11 +833,11 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
             if (e.key === "Escape") {
                 setSelectedItems(new Set())
                 setLastSelectedItem(null)
-                if (isDragging) {
-                    setIsDragging(false)
-                    setDraggedItem(null)
-                    setDraggedItems([])
-                    setDropTarget(null)
+                if (BoxDrag.isDragging) {
+                    // setIsDragging(false)
+                    // setDraggedItem(null)
+                    // setDraggedItems([])
+                    // setDropTarget(null)
 
 
                     if (boxDragTimeoutRef.current) {
@@ -886,7 +866,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
 
         window.addEventListener("keydown", handleKeyDown)
         return () => window.removeEventListener("keydown", handleKeyDown)
-    }, [selectedItems, isDragging, isSelecting, sortedItems])
+    }, [selectedItems, BoxDrag.isDragging, isSelecting, sortedItems])
 
 
     const selectedCount = selectedItems.size
@@ -1039,7 +1019,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
                         <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4">
                             {sortedItems.map((item) => {
                                 const IconComponent = getFileIcon(item.name, item.isDirectory);
-                                const iconColor = getIconColor(item.name, item.isDirectory, selectedItems.has(item.id), dropTarget === item.id);
+                                const iconColor = getIconColor(item.name, item.isDirectory, selectedItems.has(item.id), BoxDrag.target?.boxId === Number(item.id));
                                 return (
                                     <div
                                         key={item.id}
@@ -1054,10 +1034,13 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
                                             selectedItems.has(item.id)
                                                 ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700"
                                                 : !isBoxToBoxTransfer
-                                                    ? "hover:bg-slate-100  dark:hover:bg-slate-700 border border-transparent"
+                                                    ? "hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent"
                                                     : "border border-transparent",
-                                            dropTarget === item.id && "ring-2 ring-green-500 bg-green-100 dark:bg-green-900/30 drop-target",
-                                            draggedItems.includes(item.id) && isDragging && "opacity-50",
+                                            // Add hover effect when dragging
+                                            BoxDrag.isDragging && !draggedItemsRef.current.includes(item.id) && BoxDrag.sourceBoxId == boxId &&
+                                                "hover:ring-2 hover:ring-green-500 hover:bg-green-100 dark:hover:bg-green-900/30",
+                                            // Dragged items opacity
+                                            draggedItemsRef.current.includes(item.id) && BoxDrag.isDragging && "opacity-50",
                                         )}
                                     >
                                         <div className="w-16 h-16 flex items-center justify-center mb-2">
@@ -1072,7 +1055,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
                                                 selectedItems.has(item.id)
                                                     ? "text-blue-700 dark:text-blue-300 font-medium"
                                                     : "text-slate-800 dark:text-slate-200",
-                                                dropTarget === item.id && "text-green-700 dark:text-green-300",
+                                                    BoxDrag.target?.boxId === Number(item.id) && "text-green-700 dark:text-green-300",
                                             )}
                                             title={item.name}
                                         >{item.name}</span>

@@ -9,7 +9,8 @@ export interface DragItems {
 // TODO implement TargetLocation to work with other elemnents
 export interface TargetLocation {
     boxId: number; // assume it can be used to identify cloudType and accountId
-    folderPath: string; // path within the box
+    targetPath: string; // path within the box
+    targetId?: string; // optional ID for the target item, if applicable
 }
 
 export interface BoxDragContextType {
@@ -17,7 +18,7 @@ export interface BoxDragContextType {
     sourceBoxId: number | null;
     dragPreviewRef: React.RefObject<HTMLDivElement | null>;
     dragItems: DragItems;
-    target: TargetLocation;
+    target: TargetLocation | null; // Target location for the drag operation
     setDragItems: (items: FileSystemItem[], sourceBoxId: number | null, sourceCloudType?: string, sourceAccountId?: string) => void;
     setIsDragging: (isDragging: boolean) => void;
     setTarget: (target: TargetLocation) => void; 
@@ -44,8 +45,9 @@ export const BoxDragProvider: React.FC<BoxDragProviderProps> = ({ children }) =>
         sourceBoxId: null,
     });
     const [drag, setDrag] = useState<boolean>(false);
-    const targetRef = useRef<TargetLocation>({} as TargetLocation);
-    const sourceBoxIdRef = useRef<number | null>(null); // Store the source box ID
+    const targetRef = useRef<TargetLocation>(null);
+    const [sourceBoxId, setSourceBoxId] = useState<number | null>(null); // Store the source box ID
+    // const sourceBoxIdRef = useRef<number | null>(null); // Store the source box ID
 
     const setDragItems = useCallback(
         (items: FileSystemItem[], sourceBoxId: number | null) => {
@@ -53,7 +55,8 @@ export const BoxDragProvider: React.FC<BoxDragProviderProps> = ({ children }) =>
                 items,
                 sourceBoxId
             });
-            sourceBoxIdRef.current = sourceBoxId; // Store the source box ID
+            setSourceBoxId(sourceBoxId); // Update the source box ID
+            // sourceBoxIdRef.current = sourceBoxId; // Store the source box ID
         },
         []
     );
@@ -70,13 +73,13 @@ export const BoxDragProvider: React.FC<BoxDragProviderProps> = ({ children }) =>
 
     const contextValue: BoxDragContextType = {
         isDragging: drag,
-        sourceBoxId: sourceBoxIdRef.current,
+        sourceBoxId,
         dragPreviewRef,
         dragItems,
         target: targetRef.current,
         setDragItems,
         setIsDragging,
-        setTarget
+        setTarget,
     };
 
     return (
