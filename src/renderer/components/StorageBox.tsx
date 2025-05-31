@@ -71,6 +71,8 @@ function StorageBoxInner({
     const [isDropZoneActive, setIsDropZoneActive] = useState(false);
     const [currentPath, setCurrentPath] = useState("/");
 
+    const [refreshToggle, setRefreshToggle] = useState(false);
+
     const handleCurrentPathChange = (newPath: string) => {
         setCurrentPath(newPath);
     };
@@ -127,7 +129,8 @@ function StorageBoxInner({
             }); 
         };
 
-        const handleDrop = (e: MouseEvent) => {
+        const handleDrop = async (e: MouseEvent) => {
+            console.log("handleDrop");
             document.removeEventListener('mousemove', handleDragOver);
             document.removeEventListener('mouseup', handleDrop);
             if (!BoxDrag.isDragging) {
@@ -147,7 +150,8 @@ function StorageBoxInner({
                         console.log("Box drop detected on box:", id);
                         console.log("BoxDrag Context:", BoxDrag);
 
-                        tempPostFile?.(currentPath, box.cloudType, box.accountId);
+                        await tempPostFile?.(currentPath, box.cloudType, box.accountId);
+                        setRefreshToggle(!refreshToggle); // Trigger a refresh in the FileExplorer
 
                         // Call the box transfer handler in HomePage
                         // if (onBoxTransfer) {
@@ -180,6 +184,10 @@ function StorageBoxInner({
             updateBox();
         }
     }, [isMaximized, viewportSize, canvasPan, canvasZoom]);
+
+    useEffect(() => {
+        console.log("Rendering StorageBox for:", title);
+    }, []);
 
 
     const handleHeaderMouseDown = (e: React.MouseEvent) => {
@@ -503,11 +511,11 @@ function StorageBoxInner({
             <div className="flex flex-1 overflow-hidden bg-slate-50 dark:bg-slate-900/50">
                 {type == "local" ?  (
                     <>
-                        <FileExplorer tempGetFile={tempGetFile} tempPostFile={tempPostFile} boxId={id} isBoxToBoxTransfer={isDropZoneActive} onCurrentPathChange={handleCurrentPathChange} />
+                        <FileExplorer tempGetFile={tempGetFile} tempPostFile={tempPostFile} boxId={id} isBoxToBoxTransfer={isDropZoneActive} onCurrentPathChange={handleCurrentPathChange} refreshToggle={refreshToggle}/>
                     </>
                 ) : (
                     <>
-                        <FileExplorer cloudType={box.cloudType} accountId={box.accountId} tempGetFile={tempGetFile} tempPostFile={tempPostFile} boxId={id} isBoxToBoxTransfer={isDropZoneActive} onCurrentPathChange={handleCurrentPathChange} />
+                        <FileExplorer cloudType={box.cloudType} accountId={box.accountId} tempGetFile={tempGetFile} tempPostFile={tempPostFile} boxId={id} isBoxToBoxTransfer={isDropZoneActive} onCurrentPathChange={handleCurrentPathChange} refreshToggle={refreshToggle} />
                     </>
                 )}
             </div>

@@ -61,6 +61,7 @@ interface FileExplorerProps {
     tempGetFile?: (filePath: string, cloudType?: CloudType, accountId?: string) => void
     boxId: number
     isBoxToBoxTransfer?: boolean
+    refreshToggle?: boolean // to refresh the state of the file explorer
     onCurrentPathChange?: (currentPath: string) => void
 }
 
@@ -150,7 +151,7 @@ const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected
     return "text-gray-400";
 };
 
-export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, onCurrentPathChange}: FileExplorerProps) {
+export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, refreshToggle, onCurrentPathChange}: FileExplorerProps) {
     const [items, setItems] = useState<FileSystemItem[]>([])
     const [cwd, setCwd] = useState<string>("")
     const [history, setHistory] = useState<string[]>([])
@@ -259,6 +260,11 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
         }
 
     }, [cwd])
+
+    useEffect(() => {
+        console.log("Refreshing directory due to refreshState prop change");
+        refreshDirectory();
+    }, [refreshToggle])
 
     // This can be in each file explorer component, 
     // since it gets the file content and open it, 
@@ -676,7 +682,7 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
     }
 
 
-    const handleItemMouseUp = () => {
+    const handleItemMouseUp = async () => {
         // TODO maybe implement removing the ref for dragged items?
         document.removeEventListener("mousemove", handleItemMouseMove)
         document.removeEventListener("mouseup", handleItemMouseUp)
@@ -710,8 +716,9 @@ export function FileExplorer({cloudType, accountId, tempPostFile, tempGetFile, b
             if (targetItem && targetItem.isDirectory) {
                 console.log(`Target directory detected: ${targetItem.path}`)
                 // implement the actual move TODO
-                tempPostFile?.(targetItem.path, cloudType, accountId)
-
+                await tempPostFile?.(targetItem.path, cloudType, accountId);
+                
+                refreshDirectory(); // Refresh the directory after moving files
                 // TODO Clear the fileCache in the HomePage?
             } else if (targetItem && !targetItem.isDirectory) {
                 console.log(`Target file detected: ${targetItem.name}`)

@@ -1,4 +1,4 @@
-import React, {useState, useRef, useEffect} from 'react';
+import React, {useState, useRef, useEffect, use} from 'react';
 import {CloudLightning, HardDrive} from "lucide-react"
 import CanvaSettings from "@Components/CanvaSettings";
 import ActionBar from "@Components/ActionBar";
@@ -11,7 +11,9 @@ import { CloudType } from '@Types/cloudType';
 import { FileContent } from '@Types/fileSystem';
 import {BoxDragProvider} from "@/contexts/BoxDragContext";
 import { BoxDragPreview } from '@/components/BoxDragPreview';
+import { FileUploadMessage } from '@/components/FileUploadMessage';
 
+import { motion, AnimatePresence } from "framer-motion" // Uncomment if available
 const test = {
     folders: ["Documents", "Pictures", "Downloads", "Desktop"],
     files: ["readme.txt", "report.pdf", "image.jpg", "data.csv"],
@@ -28,12 +30,22 @@ const HomePage = () => {
     const [canvasVwpSize, setCanvasViewportSize] = useState({ width: 0, height: 0 });
     const [showStorageWindow, setShowStorageWindow] = useState(false);
     const [nextBoxId, setNextBoxId] = useState(3);
+    const [isMovingItem, setIsMovingItem] = useState(false);
+    const [fileUploadMessage, setFileUploadMessage] = useState<string>("");
+    const [fileUploadMessageOpen, setFileUploadMessageOpen] = useState<boolean>(false);
 
     // const [fileContentCache, setFileContentCache] = useState<FileContent | null>(null);
 
     const fileContentCacheRef = useRef<FileContent | null>(null);
+    const isContentLoading = useRef(false);
 
     const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
+        setIsMovingItem(true); // Set moving item state to true
+        // Wait for any ongoing get operation to complete
+        while (isContentLoading.current) {
+            console.log("Waiting for content loading to complete...");
+            await new Promise(resolve => setTimeout(resolve, 50)); // Poll every 50ms
+        }
         const fileContentCache = fileContentCacheRef.current; // Get the current file content from the ref
         if (!fileContentCache) {
             console.log("No file content to upload");
@@ -45,31 +57,39 @@ const HomePage = () => {
             // local file system
             console.log("local file system, call postFile from local file system: ", parentPath, fileContentCache);
 
-            (window as any).fsApi.postFile(fileContentCache.name, parentPath, fileContentCache.content)
+            await (window as any).fsApi.postFile(fileContentCache.name, parentPath, fileContentCache.content)
                 .then(() => {
                         console.log("File uploaded successfully")
+                        setFileUploadMessage("File uploaded successfully");
                     }
                 ).catch((err: Error) => {
                     console.error(err)
+                    setFileUploadMessage("File upload failed: " + err.message);
                 }
             )
         } else {
-            (window as any).cloudFsApi.postFile(cloudType, accountId, fileContentCache.name, parentPath, fileContentCache.content)
+            await (window as any).cloudFsApi.postFile(cloudType, accountId, fileContentCache.name, parentPath, fileContentCache.content)
                 .then(() => {
                         console.log("File uploaded successfully")
+                        setFileUploadMessage("File uploaded successfully");
                     }
                 ).catch((err: Error) => {
                     console.error(err)
+                    setFileUploadMessage("File upload failed: " + err.message);
                 }
             )
         }
+        console.log("File upload completed");
+        setIsMovingItem(false); // Set moving item state to true
+        setFileUploadMessageOpen(true); // Show the file upload message
     }
 
-    const tempGetFile = (filePath: string, cloudType?: CloudType, accountId?: string) => {
+    const tempGetFile = async (filePath: string, cloudType?: CloudType, accountId?: string) => {
+        isContentLoading.current = true; // Set content loading state to true
         if (!cloudType || !accountId) {
             // local file system
             console.log("local file system, call getFile from local file system:", filePath);
-            (window as any).fsApi.getFile(filePath)
+            await (window as any).fsApi.getFile(filePath)
                 .then((fileContent: FileContent) => {
                     console.log("File content:", fileContent);
                     fileContentCacheRef.current = fileContent; // Update the ref with the new file content
@@ -78,10 +98,9 @@ const HomePage = () => {
                 .catch((err: Error) => {
                     console.error(err)
                 })
-            return;
         } else {
             console.log("Fetching file content from cloud account:", cloudType, accountId, filePath);
-            (window as any).cloudFsApi.getFile(cloudType, accountId, filePath)
+            await (window as any).cloudFsApi.getFile(cloudType, accountId, filePath)
                 .then((fileContent: FileContent) => {
                     console.log("File content:", fileContent);
                     fileContentCacheRef.current = fileContent; // Update the ref with the new file content
@@ -91,6 +110,8 @@ const HomePage = () => {
                     console.error(err)
                 })
         }
+        console.log("File content fetch completed");
+        isContentLoading.current = false; // Set content loading state to false
     }
 
     //Manage box-to-box transfer
@@ -254,7 +275,13 @@ const HomePage = () => {
                                    setIsPanMode={setIsPanMode} isBoxMaximized={anyBoxMaximized}/>
                 </div>
             </header>
+            <FileUploadMessage open={fileUploadMessageOpen} setOpen={setFileUploadMessageOpen} message={fileUploadMessage} showCloseButton={true}></FileUploadMessage>
             <main className="flex flex-1 overflow-hidden" ref={canvasVwpRef}>
+                {isMovingItem && (
+                    <div className="fixed top-0 left-0 w-full h-full bg-gray-500/50 backdrop-blur-sm flex items-center justify-center z-50">
+                        <p>Moving item...</p>
+                    </div>
+                )}
                 <ActionBar action={action} setAction={setAction} toggleShowSideWindow={toggleShowSideWindow}/>
                 <BoxDragProvider>
                     <div className="relative flex flex-1">

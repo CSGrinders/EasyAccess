@@ -60,6 +60,7 @@
     "dotenv": "^16.5.0",
     "dropbox": "^10.34.0",
     "electron-store": "^8.2.0",
+    "framer-motion": "^12.15.0",
     "google-auth-library": "^9.15.1",
     "googleapis": "^148.0.0",
     "lucide-react": "^0.510.0",
