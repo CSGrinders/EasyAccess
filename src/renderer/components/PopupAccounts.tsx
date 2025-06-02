@@ -20,8 +20,8 @@ type PopupAccountsProps = {
 
 export function PopupAccounts({open, setOpen, setSelectedAccount, availableAccounts, connectAddNewAccount}: PopupAccountsProps) {
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-[400px]">
+    <Dialog open={open} onOpenChange={setOpen} >
+      <DialogContent className="sm:max-w-[400px] background-white dark:bg-black">
         <DialogHeader>
           <DialogTitle>Choose Account</DialogTitle>
             <div className="flex flex-col gap-2 mt-4">

@@ -1,8 +1,10 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
-import { readFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore } from './cloud/cloudManager';
-import { CloudType } from "../types/cloudType";
+import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile } from './cloud/cloudManager';
+import { CloudType } from "@Types/cloudType";
+import { FileContent, FileSystemItem } from '@Types/fileSystem';
+import mime from 'mime';
 
 
 const createWindow = () => {
@@ -44,21 +46,53 @@ ipcMain.handle('get-connected-cloud-accounts', async (_e, cloudType: CloudType) 
 ipcMain.handle('cloud-read-directory', async (_e, cloudType: CloudType, accountId: string, dir: string) => {
     return readDirectory(cloudType, accountId, dir);
 });
-ipcMain.handle('cloud-read-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
-    return readFile(cloudType, accountId, filePath);
+ipcMain.handle('cloud-get-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
+    return getFile(cloudType, accountId, filePath);
+});
+ipcMain.handle('cloud-post-file', async (_e, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer) => {
+    return postFile(cloudType, accountId, fileName, folderPath, data);
 });
 
 ipcMain.handle('read-directory', async (_e, dirPath: string) => {
     const items = await fs.promises.readdir(dirPath, { withFileTypes: true })
-    return Promise.all(items.map(async item => ({
-        name: item.name,
-        isDirectory: item.isDirectory(),
-        path: path.join(dirPath, item.name),
-        size: (await fs.promises.stat(path.join(dirPath, item.name))).size,
-        modifiedTime: (await fs.promises.stat(path.join(dirPath, item.name))).mtimeMs
-    })))
+return Promise.all(items.map(async item => ({
+    id: item.name, // Using name as a simple ID, could be improved with a unique identifier
+    name: item.name,
+    isDirectory: item.isDirectory(),
+    path: path.join(dirPath, item.name),
+    size: (await fs.promises.stat(path.join(dirPath, item.name))).size,
+    modifiedTime: (await fs.promises.stat(path.join(dirPath, item.name))).mtimeMs
+})));
 })
 
-ipcMain.handle('read-file', async (_e, filePath: string) => {
-    return fs.promises.readFile(filePath, 'utf8')
+ipcMain.handle('get-file', async (_e, filePath: string) => {
+    console.log('Reading file:', filePath);
+    const data = await fs.promises.readFile(filePath);
+
+    const mimeType = mime.lookup(filePath) || 'application/octet-stream'; // Fallback to generic binary
+
+    const fileContent: FileContent = {
+        name: filePath.split(path.sep).pop() || '', // Get the file name from the path
+        content: data, 
+        type: mimeType, // Get the file extension or default to 'txt'
+    };
+
+    return fileContent;
+})
+
+// Handle opening external URLs
+ipcMain.handle('open-external-url', async (event, url) => {
+    try {
+        await shell.openExternal(url);
+        return { success: true };
+    } catch (error: any) {
+        console.error('Failed to open external URL:', error);
+        return { success: false, error: error };
+    }
+});
+
+ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, data: Buffer) => {
+    console.log('Posting file:', fileName, folderPath, data);
+    const filePath = path.join(folderPath, fileName);
+    fs.writeFileSync(filePath, data);
 })

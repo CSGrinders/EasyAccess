@@ -1,6 +1,6 @@
 // preload.ts - Bridge between main and renderer processes
 import { contextBridge, ipcRenderer } from 'electron'
-import type { FileSystemItem } from '../types/fileSystem'
+import type { FileContent, FileSystemItem } from '../types/fileSystem'
 import { CloudType } from '../types/cloudType';
 
 contextBridge.exposeInMainWorld('cloudFsApi', {
@@ -10,8 +10,10 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
         ipcRenderer.invoke('get-connected-cloud-accounts', cloudType) as Promise<string[] | null>,
     readDirectory: (cloudType: CloudType, accountId: string, dir: string) =>
         ipcRenderer.invoke('cloud-read-directory', cloudType, accountId, dir) as Promise<FileSystemItem[]>,
-    readFile: (cloudType: CloudType, accountId: string, filePath: string) =>
-        ipcRenderer.invoke('cloud-read-file', cloudType, accountId, filePath) as Promise<string>,
+    getFile: (cloudType: CloudType, accountId: string, filePath: string) =>
+        ipcRenderer.invoke('cloud-get-file', cloudType, accountId, filePath) as Promise<FileContent>,
+    postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: string) =>
+        ipcRenderer.invoke('cloud-post-file', cloudType, accountId, fileName, folderPath, data) as Promise<void>,
 });
 
 contextBridge.exposeInMainWorld('fsApi', {
@@ -21,6 +23,12 @@ contextBridge.exposeInMainWorld('fsApi', {
     },
     readDirectory: (dir: string) =>
         ipcRenderer.invoke('read-directory', dir) as Promise<FileSystemItem[]>,
-    readFile: (file: string) =>
-        ipcRenderer.invoke('read-file', file) as Promise<string>
+    getFile: (filePath: string) =>
+        ipcRenderer.invoke('get-file', filePath) as Promise<FileContent>,
+    postFile: (fileName: string, folderPath: string, data: Buffer) =>
+        ipcRenderer.invoke('post-file', fileName, folderPath, data) as Promise<void>
 })
+
+contextBridge.exposeInMainWorld('electronAPI', {
+    openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url) as Promise<{ success: boolean, error?: any }>
+});

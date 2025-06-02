@@ -4,6 +4,7 @@ import {cn} from "@/lib/utils";
 import {Crosshair} from "lucide-react";
 import {Button} from "@Components/ui/button";
 import {CANVAS_SIZE, CanvasContainerProps, Position} from "@Types/canvas";
+import {useBoxDrag} from "@/contexts/BoxDragContext";
 
 export function CanvasContainer({
                                     zoomLevel,
@@ -30,6 +31,9 @@ export function CanvasContainer({
     const FRICTION = 0.5;
     const MIN_V = 0.07;
     const PINCH = 0.005;
+
+    const BoxDrag = useBoxDrag();
+    const dragCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const applyTransform = (p: Position) => {
         if (translateRef.current) {
@@ -68,7 +72,6 @@ export function CanvasContainer({
 
     const handleMouseMove = (e: React.MouseEvent) => {
         if (!isDragging || !isPanMode || isAnimating) return;
-
         const dx = (e.clientX - dragStart.x) / zoomLevel;
         const dy = (e.clientY - dragStart.y) / zoomLevel;
         const HALF = CANVAS_SIZE / 2;
@@ -88,10 +91,77 @@ export function CanvasContainer({
         }
     };
 
+    // Handler to end BoxDrag when dropping on canvas
+    const handleCanvasDrop = useCallback((e: MouseEvent | DragEvent) => {
+        if (dragCheckTimeoutRef.current) {
+            clearTimeout(dragCheckTimeoutRef.current);
+        }
+
+        dragCheckTimeoutRef.current = setTimeout(() => {
+            if (!BoxDrag.isDragging) return;
+
+            // Check if the drop target is not a box
+            const target = e.target as HTMLElement;
+            const isDroppedOnBox = target.closest('.box-container');
+
+            if (!isDroppedOnBox) {
+                console.log("Dropped on canvas - ending BoxDrag");
+                // BoxDrag.endBoxDrag();
+                BoxDrag.setIsDragging(false);
+                BoxDrag.setDragItems([], null); // Clear drag items
+            }
+        }, 10);
+    }, [BoxDrag]);
+
+    // Handler for mouse leave the entire document/window
+    const handleMouseLeave = useCallback((e: MouseEvent) => {
+        if (!BoxDrag.isDragging) return;
+
+        if (e.target === document.documentElement || e.target === document.body) {
+            console.log("Mouse left document - ending BoxDrag");
+            // BoxDrag.endBoxDrag();
+            BoxDrag.setIsDragging(false);
+            BoxDrag.setDragItems([], null); // Clear drag items
+        }
+    }, [BoxDrag]);
+
+    // Handler for window blur events
+    const handleWindowBlur = useCallback(() => {
+        if (BoxDrag.isDragging) {
+            console.log("Window lost focus - ending BoxDrag");
+            // BoxDrag.endBoxDrag();
+            BoxDrag.setIsDragging(false);
+            BoxDrag.setDragItems([], null); // Clear drag items
+        }
+    }, [BoxDrag]);
+
+    // Handler for canvas clicks during drag
+    const handleCanvasClick = useCallback((e: React.MouseEvent) => {
+        if (!BoxDrag.isDragging) return;
+
+        const target = e.target as HTMLElement;
+        const isClickedOnBox = target.closest('.box-container');
+
+        if (!isClickedOnBox) {
+            console.log("Clicked on canvas during drag - ending BoxDrag");
+            // BoxDrag.endBoxDrag();
+            BoxDrag.setIsDragging(false);
+            BoxDrag.setDragItems([], null); // Clear drag items
+        }
+    }, [BoxDrag]);
+
+    const cleanupDragTimeout = useCallback(() => {
+        if (dragCheckTimeoutRef.current) {
+            clearTimeout(dragCheckTimeoutRef.current);
+            dragCheckTimeoutRef.current = null;
+        }
+    }, []);
+
     const wheelListener = useCallback(
         (e: WheelEvent) => {
             if (isAnimating) return;
             if (e.ctrlKey) {
+                if (boxMaximized) return;
                 e.preventDefault();
                 const zoomDelta = -e.deltaY * PINCH;
                 setZoomLevel(prev => {
@@ -103,6 +173,7 @@ export function CanvasContainer({
             const target = e.target as HTMLElement | null;
             if (target && target.closest(".box-container")) return;
 
+            if (boxMaximized) return;
             e.preventDefault();
 
             velocityRef.current.x += -e.deltaX / zoomLevel;
@@ -110,10 +181,11 @@ export function CanvasContainer({
 
             if (!frameRef.current) frameRef.current = requestAnimationFrame(step);
         },
-        [isAnimating, zoomLevel, step],
+        [isAnimating, zoomLevel, step, boxMaximized, setZoomLevel],
     );
 
     const goCenter = () => {
+        if (boxMaximized) return;
         setIsAnimating(true);
         const center = initialPosition.current;
         posRef.current = center;
@@ -150,12 +222,38 @@ export function CanvasContainer({
         };
     }, []);
 
+    useEffect(() => {
+        if (BoxDrag.isDragging) {
+            document.addEventListener('mouseup', handleCanvasDrop);
+            document.addEventListener('dragend', handleCanvasDrop);
+            document.addEventListener('mouseleave', handleMouseLeave);
+            window.addEventListener('blur', handleWindowBlur);
+
+            return () => {
+                document.removeEventListener('mouseup', handleCanvasDrop);
+                document.removeEventListener('dragend', handleCanvasDrop);
+                document.removeEventListener('mouseleave', handleMouseLeave);
+                window.removeEventListener('blur', handleWindowBlur);
+                cleanupDragTimeout();
+            };
+        } else {
+            cleanupDragTimeout();
+        }
+    }, [BoxDrag.isDragging, handleCanvasDrop, handleMouseLeave, handleWindowBlur, cleanupDragTimeout]);
+
+    useEffect(() => {
+        return () => {
+            cleanupDragTimeout();
+        };
+    }, [cleanupDragTimeout]);
+
     return (
         <div
             className={cn(
                 "relative overflow-hidden border border-slate-200 dark:border-slate-700 dark:bg-slate-900 rounded-md flex-1",
                 className,
             )}
+            onClick={handleCanvasClick}
         >
             <div
                 ref={containerRef}

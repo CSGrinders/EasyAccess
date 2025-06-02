@@ -1,4 +1,7 @@
-"use client"
+/*
+TODO
+Fix id (BoxDrag.target?.boxId) number vs string with item.id 
+*/
 
 import React, {useEffect, useState, useRef, useCallback} from "react"
 import {
@@ -15,20 +18,140 @@ import {
     Copy,
     Trash,
     Move,
+    FileText,
+    FileImage,
+    FileVideo,
+    FileAudio,
+    FileSpreadsheet,
+    Archive,
+    Settings,
+    Database,
+    BookOpen,
+    Star,
+    Download,
+    Image,
+    Music,
+    Video,
+    Lock,
+    Zap,
+    Cpu,
+    Monitor,
+    Palette,
+    Code,
+    Terminal,
+    Globe,
+    Mail,
+    Calendar,
+    Layers,
+    Box
 } from "lucide-react"
-import type {FileSystemItem} from "@Types/fileSystem"
+import type {FileContent, FileSystemItem} from "@Types/fileSystem"
 import {Input} from "@/components/ui/input"
-import {ScrollArea} from "@/components/ui/scroll-area"
 import {Button} from "@/components/ui/button"
 import {cn} from "@/lib/utils"
-import { CLOUD_HOME, CloudType } from "../../types/cloudType"
+import {CLOUD_HOME, CloudType} from "@Types/cloudType"
+import { Progress } from "./ui/progress"
+import {useBoxDrag} from "@/contexts/BoxDragContext";
+import { postFile } from "src/main/cloud/cloudManager"
 
 interface FileExplorerProps {
     cloudType?: CloudType
     accountId?: string
+    tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void
+    tempGetFile?: (filePath: string, cloudType?: CloudType, accountId?: string) => void
+    boxId: number
+    isBoxToBoxTransfer?: boolean
+    refreshToggle?: boolean // to refresh the state of the file explorer
+    onCurrentPathChange?: (currentPath: string) => void
 }
 
-export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
+
+const getFileIcon = (fileName: string, isDirectory: boolean = false) => {
+    if (isDirectory) {
+        const folderName = fileName.toLowerCase();
+        if (folderName.includes('download')) return Download;
+        if (folderName.includes('desktop')) return Monitor;
+        if (folderName.includes('document')) return BookOpen;
+        if (folderName.includes('picture') || folderName.includes('image')) return Image;
+        if (folderName.includes('music') || folderName.includes('audio')) return Music;
+        if (folderName.includes('video') || folderName.includes('movie')) return Video;
+        if (folderName.includes('favorite') || folderName.includes('bookmark')) return Star;
+        if (folderName.includes('config') || folderName.includes('setting')) return Settings;
+        if (folderName === 'node_modules' || folderName === '.git') return Terminal;
+        if (folderName.includes('src') || folderName.includes('source')) return Code;
+        if (folderName.includes('bin') || folderName.includes('executable')) return Zap;
+        if (folderName.includes('lib') || folderName.includes('library')) return Layers;
+        return FolderIcon;
+    }
+
+    const ext = fileName.toLowerCase().split('.').pop() || '';
+
+    if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'c', 'cs', 'php', 'rb', 'go', 'rs', 'swift', 'kt'].includes(ext)) return Code;
+    if (['html', 'htm', 'css', 'scss', 'sass', 'less'].includes(ext)) return Globe;
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico', 'tiff', 'raw'].includes(ext)) return FileImage;
+    if (['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'm4v', '3gp'].includes(ext)) return FileVideo;
+    if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a', 'opus'].includes(ext)) return FileAudio;
+    if (['pdf', 'doc', 'docx', 'rtf', 'odt', 'pages'].includes(ext)) return BookOpen;
+    if (['txt', 'md', 'markdown', 'readme', 'log', 'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg'].includes(ext)) return FileText;
+    if (['xls', 'xlsx', 'csv', 'ods', 'numbers'].includes(ext)) return FileSpreadsheet;
+    if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'deb', 'rpm', 'dmg', 'iso'].includes(ext)) return Archive;
+    if (['exe', 'msi', 'app', 'deb', 'rpm', 'dmg', 'pkg', 'run', 'bin'].includes(ext)) return Zap;
+    if (['db', 'sqlite', 'sql', 'mdb', 'accdb'].includes(ext)) return Database;
+    if (['psd', 'ai', 'sketch', 'fig', 'xd', 'indd'].includes(ext)) return Palette;
+    if (['dll', 'sys', 'so', 'dylib'].includes(ext)) return Cpu;
+    if (['eml', 'msg', 'pst'].includes(ext)) return Mail;
+    if (['ics', 'ical'].includes(ext)) return Calendar;
+    if (['enc', 'gpg', 'p7s', 'p12', 'pfx', 'key', 'pem', 'crt'].includes(ext)) return Lock;
+
+    return FileIcon;
+};
+
+const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected: boolean = false, isDropTarget: boolean = false) => {
+    if (isDropTarget) return "text-green-500";
+    if (isSelected) return "text-blue-500";
+
+    if (isDirectory) {
+        const folderName = fileName.toLowerCase();
+        if (folderName.includes('download')) return "text-green-400";
+        if (folderName.includes('desktop')) return "text-purple-400";
+        if (folderName.includes('document')) return "text-blue-400";
+        if (folderName.includes('picture') || folderName.includes('image')) return "text-pink-400";
+        if (folderName.includes('music') || folderName.includes('audio')) return "text-orange-400";
+        if (folderName.includes('video') || folderName.includes('movie')) return "text-red-400";
+        if (folderName.includes('favorite') || folderName.includes('bookmark')) return "text-yellow-400";
+        if (folderName === 'node_modules' || folderName === '.git') return "text-gray-500";
+        if (folderName.includes('src') || folderName.includes('source')) return "text-emerald-400";
+        return "text-blue-400";
+    }
+
+    const ext = fileName.toLowerCase().split('.').pop() || '';
+
+    if (['js', 'ts', 'jsx', 'tsx'].includes(ext)) return "text-yellow-400";
+    if (['py'].includes(ext)) return "text-green-400";
+    if (['java'].includes(ext)) return "text-orange-400";
+    if (['cpp', 'c'].includes(ext)) return "text-blue-400";
+    if (['cs'].includes(ext)) return "text-purple-400";
+    if (['php'].includes(ext)) return "text-indigo-400";
+    if (['rb'].includes(ext)) return "text-red-400";
+    if (['go'].includes(ext)) return "text-cyan-400";
+    if (['rs'].includes(ext)) return "text-orange-500";
+    if (['swift'].includes(ext)) return "text-orange-400";
+    if (['kt'].includes(ext)) return "text-purple-500";
+    if (['html', 'htm'].includes(ext)) return "text-orange-400";
+    if (['css', 'scss', 'sass', 'less'].includes(ext)) return "text-blue-400";
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico'].includes(ext)) return "text-pink-400";
+    if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) return "text-red-400";
+    if (['mp3', 'wav', 'flac', 'aac'].includes(ext)) return "text-orange-400";
+    if (['pdf'].includes(ext)) return "text-red-500";
+    if (['doc', 'docx'].includes(ext)) return "text-blue-500";
+    if (['xls', 'xlsx'].includes(ext)) return "text-green-500";
+    if (['zip', 'rar', '7z', 'tar'].includes(ext)) return "text-yellow-500";
+    if (['exe', 'msi', 'app'].includes(ext)) return "text-red-500";
+
+    return "text-gray-400";
+};
+
+export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, refreshToggle, onCurrentPathChange}: FileExplorerProps) {
     const [items, setItems] = useState<FileSystemItem[]>([])
     const [cwd, setCwd] = useState<string>("")
     const [history, setHistory] = useState<string[]>([])
@@ -44,10 +167,23 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
     const [selectionEnd, setSelectionEnd] = useState({x: 0, y: 0})
     const [selectionBox, setSelectionBox] = useState({left: 0, top: 0, width: 0, height: 0})
     const [isAdditiveDrag, setIsAdditiveDrag] = useState(false);
+    const [isOpeningBrowser, setIsOpeningBrowser] = useState(false);
+
     const selectionSnapshotRef = useRef<Set<string>>(new Set());
 
     const containerRef = useRef<HTMLDivElement>(null)
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+    const dragStartPosRef = useRef({x: 0, y: 0})
+    const mouseOffsetRef = useRef({x: 0, y: 0})
+    const draggedItemsRef = useRef<string[]>([])
+
+    const BoxDrag = useBoxDrag();
+
+    const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const boxDragTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const localDragStartedRef = useRef<boolean>(false)
+    const localIsDraggingRef = useRef<boolean>(false)
+    const localTargetRef = useRef<{ boxId: number; targetPath: string, targetId?: string } | null>(null)
 
     const filteredItems = searchQuery
         ? items.filter(
@@ -87,6 +223,11 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
         if (!cwd) return
 
         setIsLoading(true)
+        // Notify parent about current path change for drag box-to-box
+        if (onCurrentPathChange) {
+            onCurrentPathChange(cwd)
+        }
+
         if (cloudType && accountId) {
             // Fetch files from the cloud account
             (window as any).cloudFsApi.readDirectory(cloudType, accountId, cwd)
@@ -113,12 +254,61 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                     setLastSelectedItem(null)
                 })
                 .catch((err) => {
-                    console.error(err) 
+                    console.error(err)
                     setIsLoading(false)
                 })
         }
-        
+
     }, [cwd])
+
+    useEffect(() => {
+        console.log("Refreshing directory due to refreshState prop change");
+        refreshDirectory();
+    }, [refreshToggle])
+
+    // This can be in each file explorer component, 
+    // since it gets the file content and open it, 
+    // instead of saving it for uploading to other window later
+    const openFile = async (e: React.MouseEvent, item: FileSystemItem) => {
+        e.preventDefault();
+        setIsOpeningBrowser(true);
+        let fileContent: FileContent | null = null;
+        if (!cloudType || !accountId) {
+            // For local file system, just pass the current
+            console.log("Opening local file:", item.path);
+            fileContent =  await (window as any).fsApi.getFile(item.path);
+        } else {
+            console.log("Opening cloud file:", item.path);
+            fileContent = await (window as any).cloudFsApi.getFile(cloudType, accountId, item.path);
+        }
+
+        if (!fileContent) {
+            console.log("No file content to open");
+            return;
+        }
+        console.log("Opening file:", fileContent);
+        if (fileContent.url) {
+            const response = await (window as any).electronAPI.openExternalUrl(fileContent.url);
+            if (response && response.success) {
+                console.log("File URL opened successfully:", fileContent.url);
+            } else {
+                console.error("Failed to open file URL:", fileContent.url, response?.error);
+            }
+        } else {
+            console.error("File URL is undefined, create blob URL instead");
+            // Create a blob URL for the file content
+            if (!fileContent.content) {
+                console.error("File content is undefined, cannot create blob URL");
+                return;
+            }
+            const blob = new Blob([fileContent.content], { type: fileContent.type });
+            const blobUrl = URL.createObjectURL(blob);
+            // open the blob URL in a new tab
+            window.open(blobUrl, '_blank');
+        }
+        setIsOpeningBrowser(false);
+    }
+
 
     const updatePathSegments = (path: string) => {
         // Split path into segments
@@ -157,7 +347,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
             navigateTo(CLOUD_HOME)
         } else {
             console.log("Navigating to local home directory");
-            const homePath = await window.fsApi.getHome()
+            const homePath = window.fsApi.getHome()
             navigateTo(homePath)
         }
     }
@@ -168,13 +358,31 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
     }
 
     const refreshDirectory = () => {
-        if (cwd) {
-            setIsLoading(true)
+        setIsLoading(true)
+        if (cloudType && accountId) {
+            // Fetch files from the cloud account
+            (window as any).cloudFsApi.readDirectory(cloudType, accountId, cwd)
+                .then((files: FileSystemItem[]) => {
+                    setItems(files)
+                    updatePathSegments(cwd)
+                    setIsLoading(false)
+                    setSelectedItems(new Set())
+                    setLastSelectedItem(null)
+                })
+                .catch((err: Error) => {
+                    console.error(err)
+                    setIsLoading(false)
+                })
+        } else {
+            // Fetch files from the local directory
             window.fsApi
                 .readDirectory(cwd)
                 .then((files) => {
                     setItems(files)
+                    updatePathSegments(cwd)
                     setIsLoading(false)
+                    setSelectedItems(new Set())
+                    setLastSelectedItem(null)
                 })
                 .catch((err) => {
                     console.error(err)
@@ -187,16 +395,23 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
     const handleItemClick = (e: React.MouseEvent, item: FileSystemItem) => {
 
         // Double click to navigate into directory
-        if (e.detail === 2 && item.isDirectory) {
-            navigateTo(item.path)
+        if (e.detail === 2) {
+            if (!item.isDirectory) {
+                openFile(e, item)
+            } else {
+                navigateTo(item.path)
+            }
             return
         }
+
+        console.log("Item clicked:", item)
+
 
         const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
         if (e.shiftKey && lastSelectedItem) {
-            const itemsPathList = sortedItems.map((i) => i.path);
-            const currentIndex = itemsPathList.indexOf(item.path);
+            const itemsPathList = sortedItems.map((i) => i.id); // TODO item path list to item id list?
+            const currentIndex = itemsPathList.indexOf(item.id); // TODO
             const lastIndex = itemsPathList.indexOf(lastSelectedItem);
 
             if (currentIndex !== -1 && lastIndex !== -1) {
@@ -225,16 +440,16 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
             }
         } else if (ctrlOrMeta) {
             const newSelectedItemsUpdate = new Set(selectedItems);
-            if (newSelectedItemsUpdate.has(item.path)) {
-                newSelectedItemsUpdate.delete(item.path);
+            if (newSelectedItemsUpdate.has(item.id)) {
+                newSelectedItemsUpdate.delete(item.id);
             } else {
-                newSelectedItemsUpdate.add(item.path);
+                newSelectedItemsUpdate.add(item.id);
             }
             setSelectedItems(newSelectedItemsUpdate);
-            setLastSelectedItem(item.path);
+            setLastSelectedItem(item.id);
         } else {
-            setSelectedItems(new Set([item.path]));
-            setLastSelectedItem(item.path);
+            setSelectedItems(new Set([item.id]));
+            setLastSelectedItem(item.id);
         }
     }
 
@@ -243,7 +458,6 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
         if ((e.target as HTMLElement).closest(".file-item") || e.button !== 0) {
             return;
         }
-
 
         const additive = e.ctrlKey || e.metaKey;
         setIsAdditiveDrag(additive);
@@ -259,7 +473,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
         if (!container) return;
 
         const rect = container.getBoundingClientRect();
-        const x = Math.max(0, Math.min(rect.width  - 1, e.clientX - rect.left));
+        const x = Math.max(0, Math.min(rect.width - 1, e.clientX - rect.left));
         const y = Math.max(0, Math.min(rect.height - 1, e.clientY - rect.top));
 
         setIsSelecting(true);
@@ -279,7 +493,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
         const itemsCurrentlyInBox = new Set<string>();
         const containerRect = containerRef.current.getBoundingClientRect();
 
-        itemRefs.current.forEach((element, path) => {
+        itemRefs.current.forEach((element, id) => {
             if (!element) return;
 
             const itemRect = element.getBoundingClientRect();
@@ -294,7 +508,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                 itemRight > box.left &&
                 itemTop < box.top + box.height &&
                 itemBottom > box.top) {
-                itemsCurrentlyInBox.add(path);
+                itemsCurrentlyInBox.add(id);
             }
         });
 
@@ -304,13 +518,13 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
         } else {
             setSelectedItems(itemsCurrentlyInBox);
         }
-    }, [isSelecting, isAdditiveDrag, selectionSnapshotRef]);
+    }, [isSelecting, isAdditiveDrag]);
 
     const handleMouseMove = useCallback((e: React.MouseEvent | MouseEvent) => {
         if (!isSelecting || !containerRef.current) return;
 
         const rect = containerRef.current.getBoundingClientRect();
-        const currentX = Math.max(0, Math.min(rect.width  - 1, e.clientX - rect.left));
+        const currentX = Math.max(0, Math.min(rect.width - 1, e.clientX - rect.left));
         const currentY = Math.max(0, Math.min(rect.height - 1, e.clientY - rect.top));
 
         setSelectionEnd({x: currentX, y: currentY});
@@ -333,7 +547,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
 
 
         updateSelectedItemsFromBox(newSelectionBox);
-    }, [isSelecting, selectionStart, updateSelectedItemsFromBox]);
+    }, [isSelecting, updateSelectedItemsFromBox, selectionStart.x, selectionStart.y]);
 
 
     const handleMouseUp = () => {
@@ -342,6 +556,224 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
         }
     }
 
+    const handleItemMouseDown = (e: React.MouseEvent, item: FileSystemItem) => {
+        if (e.button !== 0) return;
+
+        dragStartPosRef.current = {x: e.clientX, y: e.clientY}
+
+        const itemElement = itemRefs.current.get(item.id)
+        if (itemElement) {
+            const rect = itemElement.getBoundingClientRect()
+            mouseOffsetRef.current = {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top,
+            }
+        }
+
+        let itemsToDrag: string[]
+        if (selectedItems.has(item.id)) {
+            itemsToDrag = Array.from(selectedItems)
+        } else {
+            itemsToDrag = [item.id]
+            setSelectedItems(new Set([item.id]))
+            setLastSelectedItem(item.id)
+        }
+
+        draggedItemsRef.current = itemsToDrag
+
+        document.addEventListener("mousemove", handleItemMouseMove)
+        document.addEventListener("mouseup", handleItemMouseUp)
+    }
+
+
+    const handleItemMouseMove = (e: MouseEvent) => {
+        if (!localDragStartedRef.current && !localIsDraggingRef.current) {
+            console.log("Not dragging, checking for drag start")
+            const dx = e.clientX - dragStartPosRef.current.x
+            const dy = e.clientY - dragStartPosRef.current.y
+            const distance = Math.sqrt(dx * dx + dy * dy)
+            if (distance > 5) {
+                console.log("Drag started, setting isDragging to true")
+                BoxDrag.setIsDragging(true);
+                localIsDraggingRef.current = true;
+                localDragStartedRef.current = true;
+                // TODO maybe implement saving the dragged items to a ref and load the contents of them here?
+
+                // Start box drag with the dragged items
+                const draggedFileItems = sortedItems.filter(item =>
+                    draggedItemsRef.current.includes(item.id)
+                );
+                BoxDrag.setDragItems(
+                    draggedFileItems,
+                    boxId,
+                    cloudType,
+                    accountId
+                );
+                tempGetFile?.(draggedFileItems.map(item => item.path).join(","), cloudType, accountId);
+                console.log("Box drag started with items:", draggedFileItems, boxId, cloudType, accountId);
+            } else {
+                console.log("Distance TOoooooooooooooooooooo short:", distance)
+                return
+            }
+        }
+
+        if (throttleTimeoutRef.current) {
+            clearTimeout(throttleTimeoutRef.current)
+        }
+
+        throttleTimeoutRef.current = setTimeout(() => {
+            if (!containerRef.current || !localIsDraggingRef.current) return
+
+            const containerRect = containerRef.current.getBoundingClientRect()
+            const relativeX = e.clientX - containerRect.left
+            const relativeY = e.clientY - containerRect.top + containerRef.current.scrollTop
+
+            const isWithinContainer = e.clientX >= containerRect.left &&
+                e.clientX <= containerRect.right &&
+                e.clientY >= containerRect.top &&
+                e.clientY <= containerRect.bottom;
+
+            let newDropTarget: string | null = null
+
+            if (isWithinContainer) {
+                console.log("Mouse is within container, checking for drop target")
+                for (const item of sortedItems) {
+                    if (draggedItemsRef.current.includes(item.id)) continue
+
+                    const itemElement = itemRefs.current.get(item.id)
+                    if (!itemElement) continue
+
+                    const itemRect = itemElement.getBoundingClientRect()
+                    const itemLeft = itemRect.left - containerRect.left
+                    const itemTop = itemRect.top - containerRect.top + containerRef.current.scrollTop
+                    const itemRight = itemLeft + itemRect.width
+                    const itemBottom = itemTop + itemRect.height
+
+                    if (relativeX >= itemLeft && relativeX <= itemRight &&
+                        relativeY >= itemTop && relativeY <= itemBottom) {
+                        console.log("Mouse is over item:", item.name)
+                        // newDropTarget = item.id;
+                        BoxDrag.setTarget({
+                            boxId: boxId,
+                            targetPath: item.path,
+                            targetId: item.id
+                        });
+                        localTargetRef.current = {
+                            boxId: boxId,
+                            targetPath: item.path,
+                            targetId: item.id
+                        };
+                        break
+                    }
+                }
+            }
+
+            // updateDropTarget(newDropTarget)
+
+            const scrollThreshold = 60
+            const scrollAmount = 10
+
+            if (e.clientY < containerRect.top + scrollThreshold) {
+                containerRef.current.scrollTop -= scrollAmount
+            } else if (e.clientY > containerRect.bottom - scrollThreshold) {
+                containerRef.current.scrollTop += scrollAmount
+            }
+        }, 16)
+    }
+
+
+    const handleItemMouseUp = async () => {
+        // TODO maybe implement removing the ref for dragged items?
+        document.removeEventListener("mousemove", handleItemMouseMove)
+        document.removeEventListener("mouseup", handleItemMouseUp)
+
+        if (throttleTimeoutRef.current) {
+            clearTimeout(throttleTimeoutRef.current)
+            throttleTimeoutRef.current = null
+        }
+
+        const currentBoxDragState = {
+            isDragging: BoxDrag.isDragging,
+            target: BoxDrag.target,
+            dragItems: BoxDrag.dragItems
+        };
+
+        console.log("Box drag state on mouse up:", currentBoxDragState);
+
+        // Temporal variable to store the drag state before resetting it
+        // const wasDragStarted = BoxDrag.dragStarted;
+
+        // Check if this was actually a drag that should trigger a move
+        if (localIsDraggingRef.current &&
+            localTargetRef.current) {
+
+            const itemsToMove = draggedItemsRef.current
+
+            console.log(`Moving ${itemsToMove.length} items to ${localTargetRef.current.targetPath || "unknown target"}`)
+            console.log("Items to move:", itemsToMove)
+
+            const targetItem = sortedItems.find((item) => item.id === String(localTargetRef.current?.targetId));
+            if (targetItem && targetItem.isDirectory) {
+                console.log(`Target directory detected: ${targetItem.path}`)
+                // implement the actual move TODO
+                await tempPostFile?.(targetItem.path, cloudType, accountId);
+                
+                refreshDirectory(); // Refresh the directory after moving files
+                // TODO Clear the fileCache in the HomePage?
+            } else if (targetItem && !targetItem.isDirectory) {
+                console.log(`Target file detected: ${targetItem.name}`)
+                tempPostFile?.(targetItem.path, cloudType, accountId)
+                // implement the actual creating of folder and move both files?
+            }
+        } else {
+            console.log("No inner drag operation")
+        }
+
+        // Reset all drag states for inner drag
+        // setIsDragging(false)
+        // setDraggedItem(null)
+        // setDraggedItems([])
+        // setDropTarget(null)
+        // dragStateRef.current = {
+        //     isDragging: false,
+        //     dragStarted: false,
+        //     dropTarget: null,
+        //     lastDropTarget: null
+        // }
+
+        //Box to box cleanup
+        if (localIsDraggingRef.current) {
+
+            // Check if this was a drop (if we have a valid drop target)
+            const hasValidDropTarget = BoxDrag.target !== null;
+
+            if (hasValidDropTarget) {
+                boxDragTimeoutRef.current = setTimeout(() => {
+                    if (BoxDrag.isDragging) {
+                        // BoxDrag.endBoxDrag();
+                        // BoxDrag.setDragItems([], null);
+                        // BoxDrag.setIsDragging(false);
+                    }
+                    boxDragTimeoutRef.current = null;
+                }, 100);
+            } else {
+                // BoxDrag.endBoxDrag();
+                // BoxDrag.setDragItems([], null);
+                // BoxDrag.setIsDragging(false);
+            }
+        } else if (BoxDrag.isDragging) {
+            // BoxDrag.endBoxDrag();
+            // BoxDrag.setDragItems([], null);
+            // BoxDrag.setIsDragging(false);
+        } else {
+            return;
+        }
+        BoxDrag.setDragItems([], null);
+        BoxDrag.setIsDragging(false);
+        localDragStartedRef.current = false;
+        localIsDraggingRef.current = false;
+        localTargetRef.current = null;
+    }
 
 
     useEffect(() => {
@@ -369,18 +801,67 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
         };
     }, [isSelecting, handleMouseMove, handleMouseUp]);
 
+    const handleSelectionEnd = () => {
+        setIsSelecting(false)
+
+        document.removeEventListener("mousemove", handleMouseMove)
+        document.removeEventListener("mouseup", handleSelectionEnd)
+    }
+
+    useEffect(() => {
+        return () => {
+            document.removeEventListener("mousemove", handleItemMouseMove)
+            document.removeEventListener("mouseup", handleItemMouseUp)
+            document.removeEventListener("mousemove", handleMouseMove)
+            document.removeEventListener("mouseup", handleSelectionEnd)
+            if (throttleTimeoutRef.current) {
+                clearTimeout(throttleTimeoutRef.current)
+            }
+            if (boxDragTimeoutRef.current) {
+                clearTimeout(boxDragTimeoutRef.current)
+            }
+            if (BoxDrag.isDragging) {
+                // BoxDrag.endBoxDrag();
+                BoxDrag.setDragItems([], null);
+                BoxDrag.setIsDragging(false);
+            }
+        }
+    }, [])
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             // Ctrl+A or Cmd+A:
             if ((e.ctrlKey || e.metaKey) && e.key === "a") {
                 e.preventDefault()
-                const allItems = new Set(sortedItems.map((item) => item.path))
+                const allItems = new Set(sortedItems.map((item) => item.id))
                 setSelectedItems(allItems)
             }
 
             if (e.key === "Escape") {
                 setSelectedItems(new Set())
                 setLastSelectedItem(null)
+                if (BoxDrag.isDragging) {
+                    // setIsDragging(false)
+                    // setDraggedItem(null)
+                    // setDraggedItems([])
+                    // setDropTarget(null)
+
+
+                    if (boxDragTimeoutRef.current) {
+                        clearTimeout(boxDragTimeoutRef.current)
+                        boxDragTimeoutRef.current = null
+                    }
+
+
+                    if (BoxDrag.isDragging) {
+                        // BoxDrag.endBoxDrag();
+                        BoxDrag.setDragItems([], null);
+                        BoxDrag.setIsDragging(false);
+                    }
+                }
+                if (isSelecting) {
+                    setIsSelecting(false)
+                }
             }
 
             // Delete
@@ -392,7 +873,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
 
         window.addEventListener("keydown", handleKeyDown)
         return () => window.removeEventListener("keydown", handleKeyDown)
-    }, [selectedItems])
+    }, [selectedItems, BoxDrag.isDragging, isSelecting, sortedItems])
 
 
     const selectedCount = selectedItems.size
@@ -403,12 +884,11 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                 <div className="flex items-center space-x-1 text-sm text-gray-400">
                     {currentPath.map((segment, index) => (
                         <React.Fragment key={index}>
-                            {index !== 0 && ( <ChevronRight className="h-3 w-3 mx-1 text-gray-500"/>)}
+                            {index !== 0 && <ChevronRight className="h-3 w-3 mx-1 text-gray-500"/>}
                             <span
                                 className="text-blue-400 cursor-pointer hover:underline"
                                 onClick={() => {
                                     const path = "/" + currentPath.slice(0, index + 1).join("/")
-                                    
                                     navigateTo(path)
                                 }}
                             >
@@ -419,18 +899,18 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                 </div>
             </div>
 
-            {/* Navigation and search */}
+            {/* Toolbar */}
             <div className="flex items-center gap-1 p-4 bg-white dark:bg-slate-800">
                 <Button
                     onClick={goToHome}
-                    className="p-2 rounded-md hover:bg-slate-100 text-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 "
+                    className="p-2 rounded-md hover:bg-slate-100 text-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 >
                     <Home className="h-5 w-5"/>
                 </Button>
 
                 <Button
                     onClick={navigateUp}
-                    className="p-2 rounded-md hover:bg-slate-100 text-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 "
+                    className="p-2 rounded-md hover:bg-slate-100 text-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 >
                     <ArrowUp className="h-5 w-5"/>
                 </Button>
@@ -446,7 +926,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                 <Button
                     onClick={navigateForward}
                     disabled={historyIndex >= history.length - 1}
-                    className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200  disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     <ChevronRight className="h-5 w-5"/>
                 </Button>
@@ -477,9 +957,7 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                     />
                 </div>
             </div>
-
-
-            {isSelecting || selectedCount > 0 && (
+            {selectedCount > 0 && (
                 <div
                     className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border-y border-blue-100 dark:border-blue-800">
           <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
@@ -489,7 +967,6 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                         <Button
                             variant="outline"
                             size="sm"
-                            disabled={selectedCount === 0}
                             className="flex items-center gap-1 text-xs"
                             onClick={() => console.log("Copy selected items:", Array.from(selectedItems))}
                         >
@@ -499,7 +976,6 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                         <Button
                             variant="outline"
                             size="sm"
-                            disabled={selectedCount === 0}
                             className="flex items-center gap-1 text-xs"
                             onClick={() => console.log("Move selected items:", Array.from(selectedItems))}
                         >
@@ -509,7 +985,6 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                         <Button
                             variant="outline"
                             size="sm"
-                            disabled={selectedCount === 0}
                             className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
                             onClick={() => console.log("Delete selected items:", Array.from(selectedItems))}
                         >
@@ -520,87 +995,90 @@ export function FileExplorer({cloudType, accountId}: FileExplorerProps) {
                 </div>
             )}
 
-                <div
-                    ref={containerRef}
-                    className="relative h-full bg-black pt-2 pl-4 pr-4 pb-4 overflow-y-auto "
-                    onMouseDown={handleMouseDown}
-                    //onMouseMove={handleMouseMove}
-                    //onMouseUp={handleMouseUp}
-                    //onMouseLeave={handleMouseUp}
-                >
-                    {isSelecting && (
-                        <div
-                            className="box-selecting overflow-hidden z-10"
-                            style={{
-                                left: `${selectionBox.left}px`,
-                                top: `${selectionBox.top}px`,
-                                width: `${selectionBox.width}px`,
-                                height: `${selectionBox.height}px`,
-                            }}
-                        />
-                    )}
-                    {isLoading ? (
-                        <div className="flex justify-center items-center h-32">
+            <div
+                ref={containerRef}
+                className="relative flex-1 bg-white dark:bg-slate-900 pt-2 px-4 pb-4 overflow-y-auto"
+                onMouseDown={handleMouseDown}
+            >
+                {isSelecting && (
+                    <div
+                        className="absolute border-2 border-blue-500 bg-blue-500/20 z-10 pointer-events-none rounded-sm"
+                        style={{
+                            left: `${selectionBox.left}px`,
+                            top: `${selectionBox.top}px`,
+                            width: `${selectionBox.width}px`,
+                            height: `${selectionBox.height}px`,
+                        }}
+                    />
+                )}
+
+                {isOpeningBrowser ? (
+                    // TODO: change this to something else?
+                        <div className="flex justify-center items-center h-full">
+                            <RefreshCw className="h-8 w-8 text-blue-400 animate-spin"/>
+                        </div>
+                ) : (
+                    isLoading ? (
+                        <div className="flex justify-center items-center h-full">
                             <RefreshCw className="h-8 w-8 text-blue-400 animate-spin"/>
                         </div>
                     ) : sortedItems.length > 0 ? (
-                        <div
-                            className="grid grid-cols-[repeat(auto-fit,_minmax(120px,_1fr))]
- gap-4">
-                            {sortedItems.map((item, index) => (
-                                <div
-                                    key={item.path + index}
-                                    ref={(el) => {
-                                        if (el) itemRefs.current.set(item.path + index, el)
-                                        else itemRefs.current.delete(item.path + index)
-                                    }}
-                                    onClick={(e) => handleItemClick(e, item)}
-                                    onDoubleClick={(e) => {
-                                        if (item.isDirectory) {
-                                            navigateTo(item.path);
-                                        }
-                                        e.stopPropagation();
-                                    }}
-                                    className={cn(
-                                        "file-item flex flex-col items-center justify-center p-3 rounded-md cursor-pointer transition-colors",
-                                        selectedItems.has(item.path)
-                                            ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700"
-                                            : "hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent",
-                                    )}
-                                >
-                                    <div className="w-16 h-16 flex items-center justify-center mb-2">
-                                        {item.isDirectory ? (
-                                            <FolderIcon
-                                                className={cn("w-14 h-14", selectedItems.has(item.path) ? "text-blue-500" : "text-blue-400")}
-                                            />
-                                        ) : (
-                                            <FileIcon
-                                                className={cn("w-14 h-14", selectedItems.has(item.path) ? "text-blue-500" : "text-gray-400")}
-                                            />
-                                        )}
-                                    </div>
-                                    <span
+                        <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4">
+                            {sortedItems.map((item) => {
+                                const IconComponent = getFileIcon(item.name, item.isDirectory);
+                                const iconColor = getIconColor(item.name, item.isDirectory, selectedItems.has(item.id), BoxDrag.target?.boxId === Number(item.id));
+                                return (
+                                    <div
+                                        key={item.id}
+                                        ref={(el) => {
+                                            if (el) itemRefs.current.set(item.id, el)
+                                            else itemRefs.current.delete(item.id)
+                                        }}
+                                        onClick={(e) => handleItemClick(e, item)}
+                                        onMouseDown={(e) => handleItemMouseDown(e, item)}
                                         className={cn(
-                                            "text-sm text-center truncate w-full",
-                                            selectedItems.has(item.path)
-                                                ? "text-blue-700 dark:text-blue-300 font-medium"
-                                                : "text-slate-800 dark:text-slate-200",
+                                            "file-item flex flex-col items-center justify-center p-3 rounded-md cursor-pointer transition-all",
+                                            selectedItems.has(item.id)
+                                                ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700"
+                                                : !isBoxToBoxTransfer
+                                                    ? "hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent"
+                                                    : "border border-transparent",
+                                            // Add hover effect when dragging
+                                            BoxDrag.isDragging && !draggedItemsRef.current.includes(item.id) && BoxDrag.sourceBoxId == boxId &&
+                                                "hover:ring-2 hover:ring-green-500 hover:bg-green-100 dark:hover:bg-green-900/30",
+                                            // Dragged items opacity
+                                            draggedItemsRef.current.includes(item.id) && BoxDrag.isDragging && "opacity-50",
                                         )}
-                                        title={item.name}
                                     >
-                    {item.name}
-                  </span>
-                                </div>
-                            ))}
+                                        <div className="w-16 h-16 flex items-center justify-center mb-2">
+                                            <IconComponent
+                                                className={cn("h-14 w-14", iconColor)}
+                                            />
+                                        </div>
+                                        <span
+                                            className={cn(
+                                                "block w-full px-1 text-sm leading-tight text-center",
+                                                "break-all line-clamp-2 min-h-[2.5rem]",
+                                                selectedItems.has(item.id)
+                                                    ? "text-blue-700 dark:text-blue-300 font-medium"
+                                                    : "text-slate-800 dark:text-slate-200",
+                                                    BoxDrag.target?.boxId === Number(item.id) && "text-green-700 dark:text-green-300",
+                                            )}
+                                            title={item.name}
+                                        >{item.name}</span>
+                                    </div>
+                                )
+                            })}
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center justify-center text-slate-800 dark:text-slate-200">
+                        <div
+                            className="flex flex-col items-center justify-center h-full text-slate-800 dark:text-slate-200">
                             <FolderIcon className="w-16 h-16 mb-4 opacity-30"/>
                             <p>This folder is empty</p>
                         </div>
-                    )}
-
-                </div>
+                    )
+                )}
+            </div>
         </div>
     )
 }

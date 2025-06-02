@@ -1,5 +1,6 @@
 import type React from "react";
 import { CloudType } from "./cloudType";
+import {FileContent, FileSystemItem} from "./fileSystem";
 
 export const WINDOW_SIZES = {
     medium: {width: 480, height: 360},
@@ -18,7 +19,12 @@ export interface StorageBoxProps {
     canvasZoom: number;
     canvasPan: { x: number; y: number };
     isMaximized: boolean;
-    setIsMaximized: React.Dispatch<React.SetStateAction<boolean>>;
+    setIsMaximized: (isMaximized: boolean) => void;
+    // tempPostFile: (cloudType: CloudType, accountId: string, parentPath: string) => void;
+    // tempGetFile: (fileContent: FileContent) => void;
+    tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void
+    tempGetFile?: (filePath: string, cloudType?: CloudType, accountId?: string) => void
+    onBoxTransfer?: (sourceItems: any[], targetBoxId: number, targetPath?: string) => void;
 }
 
 export interface StorageBoxData {
@@ -27,10 +33,6 @@ export interface StorageBoxData {
     type: string
     position: { x: number; y: number }
     size: { width: number; height: number }
-    content: {
-        folders: string[]
-        files: string[]
-    }
     icon?: React.ReactNode
     zIndex: number
     cloudType?: CloudType
