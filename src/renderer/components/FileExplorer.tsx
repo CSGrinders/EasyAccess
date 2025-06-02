@@ -545,7 +545,6 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
             containerRef.current.scrollTop += scrollAmount;
         }
 
-        // For item intersection checking, use coordinates without scroll offset
         const boxForIntersection = {
             left: Math.min(selectionStart.x, currentX),
             top: Math.min(selectionStart.y, currentY),
