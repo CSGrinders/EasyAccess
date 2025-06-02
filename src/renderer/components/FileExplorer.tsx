@@ -479,7 +479,7 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
         setIsSelecting(true);
         setSelectionStart({x, y});
         setSelectionEnd({x, y});
-        setSelectionBox({left: x, top: y, width: 0, height: 0});
+        setSelectionBox({left: x, top: y + container.scrollTop, width: 0, height: 0});
     }
 
     const updateSelectedItemsFromBox = useCallback((box: {
@@ -531,7 +531,7 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
 
         const newSelectionBox = {
             left: Math.min(selectionStart.x, currentX),
-            top: Math.min(selectionStart.y, currentY),
+            top: Math.min(selectionStart.y, currentY) + containerRef.current.scrollTop,
             width: Math.abs(currentX - selectionStart.x),
             height: Math.abs(currentY - selectionStart.y),
         };
@@ -545,8 +545,14 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
             containerRef.current.scrollTop += scrollAmount;
         }
 
-
-        updateSelectedItemsFromBox(newSelectionBox);
+        // For item intersection checking, use coordinates without scroll offset
+        const boxForIntersection = {
+            left: Math.min(selectionStart.x, currentX),
+            top: Math.min(selectionStart.y, currentY),
+            width: Math.abs(currentX - selectionStart.x),
+            height: Math.abs(currentY - selectionStart.y),
+        };
+        updateSelectedItemsFromBox(boxForIntersection);
     }, [isSelecting, updateSelectedItemsFromBox, selectionStart.x, selectionStart.y]);
 
 
