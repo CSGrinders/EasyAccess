@@ -37,6 +37,17 @@ const HomePage = () => {
     const fileContentsCacheRef = useRef<FileContent[]>([]);
     const isContentLoading = useRef(false);
 
+    // Should be called from the successful uploaded file
+    const deleteFileFromSource = async (fileContentCache: FileContent) => {
+        // source from the local file system
+        if (!fileContentCache.sourceCloudType || !fileContentCache.sourceAccountId) {
+            await (window as any).fsApi.deleteFile(fileContentCache.path); // TODO remove from the corresponding source file owner           
+            return;
+        }
+        // source from the cloud file system
+        await (window as any).cloudFsApi.deleteFile(fileContentCache.sourceCloudType, fileContentCache.sourceAccountId, fileContentCache.path); // TODO remove from the corresponding source file owner
+    }
+
     const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
         setIsMovingItem(true); // Set moving item state to true
         // Wait for any ongoing get operation to complete
@@ -57,8 +68,9 @@ const HomePage = () => {
             console.log("local file system, call postFile from local file system: ", parentPath, fileContentsCache);
             for (const fileContentCache of fileContentsCacheRef.current) {
                 await (window as any).fsApi.postFile(fileContentCache.name, parentPath, fileContentCache.content)
-                    .then(() => {
+                    .then(async () => {
                             console.log("File uploaded successfully")
+                            await deleteFileFromSource(fileContentCache);
                             setFileUploadMessage("File uploaded successfully");
                         }
                     ).catch((err: Error) => {
@@ -70,8 +82,9 @@ const HomePage = () => {
         } else {
             for (const fileContentCache of fileContentsCacheRef.current) {
                 await (window as any).cloudFsApi.postFile(cloudType, accountId, fileContentCache.name, parentPath, fileContentCache.content)
-                    .then(() => {
+                    .then(async () => {
                             console.log("File uploaded successfully")
+                            await deleteFileFromSource(fileContentCache);
                             setFileUploadMessage("File uploaded successfully");
                         }
                     ).catch((err: Error) => {
