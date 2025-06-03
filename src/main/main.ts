@@ -97,6 +97,27 @@ ipcMain.handle('open-external-url', async (event, url) => {
     }
 });
 
+ipcMain.handle('open-file', async (event, fileContent: FileContent) => {
+    try {
+      if (fileContent.sourceCloudType) {
+        // If the file is from a cloud source, we need to download it first
+        const tempFilePath = path.join(app.getPath('temp'), fileContent.name);
+        if (fileContent.content) {
+            fs.writeFileSync(tempFilePath, fileContent.content);
+        } else {
+            throw new Error("File content is undefined");
+        }
+        await shell.openPath(tempFilePath);
+        return { success: true };
+      }
+      await shell.openPath(fileContent.path);
+      return { success: true };
+    } catch (err) {
+      console.error("Error opening Python file:", err);
+      return { success: false };
+    }
+  });
+
 ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, data: Buffer) => {
     console.log('Posting file:', fileName, folderPath, data);
     const filePath = path.join(folderPath, fileName);
