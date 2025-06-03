@@ -37,15 +37,39 @@ const HomePage = () => {
     const fileContentsCacheRef = useRef<FileContent[]>([]);
     const isContentLoading = useRef(false);
 
+    const boxRefs = useRef(new Map());
+
+    const getRefForBox = (id: number) => {
+      if (!boxRefs.current.has(id)) {
+        boxRefs.current.set(id, React.createRef());
+      }
+      return boxRefs.current.get(id);
+    };
+
     // Should be called from the successful uploaded file
     const deleteFileFromSource = async (fileContentCache: FileContent) => {
+        console.log("Deleting file from source:", fileContentCache);
         // source from the local file system
         if (!fileContentCache.sourceCloudType || !fileContentCache.sourceAccountId) {
             await (window as any).fsApi.deleteFile(fileContentCache.path); // TODO remove from the corresponding source file owner           
-            return;
+            
         }
         // source from the cloud file system
         await (window as any).cloudFsApi.deleteFile(fileContentCache.sourceCloudType, fileContentCache.sourceAccountId, fileContentCache.path); // TODO remove from the corresponding source file owner
+        storageBoxes.forEach((box) => {
+            console.log("Checking box:", box.id, "for file deletion");
+            console.log("Box sourceAccountId:", box.accountId, "Box cloudType:", box.cloudType);
+            console.log("File sourceAccountId:", fileContentCache.sourceAccountId, "File cloudType:", fileContentCache.sourceCloudType);
+            if (box.accountId === fileContentCache.sourceAccountId && box.cloudType === fileContentCache.sourceCloudType ||
+                (!box.accountId && !fileContentCache.sourceAccountId && !box.cloudType && !fileContentCache.sourceCloudType) // Local file system
+            ) {
+                // If the box is open, we can call a method on the box to update its content
+                console.log("Refresh for updated box content for box:", box.id);
+                const ref = boxRefs.current.get(box.id);
+                ref.current?.callDoRefresh?.(); 
+            }
+        }
+        );
     }
 
     const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
@@ -310,6 +334,7 @@ const HomePage = () => {
                             >
                                 {storageBoxes.map((box) => (
                                     <StorageBox
+                                        ref={getRefForBox(box.id)}
                                         key={box.id}
                                         box={box}
                                         onClose={removeWindow}
