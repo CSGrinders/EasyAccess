@@ -78,6 +78,9 @@ ipcMain.handle('get-file', async (_e, filePath: string) => {
         name: filePath.split(path.sep).pop() || '', // Get the file name from the path
         content: data, 
         type: mimeType, // Get the file extension or default to 'txt'
+        path: filePath, // Full path to the file
+        sourceAccountId: null, // No cloud source for local files
+        sourceCloudType: null // No cloud source for local files
     };
 
     return fileContent;

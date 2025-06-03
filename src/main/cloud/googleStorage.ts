@@ -295,6 +295,9 @@ export class GoogleDriveStorage implements CloudStorage {
           name: filePath.split('/').pop() || '',
           content: data,
           type: mimeType, // TODO: get the correct mime type
+          path: CLOUD_HOME + filePath, // prepend the cloud home path
+          sourceCloudType: CloudType.GoogleDrive,
+          sourceAccountId: this.accountId || null, // Optional cloud type if the file is from a cloud storage
         };
         return fileContent;
       } catch (err) {
@@ -314,6 +317,9 @@ export class GoogleDriveStorage implements CloudStorage {
           name: filePath.split('/').pop() || '',
           url: fileUrl,
           type: mimeType || 'application/octet-stream', // default to binary if no mime type found
+          path: CLOUD_HOME + filePath, // Path to the file in the source file system
+          sourceCloudType: CloudType.GoogleDrive,
+          sourceAccountId: this.accountId || null, // Optional cloud type if the file is from a cloud storage
         };
         
         // Return the file content with URL

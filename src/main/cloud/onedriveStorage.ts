@@ -286,6 +286,9 @@ export class OneDriveStorage implements CloudStorage {
         name: fileName,
         content: fileData,
         type: fileType,
+        path: CLOUD_HOME + filePath, // prepend the cloud home path
+        sourceCloudType: CloudType.OneDrive, // specify the cloud type
+        sourceAccountId: this.accountId || '', // include the account ID
       };
 
       return fileContent;
