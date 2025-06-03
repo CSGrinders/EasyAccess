@@ -24,6 +24,8 @@ export function CanvasContainer({
     const [dragStart, setDragStart] = useState<Position>({x: 0, y: 0});
     const [dragStartPos, setDragStartPos] = useState<Position>({x: 0, y: 0});
     const [isAnimating, setIsAnimating] = useState(false);
+    const dragFrameRef = useRef<number | null>(null);
+    const lastMousePos = useRef<Position>({x: 0, y: 0});
     const [isVisible, setIsVisible] = useState(false);
     const initialPosition = useRef(controlledPos);
     const velocityRef = useRef<Position>({x: 0, y: 0});
@@ -68,26 +70,40 @@ export function CanvasContainer({
         setIsDragging(true);
         setDragStart({x: e.clientX, y: e.clientY});
         setDragStartPos(posRef.current);
+        
+        // Last mouse position 
+        lastMousePos.current = {x: e.clientX, y: e.clientY};
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
         if (!isDragging || !isPanMode || isAnimating) return;
-        const dx = (e.clientX - dragStart.x) / zoomLevel;
-        const dy = (e.clientY - dragStart.y) / zoomLevel;
-        const HALF = CANVAS_SIZE / 2;
+        
+        // Calculate velocity from mouse movement
+        const currentMousePos = {x: e.clientX, y: e.clientY};
+        const dx = (currentMousePos.x - lastMousePos.current.x) / zoomLevel;
+        const dy = (currentMousePos.y - lastMousePos.current.y) / zoomLevel;
+        const target = e.target as HTMLElement | null;
+        if (target && target.closest(".box-container")) return;
+        if (BoxDrag.isDragging) return;
 
-        posRef.current = {
-            x: Math.max(-HALF, Math.min(HALF, dragStartPos.x + dx)),
-            y: Math.max(-HALF, Math.min(HALF, dragStartPos.y + dy)),
-        };
-        applyTransform(posRef.current);
+        if (boxMaximized) return;
+        e.preventDefault();
+
+        velocityRef.current.x += dx * 0.5; 
+        velocityRef.current.y += dy * 0.5;
+        
+        if (!frameRef.current) {
+            frameRef.current = requestAnimationFrame(step);
+        }
+        
+        // Update last mouse position
+        lastMousePos.current = currentMousePos;
     };
 
     const stopDragging = () => {
         if (isDragging) {
             setIsDragging(false);
-            setPosition(posRef.current);
-            onPositionChange?.(posRef.current);
+    
         }
     };
 
