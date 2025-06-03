@@ -2,6 +2,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FileContent, FileSystemItem } from '../types/fileSystem'
 import { CloudType } from '../types/cloudType';
+import { deleteFile } from './cloud/cloudManager';
 
 contextBridge.exposeInMainWorld('cloudFsApi', {
     connectNewCloudAccount: (cloudType: CloudType) =>
@@ -14,6 +15,8 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
         ipcRenderer.invoke('cloud-get-file', cloudType, accountId, filePath) as Promise<FileContent>,
     postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: string) =>
         ipcRenderer.invoke('cloud-post-file', cloudType, accountId, fileName, folderPath, data) as Promise<void>,
+    deleteFile: (cloudType: CloudType, accountId: string, filePath: string) =>
+        ipcRenderer.invoke('cloud-delete-file', cloudType, accountId, filePath) as Promise<void>,
 });
 
 contextBridge.exposeInMainWorld('fsApi', {
@@ -26,7 +29,9 @@ contextBridge.exposeInMainWorld('fsApi', {
     getFile: (filePath: string) =>
         ipcRenderer.invoke('get-file', filePath) as Promise<FileContent>,
     postFile: (fileName: string, folderPath: string, data: Buffer) =>
-        ipcRenderer.invoke('post-file', fileName, folderPath, data) as Promise<void>
+        ipcRenderer.invoke('post-file', fileName, folderPath, data) as Promise<void>,
+    deleteFile: (filePath: string) =>
+        ipcRenderer.invoke('delete-file', filePath) as Promise<void>,
 })
 
 contextBridge.exposeInMainWorld('electronAPI', {

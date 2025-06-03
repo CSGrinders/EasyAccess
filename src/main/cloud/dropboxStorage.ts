@@ -256,4 +256,20 @@ export class DropboxStorage implements CloudStorage {
     
         console.log(`File "${fileName}" uploaded successfully to "${folderPath}"`);
     }
+
+    async deleteFile(filePath: string): Promise<void> {
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            return Promise.reject('Dropbox client is not initialized');
+        }
+        try {
+            const response = await this.client.filesDeleteV2({ path: filePath });
+            console.log(`response`, response);
+            console.log(`File "${filePath}" deleted successfully`);
+        } catch (error) {
+            console.error('Failed to delete file:', error);
+            throw error;
+        }
+    }
 }

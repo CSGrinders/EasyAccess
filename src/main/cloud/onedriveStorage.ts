@@ -317,4 +317,27 @@ export class OneDriveStorage implements CloudStorage {
       throw error;
     }
   }
+
+  async deleteFile(filePath: string): Promise<void> {
+    if (!this.graphClient) {
+      await this.initAccount();
+    }
+    
+    if (!this.graphClient) {
+      console.error('Graph client is not initialized');
+      return Promise.reject(new Error('Graph client is not initialized'));
+    }
+
+    const apiPath = `/me/drive/root:/${filePath.replace(/^\//, '')}`; // remove leading slash if exists, to avoid double slashes
+    
+    console.log(`Querying OneDrive API path: ${apiPath}`);
+
+    try {
+      await this.graphClient.api(apiPath).delete();
+      console.log(`File deleted successfully: ${filePath}`);
+    } catch (error) {
+      console.error('Error deleting file from OneDrive:', error);
+      throw error;
+    }
+  }
 }

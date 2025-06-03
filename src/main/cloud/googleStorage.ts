@@ -353,4 +353,20 @@ export class GoogleDriveStorage implements CloudStorage {
     readable.push(null); // Signal end of stream
     return readable;
   }
+
+  async deleteFile(filePath: string): Promise<void> {
+    const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const fileId = await this.getFileId(filePath);
+    
+    try {
+      await drive.files.delete({
+        fileId: fileId,
+      });
+      console.log(`File with ID ${fileId} deleted successfully.`);
+    } catch (error) {
+      console.error('Error deleting file:', error);
+      throw error;
+    }
+  }
 }
