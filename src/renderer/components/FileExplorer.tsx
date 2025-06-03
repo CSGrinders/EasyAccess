@@ -302,16 +302,19 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
                 console.error("Failed to open file URL:", fileContent.url, response?.error);
             }
         } else {
-            console.error("File URL is undefined, create blob URL instead");
+            console.log("File URL is undefined, create blob URL instead");
             // Create a blob URL for the file content
             if (!fileContent.content) {
                 console.error("File content is undefined, cannot create blob URL");
                 return;
             }
-            const blob = new Blob([fileContent.content], { type: fileContent.type });
-            const blobUrl = URL.createObjectURL(blob);
-            // open the blob URL in a new tab
-            window.open(blobUrl, '_blank');
+            const isTextFile = ['.txt', '.csv', '.py', '.json', '.log'].some(ext => item.path.endsWith(ext));
+            const blob = new Blob(
+                [fileContent.content],
+                { type: isTextFile ? 'text/plain' : fileContent.type }
+            );
+            const response = await (window as any).electronAPI.openFile(fileContent);
+            console.log( "File opened successfully:", fileContent.path, response);
         }
         setIsOpeningBrowser(false);
     }
@@ -493,7 +496,7 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
         setIsSelecting(true);
         setSelectionStart({x, y});
         setSelectionEnd({x, y});
-        setSelectionBox({left: x, top: y, width: 0, height: 0});
+        setSelectionBox({left: x, top: y + container.scrollTop, width: 0, height: 0});
     }
 
     const updateSelectedItemsFromBox = useCallback((box: {
@@ -545,7 +548,7 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
 
         const newSelectionBox = {
             left: Math.min(selectionStart.x, currentX),
-            top: Math.min(selectionStart.y, currentY),
+            top: Math.min(selectionStart.y, currentY) + containerRef.current.scrollTop,
             width: Math.abs(currentX - selectionStart.x),
             height: Math.abs(currentY - selectionStart.y),
         };
@@ -559,8 +562,13 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
             containerRef.current.scrollTop += scrollAmount;
         }
 
-
-        updateSelectedItemsFromBox(newSelectionBox);
+        const boxForIntersection = {
+            left: Math.min(selectionStart.x, currentX),
+            top: Math.min(selectionStart.y, currentY),
+            width: Math.abs(currentX - selectionStart.x),
+            height: Math.abs(currentY - selectionStart.y),
+        };
+        updateSelectedItemsFromBox(boxForIntersection);
     }, [isSelecting, updateSelectedItemsFromBox, selectionStart.x, selectionStart.y]);
 
 

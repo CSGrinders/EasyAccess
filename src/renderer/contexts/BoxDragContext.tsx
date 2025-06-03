@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useRef, useMemo } from 'react';
 import { FileSystemItem } from '@Types/fileSystem';
 
 export interface DragItems {
@@ -71,16 +71,18 @@ export const BoxDragProvider: React.FC<BoxDragProviderProps> = ({ children }) =>
         targetRef.current = target;
     }, []);
 
-    const contextValue: BoxDragContextType = {
+    const contextValue: BoxDragContextType = useMemo(() => ({
         isDragging: drag,
         sourceBoxId,
         dragPreviewRef,
         dragItems,
-        target: targetRef.current,
+        get target() {
+            return targetRef.current;
+        },
         setDragItems,
         setIsDragging,
         setTarget,
-    };
+    }), [drag, sourceBoxId, dragItems, setDragItems, setIsDragging, setTarget]);
 
     return (
         <BoxDragContext.Provider value={contextValue}>
