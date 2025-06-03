@@ -6,11 +6,12 @@ import { SiIcloud } from "react-icons/si";
 import {StorageWideWindowProps} from "@Types/box";
 import { CloudType } from "../../types/cloudType";
 import { PopupAccounts } from "./PopupAccounts";
+import { HardDrive } from "lucide-react";
 
 
 const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
     const [showAccountPopup, setShowAccountPopup] = useState<boolean>(false);
-    const [toAddCloudType, setToAddCloudType] = useState<CloudType>(CloudType.Dropbox); // default to Dropbox
+    const [toAddCloudType, setToAddCloudType] = useState<CloudType | null>(null); // default to Dropbox
     const [toAddAccount, setToAddAccount] = useState<string | null>(null);
     const [availableAccounts, setAvailableAccounts] = useState<string[]>([]);
 
@@ -51,6 +52,14 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
                             toAddAccount
                         ); 
                         break;
+                    case null:
+                            console.log("Local account connected:", toAddAccount);
+                            addStorage(
+                                "local",
+                                `Local File Directory`,
+                                <HardDrive className="h-6 w-6" />,
+                            ); 
+                            break;
                     default:
                         console.log("No account connected");
                 }
@@ -163,6 +172,20 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
         }
     }
 
+    const handleLocalClicked = async () => {
+        // TODO added for testing
+        // await (window as any).electronAPI.clearAuthTokens(); 
+        console.log('local clicked')
+
+        // change selected cloud type to google drive
+        setToAddCloudType(null);
+        try {
+            setToAddAccount("local");
+        } catch (error) {
+            console.error('Login error:', error)
+        }
+    }
+
     const connectNewCloudAccount = async (cloudType: CloudType) => {
         const accountId = await (window as any).cloudFsApi.connectNewCloudAccount(cloudType);
         setToAddAccount(accountId);
@@ -174,6 +197,11 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
                 show ? "w-22" : "w-0"
             } absolute left-0 top-0 h-full z-30 bg-white ease-in-out dark:bg-slate-900 border-r rounded-xl border-slate-200 dark:border-slate-700 shadow-xl flex flex-col items-center py-8 space-y-4 transition-all duration-300 overflow-hidden`}
         >
+            <CloudItem
+                icon={<HardDrive className="h-5 w-5" />}
+                label="Local Drive"
+                onClick={() => handleLocalClicked()}
+            />
             <CloudItem
                 icon={<FaGoogleDrive className="h-5 w-5" />}
                 label="Google Drive"

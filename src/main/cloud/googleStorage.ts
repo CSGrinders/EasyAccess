@@ -295,6 +295,9 @@ export class GoogleDriveStorage implements CloudStorage {
           name: filePath.split('/').pop() || '',
           content: data,
           type: mimeType, // TODO: get the correct mime type
+          path: CLOUD_HOME + filePath, // prepend the cloud home path
+          sourceCloudType: CloudType.GoogleDrive,
+          sourceAccountId: this.accountId || null, // Optional cloud type if the file is from a cloud storage
         };
         return fileContent;
       } catch (err) {
@@ -314,6 +317,9 @@ export class GoogleDriveStorage implements CloudStorage {
           name: filePath.split('/').pop() || '',
           url: fileUrl,
           type: mimeType || 'application/octet-stream', // default to binary if no mime type found
+          path: CLOUD_HOME + filePath, // Path to the file in the source file system
+          sourceCloudType: CloudType.GoogleDrive,
+          sourceAccountId: this.accountId || null, // Optional cloud type if the file is from a cloud storage
         };
         
         // Return the file content with URL
@@ -352,5 +358,21 @@ export class GoogleDriveStorage implements CloudStorage {
     readable.push(buffer);
     readable.push(null); // Signal end of stream
     return readable;
+  }
+
+  async deleteFile(filePath: string): Promise<void> {
+    const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const fileId = await this.getFileId(filePath);
+    
+    try {
+      await drive.files.delete({
+        fileId: fileId,
+      });
+      console.log(`File with ID ${fileId} deleted successfully.`);
+    } catch (error) {
+      console.error('Error deleting file:', error);
+      throw error;
+    }
   }
 }

@@ -34,10 +34,43 @@ const HomePage = () => {
     const [fileUploadMessage, setFileUploadMessage] = useState<string>("");
     const [fileUploadMessageOpen, setFileUploadMessageOpen] = useState<boolean>(false);
 
-    // const [fileContentCache, setFileContentCache] = useState<FileContent | null>(null);
-
-    const fileContentCacheRef = useRef<FileContent | null>(null);
+    const fileContentsCacheRef = useRef<FileContent[]>([]);
     const isContentLoading = useRef(false);
+
+    const boxRefs = useRef(new Map());
+
+    const getRefForBox = (id: number) => {
+      if (!boxRefs.current.has(id)) {
+        boxRefs.current.set(id, React.createRef());
+      }
+      return boxRefs.current.get(id);
+    };
+
+    // Should be called from the successful uploaded file
+    const deleteFileFromSource = async (fileContentCache: FileContent) => {
+        console.log("Deleting file from source:", fileContentCache);
+        // source from the local file system
+        if (!fileContentCache.sourceCloudType || !fileContentCache.sourceAccountId) {
+            await (window as any).fsApi.deleteFile(fileContentCache.path); // TODO remove from the corresponding source file owner           
+            
+        }
+        // source from the cloud file system
+        await (window as any).cloudFsApi.deleteFile(fileContentCache.sourceCloudType, fileContentCache.sourceAccountId, fileContentCache.path); // TODO remove from the corresponding source file owner
+        storageBoxes.forEach((box) => {
+            console.log("Checking box:", box.id, "for file deletion");
+            console.log("Box sourceAccountId:", box.accountId, "Box cloudType:", box.cloudType);
+            console.log("File sourceAccountId:", fileContentCache.sourceAccountId, "File cloudType:", fileContentCache.sourceCloudType);
+            if (box.accountId === fileContentCache.sourceAccountId && box.cloudType === fileContentCache.sourceCloudType ||
+                (!box.accountId && !fileContentCache.sourceAccountId && !box.cloudType && !fileContentCache.sourceCloudType) // Local file system
+            ) {
+                // If the box is open, we can call a method on the box to update its content
+                console.log("Refresh for updated box content for box:", box.id);
+                const ref = boxRefs.current.get(box.id);
+                ref.current?.callDoRefresh?.(); 
+            }
+        }
+        );
+    }
 
     const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
         setIsMovingItem(true); // Set moving item state to true
@@ -46,69 +79,81 @@ const HomePage = () => {
             console.log("Waiting for content loading to complete...");
             await new Promise(resolve => setTimeout(resolve, 50)); // Poll every 50ms
         }
-        const fileContentCache = fileContentCacheRef.current; // Get the current file content from the ref
-        if (!fileContentCache) {
+        // const fileContentCache = fileContentCacheRef.current; // Get the current file content from the ref
+        const fileContentsCache = fileContentsCacheRef.current; // Get the current file content from the ref
+        if (!fileContentsCache || fileContentsCache.length === 0) {
             console.log("No file content to upload");
             return;
         }
-        console.log("Uploading file content:", cloudType, accountId, fileContentCache);
+        console.log("Uploading file content:", cloudType, accountId, fileContentsCache);
 
         if (!cloudType || !accountId) {
             // local file system
-            console.log("local file system, call postFile from local file system: ", parentPath, fileContentCache);
-
-            await (window as any).fsApi.postFile(fileContentCache.name, parentPath, fileContentCache.content)
-                .then(() => {
-                        console.log("File uploaded successfully")
-                        setFileUploadMessage("File uploaded successfully");
+            console.log("local file system, call postFile from local file system: ", parentPath, fileContentsCache);
+            for (const fileContentCache of fileContentsCacheRef.current) {
+                await (window as any).fsApi.postFile(fileContentCache.name, parentPath, fileContentCache.content)
+                    .then(async () => {
+                            console.log("File uploaded successfully")
+                            await deleteFileFromSource(fileContentCache);
+                            setFileUploadMessage("File uploaded successfully");
+                        }
+                    ).catch((err: Error) => {
+                        console.error(err)
+                        setFileUploadMessage("File upload failed: " + err.message);
                     }
-                ).catch((err: Error) => {
-                    console.error(err)
-                    setFileUploadMessage("File upload failed: " + err.message);
-                }
-            )
+                )
+            }
         } else {
-            await (window as any).cloudFsApi.postFile(cloudType, accountId, fileContentCache.name, parentPath, fileContentCache.content)
-                .then(() => {
-                        console.log("File uploaded successfully")
-                        setFileUploadMessage("File uploaded successfully");
+            for (const fileContentCache of fileContentsCacheRef.current) {
+                await (window as any).cloudFsApi.postFile(cloudType, accountId, fileContentCache.name, parentPath, fileContentCache.content)
+                    .then(async () => {
+                            console.log("File uploaded successfully")
+                            await deleteFileFromSource(fileContentCache);
+                            setFileUploadMessage("File uploaded successfully");
+                        }
+                    ).catch((err: Error) => {
+                        console.error(err)
+                        setFileUploadMessage("File upload failed: " + err.message);
                     }
-                ).catch((err: Error) => {
-                    console.error(err)
-                    setFileUploadMessage("File upload failed: " + err.message);
-                }
-            )
+                )
+            }
         }
         console.log("File upload completed");
         setIsMovingItem(false); // Set moving item state to true
         setFileUploadMessageOpen(true); // Show the file upload message
+        fileContentsCacheRef.current = []; // Clear the file contents cache after upload
     }
 
-    const tempGetFile = async (filePath: string, cloudType?: CloudType, accountId?: string) => {
+    const tempGetFile = async (filePaths: string[], cloudType?: CloudType, accountId?: string) => {
         isContentLoading.current = true; // Set content loading state to true
         if (!cloudType || !accountId) {
             // local file system
-            console.log("local file system, call getFile from local file system:", filePath);
-            await (window as any).fsApi.getFile(filePath)
-                .then((fileContent: FileContent) => {
-                    console.log("File content:", fileContent);
-                    fileContentCacheRef.current = fileContent; // Update the ref with the new file content
-                    // setFileContentCache(fileContent);
-                })
-                .catch((err: Error) => {
-                    console.error(err)
-                })
+            console.log("local file system, call getFile from local file system:", filePaths);
+            for (const filePath of filePaths) {
+                await (window as any).fsApi.getFile(filePath)
+                    .then((fileContent: FileContent) => {
+                        console.log("File content:", fileContent);
+                        // fileContentCacheRef.current = fileContent; // Update the ref with the new file content
+                        fileContentsCacheRef.current.push(fileContent); // Update the ref with the new file content
+                        // setFileContentCache(fileContent);
+                    })
+                    .catch((err: Error) => {
+                        console.error(err)
+                    })
+            }
         } else {
-            console.log("Fetching file content from cloud account:", cloudType, accountId, filePath);
-            await (window as any).cloudFsApi.getFile(cloudType, accountId, filePath)
-                .then((fileContent: FileContent) => {
-                    console.log("File content:", fileContent);
-                    fileContentCacheRef.current = fileContent; // Update the ref with the new file content
-                    // setFileContentCache(fileContent);
-                })
-                .catch((err: Error) => {
-                    console.error(err)
-                })
+            console.log("Fetching file content from cloud account:", cloudType, accountId, filePaths);
+
+            for (const filePath of filePaths) {
+                await (window as any).cloudFsApi.getFile(cloudType, accountId, filePath)
+                    .then((fileContent: FileContent) => {
+                        console.log("File content:", fileContent);
+                        fileContentsCacheRef.current.push(fileContent); // Update the ref with the new file content
+                    })
+                    .catch((err: Error) => {
+                        console.error(err)
+                    })
+            }
         }
         console.log("File content fetch completed");
         isContentLoading.current = false; // Set content loading state to false
@@ -163,16 +208,7 @@ const HomePage = () => {
             position: { x: -250, y: -200 },
             size: { width: 400, height: 300 },
             zIndex: 1,
-        },
-        {
-            id: 2,
-            title: "Google acc",
-            type: "cloud",
-            icon: <FaGoogleDrive className="h-6 w-6"/>,
-            position: { x: 200, y: -150 },
-            size: { width: 450, height: 350 },
-            zIndex: 2,
-        },
+        }
     ]);
 
 
@@ -298,6 +334,7 @@ const HomePage = () => {
                             >
                                 {storageBoxes.map((box) => (
                                     <StorageBox
+                                        ref={getRefForBox(box.id)}
                                         key={box.id}
                                         box={box}
                                         onClose={removeWindow}
