@@ -302,16 +302,19 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
                 console.error("Failed to open file URL:", fileContent.url, response?.error);
             }
         } else {
-            console.error("File URL is undefined, create blob URL instead");
+            console.log("File URL is undefined, create blob URL instead");
             // Create a blob URL for the file content
             if (!fileContent.content) {
                 console.error("File content is undefined, cannot create blob URL");
                 return;
             }
-            const blob = new Blob([fileContent.content], { type: fileContent.type });
-            const blobUrl = URL.createObjectURL(blob);
-            // open the blob URL in a new tab
-            window.open(blobUrl, '_blank');
+            const isTextFile = ['.txt', '.csv', '.py', '.json', '.log'].some(ext => item.path.endsWith(ext));
+            const blob = new Blob(
+                [fileContent.content],
+                { type: isTextFile ? 'text/plain' : fileContent.type }
+            );
+            const response = await (window as any).electronAPI.openFile(fileContent);
+            console.log( "File opened successfully:", fileContent.path, response);
         }
         setIsOpeningBrowser(false);
     }
