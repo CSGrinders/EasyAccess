@@ -29,6 +29,7 @@ export interface CloudStorage {
     postFile(fileName: string, folderPath: string, type: string, data: Buffer): Promise<void>; //TODO
     getAccountId(): string;
     getAuthToken(): AuthTokens | null;
+    deleteFile(filePath: string): Promise<void>; //TODO
 }
 
 

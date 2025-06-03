@@ -229,6 +229,21 @@ export async function saveCloudAccountLocaStorage(cloudType: CloudType, accountI
   }
 }
 
+export async function deleteFile(cloudType: CloudType, accountId: string, filePath: string): Promise<void> {
+  filePath = filePath.replace(CLOUD_HOME, "");
+  console.log('Deleting file from cloud account:', cloudType, accountId, filePath);
+  const accounts = StoredAccounts.get(cloudType);
+  if (accounts) {
+    for (const account of accounts) {
+      if (account.getAccountId() === accountId) {
+        return await account.deleteFile(filePath);
+      }
+    }
+  }
+  console.log(`No ${cloudType} accounts found`);
+  return;
+}
+
 // to avoid conflict with dot in accountId
 function encodeAccountId(key: string): string {
   return key.replace(/\./g, '__dot__');

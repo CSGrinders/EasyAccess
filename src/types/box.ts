@@ -23,7 +23,7 @@ export interface StorageBoxProps {
     // tempPostFile: (cloudType: CloudType, accountId: string, parentPath: string) => void;
     // tempGetFile: (fileContent: FileContent) => void;
     tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void
-    tempGetFile?: (filePath: string, cloudType?: CloudType, accountId?: string) => void
+    tempGetFile?: (filePaths: string[], cloudType?: CloudType, accountId?: string) => void
     onBoxTransfer?: (sourceItems: any[], targetBoxId: number, targetPath?: string) => void;
 }
 

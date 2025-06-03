@@ -58,7 +58,7 @@ interface FileExplorerProps {
     cloudType?: CloudType
     accountId?: string
     tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void
-    tempGetFile?: (filePath: string, cloudType?: CloudType, accountId?: string) => void
+    tempGetFile?: (filePaths: string[], cloudType?: CloudType, accountId?: string) => void
     boxId: number
     isBoxToBoxTransfer?: boolean
     refreshToggle?: boolean // to refresh the state of the file explorer
@@ -220,8 +220,10 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
     }, [])
 
     useEffect(() => {
-        if (!cwd) return
+        if (!cwd || cwd === "") 
+             return
 
+        console.log("Reading directory:", cwd)
         setIsLoading(true)
         // Notify parent about current path change for drag box-to-box
         if (onCurrentPathChange) {
@@ -262,7 +264,12 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
     }, [cwd])
 
     useEffect(() => {
+        if (cwd === "") {
+            console.error("Current working directory is empty, cannot refresh")
+            return
+        }
         console.log("Refreshing directory due to refreshState prop change");
+        
         refreshDirectory();
     }, [refreshToggle])
 
@@ -357,7 +364,7 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
         navigateTo(parentPath)
     }
 
-    const refreshDirectory = () => {
+    const refreshDirectory = async () => {
         setIsLoading(true)
         if (cloudType && accountId) {
             // Fetch files from the cloud account
@@ -375,6 +382,12 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
                 })
         } else {
             // Fetch files from the local directory
+            console.log("Refreshing directory:", cwd)
+            if (!cwd || cwd === "") {
+                console.error("Current working directory is empty, cannot refresh")
+                setIsLoading(false)
+                return
+            }
             window.fsApi
                 .readDirectory(cwd)
                 .then((files) => {
@@ -386,6 +399,7 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
                 })
                 .catch((err) => {
                     console.error(err)
+
                     setIsLoading(false)
                 })
         }
@@ -609,8 +623,9 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
                     cloudType,
                     accountId
                 );
-                tempGetFile?.(draggedFileItems.map(item => item.path).join(","), cloudType, accountId);
-                console.log("Box drag started with items:", draggedFileItems, boxId, cloudType, accountId);
+                console.log("Box drag started with items:", draggedFileItems.map(item => item.path));
+                tempGetFile?.(draggedFileItems.map(item => item.path), cloudType, accountId);
+                // tempGetFile?.(draggedFileItems.map(item => item.path).join(","), cloudType, accountId);
             } else {
                 console.log("Distance TOoooooooooooooooooooo short:", distance)
                 return
@@ -829,7 +844,7 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
     }, [])
 
     useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
+        const handleKeyDown = async (e: KeyboardEvent) => {
             // Ctrl+A or Cmd+A:
             if ((e.ctrlKey || e.metaKey) && e.key === "a") {
                 e.preventDefault()
@@ -866,8 +881,7 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
 
             // Delete
             if (e.key === "Delete" && selectedItems.size > 0) {
-                console.log("Delete selected items:", Array.from(selectedItems))
-
+                console.log("Delete selected items:", Array.from(selectedItems));
             }
         }
 
@@ -875,6 +889,42 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
         return () => window.removeEventListener("keydown", handleKeyDown)
     }, [selectedItems, BoxDrag.isDragging, isSelecting, sortedItems])
 
+    async function handleDelete() {
+        if (selectedItems.size === 0) return;
+        
+        console.log("Delete selected items:", Array.from(selectedItems));
+        
+        try {
+            // Wait for all delete operations to complete
+            await Promise.all(
+                Array.from(selectedItems).map(async (itemId) => {
+                    const item = sortedItems.find((i) => i.id === itemId);
+                    if (!item) return;
+                    
+                    console.log("Deleting item:", item.path);
+                    if (!cloudType || !accountId) {
+                        // For local file system
+                        await (window as any).fsApi.deleteFile(item.path);
+                    } else {
+                        await (window as any).cloudFsApi.deleteFile(
+                            cloudType, 
+                            accountId, 
+                            item.path
+                        );
+                    }
+                })
+            );
+    
+            // Only refresh after all deletions are complete
+            await refreshDirectory();
+            
+            // Clear selection after successful deletion
+            setSelectedItems(new Set());
+        } catch (error) {
+            console.error("Error deleting items:", error);
+            // Handle error (maybe show error message to user)
+        }
+    }
 
     const selectedCount = selectedItems.size
 
@@ -986,7 +1036,7 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
                             variant="outline"
                             size="sm"
                             className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                            onClick={() => console.log("Delete selected items:", Array.from(selectedItems))}
+                            onClick={handleDelete}
                         >
                             <Trash className="h-3.5 w-3.5"/>
                             Delete
