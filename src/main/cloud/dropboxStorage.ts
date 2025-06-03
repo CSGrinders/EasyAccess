@@ -218,6 +218,9 @@ export class DropboxStorage implements CloudStorage {
             name: name,
             type: type,
             content: buffer,
+            path: CLOUD_HOME + filePath, // prepend the cloud home path
+            sourceCloudType: CloudType.Dropbox, // specify the cloud type
+            sourceAccountId: this.accountId || null // specify the account ID
         };
         return fileContent;
     }

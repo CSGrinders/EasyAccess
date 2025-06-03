@@ -1,4 +1,4 @@
-import React, {memo} from "react"
+import React, {memo, useImperativeHandle} from "react"
 import {useState, useEffect, useRef} from "react"
 import {X, Maximize2, Minimize2, ChevronDown, Folder, Box} from "lucide-react"
 import {cn} from "@/lib/utils"
@@ -16,7 +16,10 @@ import {TargetLocation, useBoxDrag} from "@/contexts/BoxDragContext";
 
 
 
-export const StorageBox = memo(StorageBoxInner, areEqual);
+export const StorageBox = memo(
+    React.forwardRef(StorageBoxInner),
+    areEqual
+);
 function areEqual(prev: StorageBoxProps, next: StorageBoxProps) {
     return (
         prev.box.id === next.box.id &&
@@ -48,7 +51,11 @@ function StorageBoxInner({
                              tempPostFile,
                              tempGetFile,
                              onBoxTransfer
-                         }: StorageBoxProps) {
+                         }: StorageBoxProps, 
+                         ref: React.Ref<{
+                            callDoRefresh: () => void; 
+                                }>
+                        ) {
     const {id, title, type, icon} = box;
     const BoxDrag = useBoxDrag();
 
@@ -72,6 +79,16 @@ function StorageBoxInner({
     const [currentPath, setCurrentPath] = useState("/");
 
     const [refreshToggle, setRefreshToggle] = useState(false);
+
+    const doRefresh = () => {
+        console.log("Function called from parent for box", box.id);
+          setRefreshToggle(!refreshToggle); // Toggle to trigger a refresh in the FileExplorer
+        // You can add any custom behavior here
+      }
+
+    useImperativeHandle(ref, () => ({
+        callDoRefresh: doRefresh,
+      }));
 
     const handleCurrentPathChange = (newPath: string) => {
         setCurrentPath(newPath);

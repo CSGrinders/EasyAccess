@@ -1,3 +1,4 @@
+import { CloudType } from "./cloudType"
 
 // FileSystem API
 export interface FileSystemItem {
@@ -14,6 +15,9 @@ export interface FileContent {
     content?: Buffer // Content of the file as a Buffer (Google Doc content is not available as a Buffer / url is provided instead) 
     type: string // mime type of the file (e.g., 'text/plain', 'application/pdf')
     url?: string // Optional URL for the file if available
+    path: string // Path to the file in the source file system
+    sourceCloudType: CloudType | null // Optional cloud type if the file is from a cloud storage
+    sourceAccountId: string | null // Optional cloud type if the file is from a cloud storage
 }
 
 declare global {
