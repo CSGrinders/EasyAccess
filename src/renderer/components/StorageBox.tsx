@@ -185,9 +185,9 @@ function StorageBoxInner({
         };
 
         const handleDrop = async (e: MouseEvent) => {
-            console.log("handleDrop");
-            document.removeEventListener('mousemove', handleDragOver);
             document.removeEventListener('mouseup', handleDrop);
+            document.removeEventListener('mousemove', handleDragOver);
+            console.log("handleDrop: ", id, "isDropZoneActive:", isDropZoneActive, "BoxDrag.isDragging:", BoxDrag.isDragging);
             if (!BoxDrag.isDragging) {
                 return;
             }
