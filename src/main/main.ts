@@ -70,7 +70,41 @@ return Promise.all(items.map(async item => ({
 
 ipcMain.handle('get-file', async (_e, filePath: string) => {
     console.log('Reading file:', filePath);
-    const data = await fs.promises.readFile(filePath);
+
+    // check if the file or directory exists
+    try {
+        await fs.promises.access(filePath, fs.constants.R_OK);
+    } catch (error) {
+        console.error('File or directory does not exist:', filePath, error);
+        throw new Error(`File or directory does not exist: ${filePath}`);
+    }
+    // if the file is a directory, zip it and return the zip file
+    const stat = await fs.promises.stat(filePath);
+    let data: Buffer;
+    if (stat.isDirectory()) {
+        const archiver = require('archiver');
+        const archive = archiver('zip', { zlib: { level: 9 }});
+        const tempFilePath = path.join(app.getPath('temp'), `${path.basename(filePath)}.zip`);
+        const stream = fs.createWriteStream(tempFilePath);
+
+        await new Promise<void>((resolve, reject) => {
+            const output = fs.createWriteStream(tempFilePath);
+            const archive = archiver('zip', { zlib: { level: 9 }});
+        
+            output.on('close', () => resolve());
+            output.on('error', (err) => reject(err));
+            archive.on('error', (err: any) => reject(err));
+        
+            archive.pipe(output);
+            archive.directory(filePath, false);
+            archive.finalize();
+          });
+        
+        data = await fs.promises.readFile(tempFilePath);
+        filePath = tempFilePath; // Update filePath to the zip file path
+    } else {
+        data = await fs.promises.readFile(filePath);
+    }
 
     const mimeType = mime.lookup(filePath) || 'application/octet-stream'; // Fallback to generic binary
 
