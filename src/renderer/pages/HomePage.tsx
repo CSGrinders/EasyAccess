@@ -72,7 +72,7 @@ const HomePage = () => {
         );
     }
 
-    const showAreYouFuckingSure = async () => {
+    const showAreYouSure = async () => {
         return new Promise<void>((resolve, reject) => {
             const userConfirmed = window.confirm("Are you sure you want to upload the file? This action cannot be undone.");
             if (userConfirmed) {
@@ -87,7 +87,7 @@ const HomePage = () => {
     const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
         try {
             // Wait for user confirmation
-            await showAreYouFuckingSure();
+            await showAreYouSure();
             
             setIsMovingItem(true);
     
