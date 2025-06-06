@@ -19,6 +19,17 @@ const test = {
     files: ["readme.txt", "report.pdf", "image.jpg", "data.csv"],
 };
 
+export async function showAreYouSure (): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+        const userConfirmed = window.confirm("Are you sure you want to upload the file? This action cannot be undone.");
+        if (userConfirmed) {
+            resolve();
+        } else {
+            reject(new Error("User cancelled the operation"));
+        }
+    });
+};
+
 const HomePage = () => {
     const [zoomLevel, setZoomLevel] = useState(1);
     const [isPanMode, setIsPanMode] = useState(false);
@@ -72,17 +83,6 @@ const HomePage = () => {
         );
     }
 
-    const showAreYouSure = async () => {
-        return new Promise<void>((resolve, reject) => {
-            const userConfirmed = window.confirm("Are you sure you want to upload the file? This action cannot be undone.");
-            if (userConfirmed) {
-                resolve();
-            } else {
-                reject(new Error("User cancelled the operation"));
-            }
-        }
-        );
-    }
 
     const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
         try {
@@ -141,8 +141,8 @@ const HomePage = () => {
             
         } catch (error) {
             console.log("File upload failed:", error);
-            setFileUploadMessage(error instanceof Error ? error.message : "Upload failed");
-            setFileUploadMessageOpen(true);
+            // setFileUploadMessage(error instanceof Error ? error.message : "Upload failed");
+            // setFileUploadMessageOpen(true);
         } finally {
             setIsMovingItem(false);
             fileContentsCacheRef.current = [];

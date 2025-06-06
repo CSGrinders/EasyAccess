@@ -7,6 +7,9 @@ import { OAuth2Client } from 'google-auth-library';
 import { drive_v3, google } from 'googleapis';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
+const archiver = require('archiver');
+const path = require('path');
+import * as fs from 'fs'
 const { Readable } = require('stream');
 dotenv.config();
 
