@@ -43,7 +43,12 @@ import {
     Mail,
     Calendar,
     Layers,
-    Box
+    Box,
+    Info,
+    HardDrive,
+    Clock,
+    File,
+    MoreHorizontal
 } from "lucide-react"
 import type {FileContent, FileSystemItem} from "@Types/fileSystem"
 import {Input} from "@/components/ui/input"
@@ -53,6 +58,19 @@ import {CLOUD_HOME, CloudType} from "@Types/cloudType"
 import { Progress } from "./ui/progress"
 import {useBoxDrag} from "@/contexts/BoxDragContext";
 import { postFile } from "src/main/cloud/cloudManager"
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface FileExplorerProps {
     cloudType?: CloudType
@@ -151,6 +169,9 @@ const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected
     return "text-gray-400";
 };
 
+
+
+
 export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, refreshToggle, onCurrentPathChange}: FileExplorerProps) {
     const [items, setItems] = useState<FileSystemItem[]>([])
     const [cwd, setCwd] = useState<string>("")
@@ -170,6 +191,7 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
     const [isOpeningBrowser, setIsOpeningBrowser] = useState(false);
 
     const selectionSnapshotRef = useRef<Set<string>>(new Set());
+    const [containerWidth, setContainerWidth] = useState(0);
 
     const containerRef = useRef<HTMLDivElement>(null)
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map())
@@ -198,6 +220,12 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
         return a.name.localeCompare(b.name)
     })
 
+    const [showStatsDialog, setShowStatsDialog] = useState(false);
+    const [selectedFileForStats, setSelectedFileForStats] = useState<FileSystemItem | null>(null);
+    const [isCalculatingSize, setIsCalculatingSize] = useState(false);
+    const [folderSize, setFolderSize] = useState<number | null>(null);
+
+
     useEffect(() => {
         const fetchHome = async () => {
             // cloud home directory
@@ -218,6 +246,34 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
 
         fetchHome().then(r => console.log("Directory fetched"))
     }, [])
+
+    useEffect(() => {
+        const updateWidth = () => {
+            if (containerRef.current) {
+                setContainerWidth(containerRef.current.offsetWidth);
+            }
+        };
+
+        updateWidth();
+
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                setContainerWidth(entry.contentRect.width);
+            }
+        });
+
+        if (containerRef.current) {
+            resizeObserver.observe(containerRef.current);
+        }
+
+        // Also listen to window resize as fallback
+        window.addEventListener('resize', updateWidth);
+        
+        return () => {
+            resizeObserver.disconnect();
+            window.removeEventListener('resize', updateWidth);
+        };
+    }, []);
 
     useEffect(() => {
         if (!cwd || cwd === "") 
@@ -934,6 +990,296 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
         }
     }
 
+
+    const calculateFolderSize = async (folderPath: string): Promise<number> => {
+        try {
+            if (cloudType && accountId) {
+                const files = await (window as any).cloudFsApi.readDirectory(cloudType, accountId, folderPath);
+                let totalSize = 0;
+                
+                // Process files in batches
+                const batchSize = 10;
+                for (let i = 0; i < files.length; i += batchSize) {
+                    const batch = files.slice(i, i + batchSize);
+                    const batchSizes = await Promise.allSettled(
+                        batch.map(async (file: FileSystemItem) => {
+                            if (file.isDirectory) {
+                                return await calculateFolderSize(file.path);
+                            } else {
+                                return file.size || 0;
+                            }
+                        })
+                    );
+                    
+                    batchSizes.forEach((result) => {
+                        if (result.status === 'fulfilled') {
+                            totalSize += result.value;
+                        }
+                    });
+                }
+                return totalSize;
+            } else {
+                const files = await window.fsApi.readDirectory(folderPath);
+                let totalSize = 0;
+                
+                const sizeTasks = files.map(async (file: FileSystemItem) => {
+                    try {
+                        if (file.isDirectory) {
+                            return await calculateFolderSize(file.path);
+                        } else {
+                            return file.size || 0;
+                        }
+                    } catch (error) {
+                        console.warn(`Error processing ${file.path}:`, error);
+                        return 0;
+                    }
+                });
+                
+                const sizes = await Promise.allSettled(sizeTasks);
+                sizes.forEach((result) => {
+                    if (result.status === 'fulfilled') {
+                        totalSize += result.value;
+                    }
+                });
+                
+                return totalSize;
+            }
+        } catch (error) {
+            console.error("Error calculating folder size for", folderPath, ":", error);
+            return 0;
+        }
+    };
+
+    const showFileStats = async () => {
+        if (selectedItems.size === 0) return;
+        
+        const firstSelectedId = Array.from(selectedItems)[0];
+        const selectedFile = sortedItems.find(item => item.id === firstSelectedId);
+        
+        if (!selectedFile) return;
+        
+        setSelectedFileForStats(selectedFile);
+        setShowStatsDialog(true);
+        
+        if (selectedFile.isDirectory) {
+            setIsCalculatingSize(true);
+            try {
+                const size = await calculateFolderSize(selectedFile.path);
+                setFolderSize(size);
+            } catch (error) {
+                console.error("Failed to calculate folder size:", error);
+                setFolderSize(0);
+            } finally {
+                setIsCalculatingSize(false);
+            }
+        }
+    };
+
+    // File stats dialog component
+    const FileStatsDialog = () => {
+        if (!selectedFileForStats) {
+            return (
+                <Dialog open={showStatsDialog} onOpenChange={(open) => {
+                    setShowStatsDialog(open);
+                    if (!open) {
+                        setFolderSize(null);
+                        setIsCalculatingSize(false);
+                    }
+                }}>
+                    <DialogContent className="max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl">
+                        <div className="p-4 text-center">
+                            <p className="text-slate-600 dark:text-slate-400">No file selected</p>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            );
+        }
+
+        const item = selectedFileForStats;
+        const IconComponent = getFileIcon(item.name, item.isDirectory);
+        const iconColor = getIconColor(item.name, item.isDirectory);
+
+        const getFileExtension = (fileName: string) => {
+            const ext = fileName.split('.').pop();
+            return ext && ext !== fileName ? ext.toUpperCase() : 'Unknown';
+        };
+
+        const formatFileSize = (bytes?: number): string => {
+            if (!bytes || bytes === 0) return "0 B";
+    
+            const sizes = ["B", "KB", "MB", "GB", "TB"];
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            const size = bytes / Math.pow(1024, i);
+    
+            return `${size.toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`;
+        };
+        const formatDate = (timestamp?: number): string => {
+            if (!timestamp) return "Unknown";
+    
+            const date = new Date(timestamp);
+            return date.toLocaleString(undefined, {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        };
+
+        const getItemSize = () => {
+            if (item.isDirectory) {
+                if (isCalculatingSize) {
+                    return "Calculating...";
+                }
+                return folderSize !== null ? formatFileSize(folderSize) : "Unknown";
+            }
+            return formatFileSize(item.size);
+        };
+
+        const getRelativeTime = (timestamp?: number) => {
+            if (!timestamp) return "Unknown";
+            
+            const now = Date.now();
+            const diff = now - timestamp;
+            const seconds = Math.floor(diff / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+            
+            if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
+            if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+            if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+            return "Just now";
+        };
+
+        return (
+            <Dialog open={showStatsDialog} onOpenChange={(open) => {
+                setShowStatsDialog(open);
+                if (!open) {
+                    setFolderSize(null);
+                    setIsCalculatingSize(false);
+                }
+            }}>
+                <DialogContent className="max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl">
+                    <DialogHeader className="space-y-4">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-800 dark:to-slate-700">
+                                <IconComponent className={cn("h-8 w-8", iconColor)} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <DialogTitle className="text-xl font-semibold text-slate-900 dark:text-slate-100 truncate">
+                                    {item.name}
+                                </DialogTitle>
+                                <DialogDescription className="text-slate-600 dark:text-slate-400 mt-1">
+                                    {item.isDirectory ? "Folder" : `${getFileExtension(item.name)} File`}
+                                </DialogDescription>
+                            </div>
+                        </div>
+                    </DialogHeader>
+                    
+                    <div className="space-y-6 pt-2">
+                        {/* Quick Stats Grid */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 rounded-xl p-4 border border-blue-200 dark:border-blue-700/50">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-blue-500/20 rounded-lg">
+                                        <HardDrive className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Size</p>
+                                        <p className="text-lg font-bold text-blue-800 dark:text-blue-200 flex items-center gap-2">
+                                            {getItemSize()}
+                                            {isCalculatingSize && (
+                                                <RefreshCw className="h-4 w-4 animate-spin" />
+                                            )}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900/30 dark:to-emerald-800/30 rounded-xl p-4 border border-green-200 dark:border-green-700/50">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-green-500/20 rounded-lg">
+                                        <Clock className="h-5 w-5 text-green-600 dark:text-green-400" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-medium text-green-900 dark:text-green-100">Modified</p>
+                                        <p className="text-sm font-semibold text-green-800 dark:text-green-200">
+                                            {getRelativeTime(item.modifiedTime)}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Detailed Information */}
+                        <div className="space-y-4">
+                            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700 pb-2">
+                                Details
+                            </h3>
+                            
+                            {/* Name */}
+                            <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                <File className="h-5 w-5 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Name</p>
+                                    <p className="text-sm text-slate-600 dark:text-slate-400 break-all mt-1">
+                                        {item.name}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Location */}
+                            <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                <FolderIcon className="h-5 w-5 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Location</p>
+                                    <p className="text-sm text-slate-600 dark:text-slate-400 break-all mt-1 font-mono bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">
+                                        {item.path}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Full Date */}
+                            {item.modifiedTime && (
+                                <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                    <Calendar className="h-5 w-5 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Last Modified</p>
+                                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                                            {formatDate(item.modifiedTime)}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Storage Source */}
+                            <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                <Database className="h-5 w-5 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Storage</p>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className={cn(
+                                            "px-2 py-1 rounded-full text-xs font-medium",
+                                            cloudType 
+                                                ? "bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300" 
+                                                : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                                        )}>
+                                            {cloudType ? `${cloudType} Cloud` : "Local Storage"}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        );
+    };
+
+
+
     const selectedCount = selectedItems.size
 
     return (
@@ -1015,40 +1361,131 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
                     />
                 </div>
             </div>
-            {selectedCount > 0 && (
-                <div
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border-y border-blue-100 dark:border-blue-800">
-          <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
-            {selectedCount} {selectedCount === 1 ? "item" : "items"} selected
-          </span>
+                        {selectedCount > 0 && (
+                <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 backdrop-blur-sm selected-menu-enter">
+                    <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/20 dark:bg-primary/30">
+                            <span className="text-xs font-bold font-semibold dark:text-blue-400 text-blue-600">
+                                {selectedCount}
+                            </span>
+                        </div>
+                        <span className="text-sm font-semibold dark:text-blue-400 text-blue-600">
+                            {selectedCount === 1 ? "item selected" : "items selected"}
+                        </span>
+                    </div>
+                    
                     <div className="ml-auto flex gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex items-center gap-1 text-xs"
-                            onClick={() => console.log("Copy selected items:", Array.from(selectedItems))}
-                        >
-                            <Copy className="h-3.5 w-3.5"/>
-                            Copy
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex items-center gap-1 text-xs"
-                            onClick={() => console.log("Move selected items:", Array.from(selectedItems))}
-                        >
-                            <Move className="h-3.5 w-3.5"/>
-                            Move
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                            onClick={handleDelete}
-                        >
-                            <Trash className="h-3.5 w-3.5"/>
-                            Delete
-                        </Button>
+                        {containerWidth >= 600 ? (
+                            <>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="flex items-center gap-2 text-xs font-medium text-black dark:text-white transition-all duration-200 action-button"
+                                    onClick={showFileStats}
+                                >
+                                    <Info className="h-3.5 w-3.5"/>
+                                    Get Info
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="flex items-center gap-2 text-xs font-medium border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 transition-all duration-200 action-button"
+                                    onClick={() => console.log("Copy selected items:", Array.from(selectedItems))}
+                                >
+                                    <Copy className="h-3.5 w-3.5"/>
+                                    Copy
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="flex items-center gap-2 text-xs font-medium border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 transition-all duration-200 action-button"
+                                    onClick={() => console.log("Move selected items:", Array.from(selectedItems))}
+                                >
+                                    <Move className="h-3.5 w-3.5"/>
+                                    Move
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="flex items-center gap-2 text-xs font-medium border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/50 hover:bg-red-100 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 transition-all duration-200 action-button"
+                                    onClick={handleDelete}
+                                >
+                                    <Trash className="h-3.5 w-3.5"/>
+                                    Delete
+                                </Button>
+                            </>
+                        ) : (
+                            /* Enhanced responsive dropdown for smaller screens */
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="flex items-center gap-2 text-xs font-medium text-black dark:text-white transition-all duration-200 action-button"
+                                    >
+                                        <MoreHorizontal className="h-3.5 w-3.5"/>
+                                        Actions
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent 
+                                    align="end" 
+                                    className="w-56 bg-popover/95 backdrop-blur-sm border border-border/50 shadow-xl dropdown-content"
+                                    sideOffset={8}
+                                >
+                                    <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-b border-border/50">
+                                        {selectedCount} {selectedCount === 1 ? "item" : "items"} selected
+                                    </div>
+                                    <DropdownMenuItem 
+                                        onClick={showFileStats}
+                                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors"
+                                    >
+                                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 dark:bg-primary/20">
+                                            <Info className="h-4 w-4 text-primary"/>
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="text-sm font-medium">Get Info</div>
+                                            <div className="text-xs text-muted-foreground">View file details</div>
+                                        </div>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                        onClick={() => console.log("Copy selected items:", Array.from(selectedItems))}
+                                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors"
+                                    >
+                                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50">
+                                            <Copy className="h-4 w-4 text-blue-600 dark:text-blue-400"/>
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="text-sm font-medium">Copy</div>
+                                            <div className="text-xs text-muted-foreground">Copy to clipboard</div>
+                                        </div>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                        onClick={() => console.log("Move selected items:", Array.from(selectedItems))}
+                                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors"
+                                    >
+                                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50">
+                                            <Move className="h-4 w-4 text-amber-600 dark:text-amber-400"/>
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="text-sm font-medium">Move</div>
+                                            <div className="text-xs text-muted-foreground">Move to location</div>
+                                        </div>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                        onClick={handleDelete}
+                                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-destructive/10 text-destructive transition-colors"
+                                    >
+                                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-100 dark:bg-red-900/50">
+                                            <Trash className="h-4 w-4 text-red-600 dark:text-red-400"/>
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="text-sm font-medium">Delete</div>
+                                            <div className="text-xs text-muted-foreground">Remove permanently</div>
+                                        </div>
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        )}
                     </div>
                 </div>
             )}
@@ -1137,6 +1574,7 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
                     )
                 )}
             </div>
+            <FileStatsDialog />
         </div>
     )
 }
