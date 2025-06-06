@@ -1,4 +1,4 @@
-import React, {memo} from "react"
+import React, {memo, useMemo, useCallback, useImperativeHandle} from "react"
 import {useState, useEffect, useRef} from "react"
 import {X, Maximize2, Minimize2, ChevronDown, Folder, Box} from "lucide-react"
 import {cn} from "@/lib/utils"
@@ -16,19 +16,39 @@ import {TargetLocation, useBoxDrag} from "@/contexts/BoxDragContext";
 
 
 
-export const StorageBox = memo(StorageBoxInner, areEqual);
+export const StorageBox = memo(
+    React.forwardRef(StorageBoxInner),
+    areEqual
+);
 function areEqual(prev: StorageBoxProps, next: StorageBoxProps) {
+    if (prev.box.id !== next.box.id || 
+        prev.isMaximized !== next.isMaximized ||
+        prev.box.zIndex !== next.box.zIndex) {
+        return false;
+    }
+    
+    if (!prev.isMaximized && !next.isMaximized) {
+        return (
+            prev.box.position === next.box.position &&
+            prev.box.size === next.box.size &&
+            prev.viewportSize.width === next.viewportSize.width &&
+            prev.viewportSize.height === next.viewportSize.height &&
+            prev.canvasZoom === next.canvasZoom
+        );
+    }
+    
+    const panMode = 1;
+    const panXDiff = Math.abs(prev.canvasPan.x - next.canvasPan.x);
+    const panYDiff = Math.abs(prev.canvasPan.y - next.canvasPan.y);
+    
     return (
-        prev.box.id === next.box.id &&
         prev.box.position === next.box.position &&
         prev.box.size === next.box.size &&
-        prev.box.zIndex === next.box.zIndex &&
-        prev.isMaximized === next.isMaximized &&
         prev.viewportSize.width === next.viewportSize.width &&
         prev.viewportSize.height === next.viewportSize.height &&
         prev.canvasZoom === next.canvasZoom &&
-        prev.canvasPan.x === next.canvasPan.x &&
-        prev.canvasPan.y === next.canvasPan.y
+        panXDiff < panMode &&
+        panYDiff < panMode
     );
 }
 
@@ -48,7 +68,11 @@ function StorageBoxInner({
                              tempPostFile,
                              tempGetFile,
                              onBoxTransfer
-                         }: StorageBoxProps) {
+                         }: StorageBoxProps, 
+                         ref: React.Ref<{
+                            callDoRefresh: () => void; 
+                                }>
+                        ) {
     const {id, title, type, icon} = box;
     const BoxDrag = useBoxDrag();
 
@@ -67,17 +91,30 @@ function StorageBoxInner({
 
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const boxRef = useRef<HTMLDivElement>(null);
+    const lastUpdateTimeRef = useRef<number>(0);
 
     const [isDropZoneActive, setIsDropZoneActive] = useState(false);
     const [currentPath, setCurrentPath] = useState("/");
 
     const [refreshToggle, setRefreshToggle] = useState(false);
+    const [isWindowResizing, setIsWindowResizing] = useState(false);
+    const windowResizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    const handleCurrentPathChange = (newPath: string) => {
+    const doRefresh = () => {
+        console.log("Function called from parent for box", box.id);
+          setRefreshToggle(!refreshToggle); // Toggle to trigger a refresh in the FileExplorer
+        // You can add any custom behavior here
+      }
+
+    useImperativeHandle(ref, () => ({
+        callDoRefresh: doRefresh,
+      }));
+
+    const handleCurrentPathChange = useCallback((newPath: string) => {
         setCurrentPath(newPath);
-    };
+    }, []);
 
-    const getMaximizedState = () => {
+    const getMaximizedState = useMemo(() => {
         if (viewportSize.width > 0 && viewportSize.height > 0 && canvasZoom > 0) {
             const maximizedWidth = viewportSize.width / canvasZoom;
             const maximizedHeight = viewportSize.height / canvasZoom;
@@ -91,16 +128,34 @@ function StorageBoxInner({
             };
         }
         return null;
-    };
+    }, [viewportSize.width, viewportSize.height, canvasZoom, canvasPan.x, canvasPan.y]);
 
     // update box style based on position and size refs
-    function updateBox() {
+    const updateBox = useCallback((useTransition: boolean = false) => {
         if (boxRef.current) {
-            boxRef.current.style.transform = `translate3d(${positionRef.current.x}px, ${positionRef.current.y}px, 0)`;
-            boxRef.current.style.width = `${sizeRef.current.width}px`;
-            boxRef.current.style.height = `${sizeRef.current.height}px`;
+            const element = boxRef.current;
+            const transform = `translate3d(${positionRef.current.x}px, ${positionRef.current.y}px, 0)`;
+            const width = `${sizeRef.current.width}px`;
+            const height = `${sizeRef.current.height}px`;
+            
+    
+            if (useTransition && isMaximized) {
+                element.style.transition = 'width 0.2s ease-out, height 0.2s ease-out, transform 0.2s ease-out';
+            } else {
+                element.style.transition = '';
+            }
+            
+            if (element.style.transform !== transform) {
+                element.style.transform = transform;
+            }
+            if (element.style.width !== width) {
+                element.style.width = width;
+            }
+            if (element.style.height !== height) {
+                element.style.height = height;
+            }
         }
-    }
+    }, [isMaximized]);
 
     // Handle drag box to box drag detection
     useEffect(() => {
@@ -130,9 +185,9 @@ function StorageBoxInner({
         };
 
         const handleDrop = async (e: MouseEvent) => {
-            console.log("handleDrop");
-            document.removeEventListener('mousemove', handleDragOver);
             document.removeEventListener('mouseup', handleDrop);
+            document.removeEventListener('mousemove', handleDragOver);
+            console.log("handleDrop: ", id, "isDropZoneActive:", isDropZoneActive, "BoxDrag.isDragging:", BoxDrag.isDragging);
             if (!BoxDrag.isDragging) {
                 return;
             }
@@ -172,18 +227,76 @@ function StorageBoxInner({
         }
     }, [BoxDrag.isDragging, id, box.cloudType, box.accountId, isDropZoneActive]);
 
-    // Update maximized box when canvas changes
+    // Handle window resize events with smooth transitions
     useEffect(() => {
-        console.log(title);
         if (!isMaximized) return;
-        console.log(title + "why?2");
-        const maximizedState = getMaximizedState();
-        if (maximizedState) {
-            sizeRef.current = maximizedState.size;
-            positionRef.current = maximizedState.position;
-            updateBox();
-        }
-    }, [isMaximized, viewportSize, canvasPan, canvasZoom]);
+
+        const handleWindowResize = () => {
+            setIsWindowResizing(true);
+            
+            // Clear existing timeout
+            if (windowResizeTimeoutRef.current) {
+                clearTimeout(windowResizeTimeoutRef.current);
+            }
+            
+            // Set timeout to detect end of resize
+            windowResizeTimeoutRef.current = setTimeout(() => {
+                setIsWindowResizing(false);
+            }, 150);
+        };
+
+        window.addEventListener('resize', handleWindowResize);
+        
+        return () => {
+            window.removeEventListener('resize', handleWindowResize);
+            if (windowResizeTimeoutRef.current) {
+                clearTimeout(windowResizeTimeoutRef.current);
+            }
+        };
+    }, [isMaximized]);
+
+    // Update maximized box when canvas changes 
+    useEffect(() => {
+        if (!isMaximized) return;
+        
+        let animationFrameId: number | null = null;
+        
+        const updateMaximizedBox = () => {
+            const now = performance.now();
+            const throttleDelay = isWindowResizing ? 50 : 16; // Slower updates during window resize
+            
+            if (now - lastUpdateTimeRef.current < throttleDelay) {
+                return;
+            }
+            
+            lastUpdateTimeRef.current = now;
+            
+            const maximizedState = getMaximizedState;
+            if (maximizedState) {
+                const prevSize = { ...sizeRef.current };
+                const prevPosition = { ...positionRef.current };
+                
+                sizeRef.current = maximizedState.size;
+                positionRef.current = maximizedState.position;
+                
+                // Use transition for window resize events
+                const sizeChanged = prevSize.width !== maximizedState.size.width || 
+                                  prevSize.height !== maximizedState.size.height;
+                const positionChanged = prevPosition.x !== maximizedState.position.x || 
+                                      prevPosition.y !== maximizedState.position.y;
+                
+                updateBox(isWindowResizing && (sizeChanged || positionChanged));
+            }
+        };
+        
+        animationFrameId = requestAnimationFrame(updateMaximizedBox);
+        
+        return () => {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+        };
+    }, [isMaximized, viewportSize, canvasPan, canvasZoom, updateBox, isWindowResizing, getMaximizedState]);
 
     useEffect(() => {
         console.log("Rendering StorageBox for:", title);
@@ -213,33 +326,27 @@ function StorageBoxInner({
     };
 
 
-    const handleWindowClick = (e: React.MouseEvent) => {
+    const handleWindowClick = useCallback((e: React.MouseEvent) => {
         e.stopPropagation();
         onFocus(id);
-    };
+    }, [onFocus, id]);
 
 
-    const handleMouseUp = () => {
+    const handleMouseUp = useCallback(() => {
         setIsDragging(false);
         setIsResizing(false);
         setResizeDirection(null);
-    };
-
-
-    const handleMouseMove = (e: React.MouseEvent) => {
+    }, []);    const handleMouseMove = useCallback((e: React.MouseEvent) => {
         if (isDropdownOpen) return;
 
         if (isDragging) {
-            // Simple and correct drag calculation
             const newX = e.clientX - dragStart.x;
             const newY = e.clientY - dragStart.y;
 
-
-            // Update the ref
             positionRef.current = { x: newX, y: newY };
 
             updateBox();
-       } else if (isResizing && resizeDirection) {
+        } else if (isResizing && resizeDirection) {
            const dx = e.clientX - resizeStart.x;
            const dy = e.clientY - resizeStart.y;
 
@@ -294,7 +401,7 @@ function StorageBoxInner({
            positionRef.current = { x: newX, y: newY };
            updateBox();
         }
-    };
+    }, [isDropdownOpen, isDragging, dragStart.x, dragStart.y, isResizing, resizeDirection, resizeStart.x, resizeStart.y, resizeStartSize, resizeStartPosition, updateBox]);
 
 
     // Add initial transform application in useEffect
@@ -417,7 +524,7 @@ function StorageBoxInner({
         <div
             ref={boxRef}
             className={cn(
-                "box-container absolute flex flex-col bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden transition-opacity",
+                "box-container absolute flex flex-col bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden",
                 isDragging && "cursor-grabbing", "will-change-transform",
                 isMaximized ? "border-blue-500 dark:border-blue-400" : "rounded-xl",
                 isDropZoneActive && "ring-4 ring-green-400 bg-green-50 dark:bg-green-900/20 border-green-400"
@@ -425,6 +532,8 @@ function StorageBoxInner({
             style={{
                 zIndex: box.zIndex,
                 opacity,
+                // Ensure no conflicting transitions
+                transitionProperty: isMaximized ? 'none' : 'opacity',
             }}
             onClick={handleWindowClick}
             onMouseDown={(e) => {

@@ -70,7 +70,41 @@ return Promise.all(items.map(async item => ({
 
 ipcMain.handle('get-file', async (_e, filePath: string) => {
     console.log('Reading file:', filePath);
-    const data = await fs.promises.readFile(filePath);
+
+    // check if the file or directory exists
+    try {
+        await fs.promises.access(filePath, fs.constants.R_OK);
+    } catch (error) {
+        console.error('File or directory does not exist:', filePath, error);
+        throw new Error(`File or directory does not exist: ${filePath}`);
+    }
+    // if the file is a directory, zip it and return the zip file
+    const stat = await fs.promises.stat(filePath);
+    let data: Buffer;
+    if (stat.isDirectory()) {
+        const archiver = require('archiver');
+        const archive = archiver('zip', { zlib: { level: 9 }});
+        const tempFilePath = path.join(app.getPath('temp'), `${path.basename(filePath)}.zip`);
+        const stream = fs.createWriteStream(tempFilePath);
+
+        await new Promise<void>((resolve, reject) => {
+            const output = fs.createWriteStream(tempFilePath);
+            const archive = archiver('zip', { zlib: { level: 9 }});
+        
+            output.on('close', () => resolve());
+            output.on('error', (err) => reject(err));
+            archive.on('error', (err: any) => reject(err));
+        
+            archive.pipe(output);
+            archive.directory(filePath, false);
+            archive.finalize();
+          });
+        
+        data = await fs.promises.readFile(tempFilePath);
+        filePath = tempFilePath; // Update filePath to the zip file path
+    } else {
+        data = await fs.promises.readFile(filePath);
+    }
 
     const mimeType = mime.lookup(filePath) || 'application/octet-stream'; // Fallback to generic binary
 
@@ -96,6 +130,27 @@ ipcMain.handle('open-external-url', async (event, url) => {
         return { success: false, error: error };
     }
 });
+
+ipcMain.handle('open-file', async (event, fileContent: FileContent) => {
+    try {
+      if (fileContent.sourceCloudType) {
+        // If the file is from a cloud source, we need to download it first
+        const tempFilePath = path.join(app.getPath('temp'), fileContent.name);
+        if (fileContent.content) {
+            fs.writeFileSync(tempFilePath, fileContent.content);
+        } else {
+            throw new Error("File content is undefined");
+        }
+        await shell.openPath(tempFilePath);
+        return { success: true };
+      }
+      await shell.openPath(fileContent.path);
+      return { success: true };
+    } catch (err) {
+      console.error("Error opening Python file:", err);
+      return { success: false };
+    }
+  });
 
 ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, data: Buffer) => {
     console.log('Posting file:', fileName, folderPath, data);

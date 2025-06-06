@@ -19,6 +19,17 @@ const test = {
     files: ["readme.txt", "report.pdf", "image.jpg", "data.csv"],
 };
 
+export async function showAreYouSure (): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+        const userConfirmed = window.confirm("Are you sure you want to upload the file? This action cannot be undone.");
+        if (userConfirmed) {
+            resolve();
+        } else {
+            reject(new Error("User cancelled the operation"));
+        }
+    });
+};
+
 const HomePage = () => {
     const [zoomLevel, setZoomLevel] = useState(1);
     const [isPanMode, setIsPanMode] = useState(false);
@@ -37,67 +48,105 @@ const HomePage = () => {
     const fileContentsCacheRef = useRef<FileContent[]>([]);
     const isContentLoading = useRef(false);
 
+    const boxRefs = useRef(new Map());
+
+    const getRefForBox = (id: number) => {
+      if (!boxRefs.current.has(id)) {
+        boxRefs.current.set(id, React.createRef());
+      }
+      return boxRefs.current.get(id);
+    };
+
     // Should be called from the successful uploaded file
     const deleteFileFromSource = async (fileContentCache: FileContent) => {
+        console.log("Deleting file from source:", fileContentCache);
         // source from the local file system
         if (!fileContentCache.sourceCloudType || !fileContentCache.sourceAccountId) {
             await (window as any).fsApi.deleteFile(fileContentCache.path); // TODO remove from the corresponding source file owner           
-            return;
+            
         }
         // source from the cloud file system
         await (window as any).cloudFsApi.deleteFile(fileContentCache.sourceCloudType, fileContentCache.sourceAccountId, fileContentCache.path); // TODO remove from the corresponding source file owner
+        storageBoxes.forEach((box) => {
+            console.log("Checking box:", box.id, "for file deletion");
+            console.log("Box sourceAccountId:", box.accountId, "Box cloudType:", box.cloudType);
+            console.log("File sourceAccountId:", fileContentCache.sourceAccountId, "File cloudType:", fileContentCache.sourceCloudType);
+            if (box.accountId === fileContentCache.sourceAccountId && box.cloudType === fileContentCache.sourceCloudType ||
+                (!box.accountId && !fileContentCache.sourceAccountId && !box.cloudType && !fileContentCache.sourceCloudType) // Local file system
+            ) {
+                // If the box is open, we can call a method on the box to update its content
+                console.log("Refresh for updated box content for box:", box.id);
+                const ref = boxRefs.current.get(box.id);
+                ref.current?.callDoRefresh?.(); 
+            }
+        }
+        );
     }
 
-    const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
-        setIsMovingItem(true); // Set moving item state to true
-        // Wait for any ongoing get operation to complete
-        while (isContentLoading.current) {
-            console.log("Waiting for content loading to complete...");
-            await new Promise(resolve => setTimeout(resolve, 50)); // Poll every 50ms
-        }
-        // const fileContentCache = fileContentCacheRef.current; // Get the current file content from the ref
-        const fileContentsCache = fileContentsCacheRef.current; // Get the current file content from the ref
-        if (!fileContentsCache || fileContentsCache.length === 0) {
-            console.log("No file content to upload");
-            return;
-        }
-        console.log("Uploading file content:", cloudType, accountId, fileContentsCache);
 
-        if (!cloudType || !accountId) {
-            // local file system
-            console.log("local file system, call postFile from local file system: ", parentPath, fileContentsCache);
-            for (const fileContentCache of fileContentsCacheRef.current) {
-                await (window as any).fsApi.postFile(fileContentCache.name, parentPath, fileContentCache.content)
-                    .then(async () => {
-                            console.log("File uploaded successfully")
-                            await deleteFileFromSource(fileContentCache);
-                            setFileUploadMessage("File uploaded successfully");
-                        }
-                    ).catch((err: Error) => {
-                        console.error(err)
-                        setFileUploadMessage("File upload failed: " + err.message);
-                    }
-                )
+    const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
+        try {
+            // Wait for user confirmation
+            await showAreYouSure();
+            
+            setIsMovingItem(true);
+    
+            // Wait for content loading
+            while (isContentLoading.current) {
+                await new Promise(resolve => setTimeout(resolve, 50));
             }
-        } else {
-            for (const fileContentCache of fileContentsCacheRef.current) {
-                await (window as any).cloudFsApi.postFile(cloudType, accountId, fileContentCache.name, parentPath, fileContentCache.content)
-                    .then(async () => {
-                            console.log("File uploaded successfully")
-                            await deleteFileFromSource(fileContentCache);
-                            setFileUploadMessage("File uploaded successfully");
-                        }
-                    ).catch((err: Error) => {
-                        console.error(err)
-                        setFileUploadMessage("File upload failed: " + err.message);
-                    }
-                )
+    
+            const fileContentsCache = fileContentsCacheRef.current;
+            if (!fileContentsCache?.length) {
+                throw new Error("No file content to upload");
             }
+    
+            // Upload files based on destination type
+            if (!cloudType || !accountId) {
+                // Local file system uploads
+                await Promise.all(fileContentsCache.map(async (fileContent) => {
+                    try {
+                        await (window as any).fsApi.postFile(
+                            fileContent.name, 
+                            parentPath, 
+                            fileContent.content
+                        );
+                        await deleteFileFromSource(fileContent);
+                        return Promise.resolve();
+                    } catch (err) {
+                        return Promise.reject(err);
+                    }
+                }));
+            } else {
+                // Cloud file system uploads
+                await Promise.all(fileContentsCache.map(async (fileContent) => {
+                    try {
+                        await (window as any).cloudFsApi.postFile(
+                            cloudType, 
+                            accountId, 
+                            fileContent.name, 
+                            parentPath, 
+                            fileContent.content
+                        );
+                        await deleteFileFromSource(fileContent);
+                        return Promise.resolve();
+                    } catch (err) {
+                        return Promise.reject(err);
+                    }
+                }));
+            }
+    
+            setFileUploadMessage("Files uploaded successfully");
+            setFileUploadMessageOpen(true);
+            
+        } catch (error) {
+            console.log("File upload failed:", error);
+            // setFileUploadMessage(error instanceof Error ? error.message : "Upload failed");
+            // setFileUploadMessageOpen(true);
+        } finally {
+            setIsMovingItem(false);
+            fileContentsCacheRef.current = [];
         }
-        console.log("File upload completed");
-        setIsMovingItem(false); // Set moving item state to true
-        setFileUploadMessageOpen(true); // Show the file upload message
-        fileContentsCacheRef.current = []; // Clear the file contents cache after upload
     }
 
     const tempGetFile = async (filePaths: string[], cloudType?: CloudType, accountId?: string) => {
@@ -310,6 +359,7 @@ const HomePage = () => {
                             >
                                 {storageBoxes.map((box) => (
                                     <StorageBox
+                                        ref={getRefForBox(box.id)}
                                         key={box.id}
                                         box={box}
                                         onClose={removeWindow}

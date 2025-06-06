@@ -35,5 +35,6 @@ contextBridge.exposeInMainWorld('fsApi', {
 })
 
 contextBridge.exposeInMainWorld('electronAPI', {
-    openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url) as Promise<{ success: boolean, error?: any }>
+    openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url) as Promise<{ success: boolean, error?: any }>,
+    openFile: (fileContent: FileContent) => ipcRenderer.invoke('open-file', fileContent) as Promise<void>,
 });
