@@ -1,25 +1,27 @@
-import React, {useState, useRef, useEffect, use} from 'react';
-import {CloudLightning, HardDrive} from "lucide-react"
+import React, { useState, useRef, useEffect, use } from 'react';
+import { CloudLightning, HardDrive } from "lucide-react"
 import CanvaSettings from "@Components/CanvaSettings";
 import ActionBar from "@Components/ActionBar";
-import {CanvasContainer} from "@Components/CanvasContainer";
-import {StorageBox} from "@Components/StorageBox";
+import { CanvasContainer } from "@Components/CanvasContainer";
+import { StorageBox } from "@Components/StorageBox";
 import { type StorageBoxData } from "@Types/box";
-import {FaGoogleDrive} from "react-icons/fa";
+import { FaGoogleDrive } from "react-icons/fa";
 import StorageSideWindow from '@/components/StorageSideWindow';
 import { CloudType } from '@Types/cloudType';
 import { FileContent } from '@Types/fileSystem';
-import {BoxDragProvider} from "@/contexts/BoxDragContext";
+import { BoxDragProvider } from "@/contexts/BoxDragContext";
 import { BoxDragPreview } from '@/components/BoxDragPreview';
 import { FileUploadMessage } from '@/components/FileUploadMessage';
 
 import { motion, AnimatePresence } from "framer-motion" // Uncomment if available
+import { Button } from '@/components/ui/button';
+import AgentWindow from '../components/AgentWindow';
 const test = {
     folders: ["Documents", "Pictures", "Downloads", "Desktop"],
     files: ["readme.txt", "report.pdf", "image.jpg", "data.csv"],
 };
 
-export async function showAreYouSure (): Promise<void> {
+export async function showAreYouSure(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
         const userConfirmed = window.confirm("Are you sure you want to upload the file? This action cannot be undone.");
         if (userConfirmed) {
@@ -35,7 +37,7 @@ const HomePage = () => {
     const [isPanMode, setIsPanMode] = useState(false);
     const [action, setAction] = useState("dashboard");
     const [maximizedBoxes, setMaximizedBoxes] = useState<Set<number>>(new Set());
-    const [position, setPosition] = useState({x: 0, y: 0});
+    const [position, setPosition] = useState({ x: 0, y: 0 });
     const [nextZIndex, setNextZIndex] = useState(4);
     const canvasVwpRef = useRef<HTMLDivElement>({} as HTMLDivElement);
     const [canvasVwpSize, setCanvasViewportSize] = useState({ width: 0, height: 0 });
@@ -44,6 +46,8 @@ const HomePage = () => {
     const [isMovingItem, setIsMovingItem] = useState(false);
     const [fileUploadMessage, setFileUploadMessage] = useState<string>("");
     const [fileUploadMessageOpen, setFileUploadMessageOpen] = useState<boolean>(false);
+    // Add after existing state declarations
+    const [showMcpTest, setShowMcpTest] = useState(false);
 
     const fileContentsCacheRef = useRef<FileContent[]>([]);
     const isContentLoading = useRef(false);
@@ -51,10 +55,10 @@ const HomePage = () => {
     const boxRefs = useRef(new Map());
 
     const getRefForBox = (id: number) => {
-      if (!boxRefs.current.has(id)) {
-        boxRefs.current.set(id, React.createRef());
-      }
-      return boxRefs.current.get(id);
+        if (!boxRefs.current.has(id)) {
+            boxRefs.current.set(id, React.createRef());
+        }
+        return boxRefs.current.get(id);
     };
 
     // Should be called from the successful uploaded file
@@ -63,7 +67,7 @@ const HomePage = () => {
         // source from the local file system
         if (!fileContentCache.sourceCloudType || !fileContentCache.sourceAccountId) {
             await (window as any).fsApi.deleteFile(fileContentCache.path); // TODO remove from the corresponding source file owner           
-            
+
         }
         // source from the cloud file system
         await (window as any).cloudFsApi.deleteFile(fileContentCache.sourceCloudType, fileContentCache.sourceAccountId, fileContentCache.path); // TODO remove from the corresponding source file owner
@@ -77,7 +81,7 @@ const HomePage = () => {
                 // If the box is open, we can call a method on the box to update its content
                 console.log("Refresh for updated box content for box:", box.id);
                 const ref = boxRefs.current.get(box.id);
-                ref.current?.callDoRefresh?.(); 
+                ref.current?.callDoRefresh?.();
             }
         }
         );
@@ -88,27 +92,27 @@ const HomePage = () => {
         try {
             // Wait for user confirmation
             await showAreYouSure();
-            
+
             setIsMovingItem(true);
-    
+
             // Wait for content loading
             while (isContentLoading.current) {
                 await new Promise(resolve => setTimeout(resolve, 50));
             }
-    
+
             const fileContentsCache = fileContentsCacheRef.current;
             if (!fileContentsCache?.length) {
                 throw new Error("No file content to upload");
             }
-    
+
             // Upload files based on destination type
             if (!cloudType || !accountId) {
                 // Local file system uploads
                 await Promise.all(fileContentsCache.map(async (fileContent) => {
                     try {
                         await (window as any).fsApi.postFile(
-                            fileContent.name, 
-                            parentPath, 
+                            fileContent.name,
+                            parentPath,
                             fileContent.content
                         );
                         await deleteFileFromSource(fileContent);
@@ -122,10 +126,10 @@ const HomePage = () => {
                 await Promise.all(fileContentsCache.map(async (fileContent) => {
                     try {
                         await (window as any).cloudFsApi.postFile(
-                            cloudType, 
-                            accountId, 
-                            fileContent.name, 
-                            parentPath, 
+                            cloudType,
+                            accountId,
+                            fileContent.name,
+                            parentPath,
                             fileContent.content
                         );
                         await deleteFileFromSource(fileContent);
@@ -135,10 +139,10 @@ const HomePage = () => {
                     }
                 }));
             }
-    
+
             setFileUploadMessage("Files uploaded successfully");
             setFileUploadMessageOpen(true);
-            
+
         } catch (error) {
             console.log("File upload failed:", error);
             // setFileUploadMessage(error instanceof Error ? error.message : "Upload failed");
@@ -224,12 +228,18 @@ const HomePage = () => {
         setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
     };
 
+
+    const toggleShowAgentWindow = () => {
+        console.log("Toggling MCP Test window visibility");
+        setShowMcpTest(!showMcpTest); // Toggle the storage window visibility
+    };
+
     const [storageBoxes, setStorageBoxes] = useState<StorageBoxData[]>([
         {
             id: 1,
             title: "Local Directory",
             type: "local",
-            icon: <HardDrive className="h-6 w-6"/>,
+            icon: <HardDrive className="h-6 w-6" />,
             position: { x: -250, y: -200 },
             size: { width: 400, height: 300 },
             zIndex: 1,
@@ -325,7 +335,7 @@ const HomePage = () => {
                         <div className="flex items-center">
                             <div
                                 className="bg-gradient-to-r from-blue-500 to-indigo-600 p-2 rounded-lg shadow-md mr-3">
-                                <HardDrive className="h-6 w-6 text-white"/>
+                                <HardDrive className="h-6 w-6 text-white" />
                             </div>
                             <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent select-none">
                                 Easy Access
@@ -333,7 +343,7 @@ const HomePage = () => {
                         </div>
                     </div>
                     <CanvaSettings zoomLevel={zoomLevel} setZoomLevel={setZoomLevel} isPanMode={isPanMode}
-                                   setIsPanMode={setIsPanMode} isBoxMaximized={anyBoxMaximized}/>
+                        setIsPanMode={setIsPanMode} isBoxMaximized={anyBoxMaximized} />
                 </div>
             </header>
             <FileUploadMessage open={fileUploadMessageOpen} setOpen={setFileUploadMessageOpen} message={fileUploadMessage} showCloseButton={true}></FileUploadMessage>
@@ -343,42 +353,45 @@ const HomePage = () => {
                         <p>Moving item...</p>
                     </div>
                 )}
-                <ActionBar action={action} setAction={setAction} toggleShowSideWindow={toggleShowSideWindow}/>
+                <ActionBar action={action} setAction={setAction} toggleShowSideWindow={toggleShowSideWindow} toggleShowAgentWindow={toggleShowAgentWindow} />
                 <BoxDragProvider>
                     <div className="relative flex flex-1">
-                        <StorageSideWindow show={showStorageWindow} addStorage={addStorageBox}/>
-                        {canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
-                            <CanvasContainer
-                                zoomLevel={zoomLevel}
-                                setZoomLevel={setZoomLevel}
-                                isPanMode={isPanMode}
-                                className="relative"
-                                position={position}
-                                setPosition={setPosition}
-                                boxMaximized={anyBoxMaximized}
-                            >
-                                {storageBoxes.map((box) => (
-                                    <StorageBox
-                                        ref={getRefForBox(box.id)}
-                                        key={box.id}
-                                        box={box}
-                                        onClose={removeWindow}
-                                        onFocus={bringToFront}
-                                        viewportSize={canvasVwpSize}
-                                        viewportRef={canvasVwpRef as React.RefObject<HTMLDivElement>}
-                                        canvasZoom={zoomLevel}
-                                        canvasPan={position}
-                                        isMaximized={maximizedBoxes.has(box.id)}
-                                        setIsMaximized={(isMaximized: boolean) => setBoxMaximized(box.id, isMaximized)}
-                                        tempPostFile={tempPostFile}
-                                        tempGetFile={tempGetFile}
-                                        onBoxTransfer={handleBoxTransfer}
-                                    />
-                                ))}
-                            </CanvasContainer>
-                        ) : (
-                            <div className="flex-1 flex items-center justify-center">Loading canvas...</div>
-                        )}
+                        <StorageSideWindow show={showStorageWindow} addStorage={addStorageBox} />
+                        <div className="relative flex flex-col flex-1">
+                            {canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
+                                <CanvasContainer
+                                    zoomLevel={zoomLevel}
+                                    setZoomLevel={setZoomLevel}
+                                    isPanMode={isPanMode}
+                                    className="relative"
+                                    position={position}
+                                    setPosition={setPosition}
+                                    boxMaximized={anyBoxMaximized}
+                                >
+                                    {storageBoxes.map((box) => (
+                                        <StorageBox
+                                            ref={getRefForBox(box.id)}
+                                            key={box.id}
+                                            box={box}
+                                            onClose={removeWindow}
+                                            onFocus={bringToFront}
+                                            viewportSize={canvasVwpSize}
+                                            viewportRef={canvasVwpRef as React.RefObject<HTMLDivElement>}
+                                            canvasZoom={zoomLevel}
+                                            canvasPan={position}
+                                            isMaximized={maximizedBoxes.has(box.id)}
+                                            setIsMaximized={(isMaximized: boolean) => setBoxMaximized(box.id, isMaximized)}
+                                            tempPostFile={tempPostFile}
+                                            tempGetFile={tempGetFile}
+                                            onBoxTransfer={handleBoxTransfer}
+                                        />
+                                    ))}
+                                </CanvasContainer>
+                            ) : (
+                                <div className="flex-1 flex items-center justify-center">Loading canvas...</div>
+                            )}
+                            <AgentWindow show={showMcpTest} />
+                        </div>
                     </div>
                     <BoxDragPreview zoomLevel={zoomLevel} />
                 </BoxDragProvider>
