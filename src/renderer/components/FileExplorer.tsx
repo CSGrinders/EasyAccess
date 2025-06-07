@@ -71,6 +71,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { showAreYouSure } from "@/pages/HomePage"
 
 interface FileExplorerProps {
     cloudType?: CloudType
@@ -953,8 +954,16 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
         return () => window.removeEventListener("keydown", handleKeyDown)
     }, [selectedItems, BoxDrag.isDragging, isSelecting, sortedItems])
 
+
     async function handleDelete() {
         if (selectedItems.size === 0) return;
+
+        try {
+            await showAreYouSure()
+        } catch (error) {
+            console.log("User cancelled the delete operation");
+            return;
+        }
         
         console.log("Delete selected items:", Array.from(selectedItems));
         
