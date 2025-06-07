@@ -35,7 +35,6 @@ export const BoxDragPreview = ({ zoomLevel }: { zoomLevel: number }) => {
         return null;
     }
 
-
     return (
         <div
             ref={dragPreviewRef}

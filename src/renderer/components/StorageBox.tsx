@@ -13,9 +13,6 @@ import {StorageBoxProps, WINDOW_SIZES} from "@Types/box";
 import {FileExplorer} from "@Components/FileExplorer";
 import {TargetLocation, useBoxDrag} from "@/contexts/BoxDragContext";
 
-
-
-
 export const StorageBox = memo(
     React.forwardRef(StorageBoxInner),
     areEqual
@@ -80,9 +77,12 @@ function StorageBoxInner({
     const sizeRef = useRef(box.size);
     const prevStateRef = useRef({position: box.position, size: box.size});
 
-    const [isDragging, setIsDragging] = useState(false);
+    // const [isDragging, setIsDragging] = useState(false);
+    const isDraggingRef = useRef(false);
     const [dragStart, setDragStart] = useState({x: 0, y: 0});
-    const [isResizing, setIsResizing] = useState(false);
+
+    // const [isResizing, setIsResizing] = useState(false);
+    const isResizingRef = useRef(false);
     const [resizeDirection, setResizeDirection] = useState<string | null>(null);
     const [resizeStart, setResizeStart] = useState({x: 0, y: 0});
     const [resizeStartSize, setResizeStartSize] = useState(box.size);
@@ -100,15 +100,14 @@ function StorageBoxInner({
     const [isWindowResizing, setIsWindowResizing] = useState(false);
     const windowResizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    const doRefresh = () => {
+    const doRefresh = useCallback(() => {
         console.log("Function called from parent for box", box.id);
-          setRefreshToggle(!refreshToggle); // Toggle to trigger a refresh in the FileExplorer
-        // You can add any custom behavior here
-      }
+        setRefreshToggle(prev => !prev);
+}, [box.id]);
 
     useImperativeHandle(ref, () => ({
         callDoRefresh: doRefresh,
-      }));
+    }));
 
     const handleCurrentPathChange = useCallback((newPath: string) => {
         setCurrentPath(newPath);
@@ -216,6 +215,7 @@ function StorageBoxInner({
                     // BoxDrag.endBoxDrag();
                     BoxDrag.setDragItems([], null);
                     BoxDrag.setIsDragging(false);
+                    boxRef.current.style = `will-change-transform`;
                     setIsDropZoneActive(false);
                 }
             }
@@ -303,27 +303,45 @@ function StorageBoxInner({
     }, []);
 
 
-    const handleHeaderMouseDown = (e: React.MouseEvent) => {
+    const handleHeaderMouseDown = useCallback((e: React.MouseEvent) => {
         e.stopPropagation();
-        if (isDropdownOpen || isResizing) return;
+        
 
-        onFocus(id);
+        if (isDropdownOpen || isResizingRef.current) return;
+
 
         if (isMaximized) {
             positionRef.current = prevStateRef.current.position;
             sizeRef.current = prevStateRef.current.size;
             setIsMaximized(false);
             updateBox();
+            console.log("Restoring previous state:", prevStateRef.current);
             return;
         }
 
-        setIsDragging(true);
+        
 
-        setDragStart({
-            x: e.clientX - positionRef.current.x,
-            y: e.clientY - positionRef.current.y
+        // To make animations smooth
+        requestAnimationFrame(() => {
+            // setIsDragging(true);
+            isDraggingRef.current = true;
+            if (boxRef.current) {
+                boxRef.current.style.opacity = '0.7';
+            }
+
+            // Calculate drag start once
+            const dragStartX = e.clientX - positionRef.current.x;
+            const dragStartY = e.clientY - positionRef.current.y;
+            setDragStart({
+                x: dragStartX,
+                y: dragStartY   
+            });
+                
         });
-    };
+        
+        onFocus(id);
+
+    }, [onFocus, id, isDropdownOpen, isMaximized, updateBox]);
 
 
     const handleWindowClick = useCallback((e: React.MouseEvent) => {
@@ -333,23 +351,32 @@ function StorageBoxInner({
 
 
     const handleMouseUp = useCallback(() => {
-        setIsDragging(false);
-        setIsResizing(false);
-        setResizeDirection(null);
-    }, []);    const handleMouseMove = useCallback((e: React.MouseEvent) => {
+        requestAnimationFrame(() => {
+            // setIsDragging(false);
+            isDraggingRef.current = false;
+            if (boxRef.current) {
+                boxRef.current.style.opacity = '1';
+                boxRef.current.style.willChange = 'transform';
+            }
+            // setIsResizing(false);
+            isResizingRef.current = false;
+            setResizeDirection(null);
+        });
+    }, []);    
+    
+    const handleMouseMove = useCallback((e: React.MouseEvent) => {
         if (isDropdownOpen) return;
 
-        if (isDragging) {
+        if (isDraggingRef.current) {
             const newX = e.clientX - dragStart.x;
             const newY = e.clientY - dragStart.y;
 
             positionRef.current = { x: newX, y: newY };
 
             updateBox();
-        } else if (isResizing && resizeDirection) {
+        } else if (isResizingRef.current && resizeDirection) {
            const dx = e.clientX - resizeStart.x;
            const dy = e.clientY - resizeStart.y;
-
 
            let newWidth = resizeStartSize.width;
            let newHeight = resizeStartSize.height;
@@ -401,7 +428,7 @@ function StorageBoxInner({
            positionRef.current = { x: newX, y: newY };
            updateBox();
         }
-    }, [isDropdownOpen, isDragging, dragStart.x, dragStart.y, isResizing, resizeDirection, resizeStart.x, resizeStart.y, resizeStartSize, resizeStartPosition, updateBox]);
+    }, [dragStart, isDropdownOpen, resizeDirection, resizeStart.x, resizeStart.y, resizeStartSize, resizeStartPosition, updateBox]);
 
 
     // Add initial transform application in useEffect
@@ -419,7 +446,11 @@ function StorageBoxInner({
         e.stopPropagation();
         e.preventDefault();
         onFocus(id);
-        setIsResizing(true);
+        // setIsResizing(true);
+        isResizingRef.current = true;
+        if (boxRef.current) {
+            boxRef.current.style.opacity = '0.7';
+        }
         setResizeDirection(direction);
         setResizeStart({x: e.clientX, y: e.clientY});
         setResizeStartSize(sizeRef.current);
@@ -439,7 +470,6 @@ function StorageBoxInner({
             sizeRef.current = prevStateRef.current.size;
             positionRef.current = prevStateRef.current.position;
             setIsMaximized(false);
-            console.log("Restoring previous state:", prevStateRef.current);
         } else {
             prevStateRef.current = {
                 position: positionRef.current,
@@ -484,22 +514,25 @@ function StorageBoxInner({
     };
 
 
+    
     useEffect(() => {
         console.log("StorageBox useEffect triggered");
         const handleGlobalMouseMove = (e: MouseEvent) => {
             if (isDropdownOpen) return;
-            if (isDragging || isResizing) {
+            if (isDraggingRef.current || isResizingRef.current) {
                 handleMouseMove(e as unknown as React.MouseEvent);
             }
         };
 
 
         const handleGlobalMouseUp = () => {
+            document.removeEventListener("mousemove", handleGlobalMouseMove);
+            document.removeEventListener("mouseup", handleGlobalMouseUp);
             handleMouseUp();
         };
 
 
-        if (isDragging || isResizing) {
+        if (isDraggingRef.current || isResizingRef.current) {
             document.addEventListener("mousemove", handleGlobalMouseMove);
             document.addEventListener("mouseup", handleGlobalMouseUp);
         }
@@ -509,10 +542,10 @@ function StorageBoxInner({
             document.removeEventListener("mousemove", handleGlobalMouseMove);
             document.removeEventListener("mouseup", handleGlobalMouseUp);
         };
-    }, [isDragging, isResizing, dragStart, resizeDirection, resizeStart, resizeStartSize, resizeStartPosition, isDropdownOpen]); // Added dependencies
+    }, [dragStart, resizeDirection, resizeStart, resizeStartSize, resizeStartPosition, isDropdownOpen]); // Added dependencies
 
 
-    const opacity = isDragging || isResizing ? 0.7 : 1;
+    // const opacity = isDraggingRef.current || isResizing ? 0.7 : 1;
     const defaultIcon = <Folder className="h-5 w-5 text-amber-500"/>;
 
 
@@ -525,20 +558,19 @@ function StorageBoxInner({
             ref={boxRef}
             className={cn(
                 "box-container absolute flex flex-col bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden",
-                isDragging && "cursor-grabbing", "will-change-transform",
                 isMaximized ? "border-blue-500 dark:border-blue-400" : "rounded-xl",
                 isDropZoneActive && "ring-4 ring-green-400 bg-green-50 dark:bg-green-900/20 border-green-400"
             )}
             style={{
                 zIndex: box.zIndex,
-                opacity,
+                // opacity,
                 // Ensure no conflicting transitions
                 transitionProperty: isMaximized ? 'none' : 'opacity',
             }}
             onClick={handleWindowClick}
-            onMouseDown={(e) => {
-                if (isResizing) e.stopPropagation();
-            }}
+            // onMouseDown={(e) => { // NOT SURE ?
+            //     if (isResizingRef.current) e.stopPropagation();
+            // }}
         >
             {isDropZoneActive && (
                 <div className="absolute inset-0 bg-green-100/50 dark:bg-green-900/30 border-4 border-green-400 border-dashed rounded-xl flex items-center justify-center z-20 pointer-events-none select-none">

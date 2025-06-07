@@ -3,7 +3,7 @@ TODO
 Fix id (BoxDrag.target?.boxId) number vs string with item.id 
 */
 
-import React, {useEffect, useState, useRef, useCallback} from "react"
+import React, {useEffect, useState, useRef, useCallback, use, memo} from "react"
 import {
     ChevronLeft,
     ChevronRight,
@@ -152,7 +152,8 @@ const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected
     return "text-gray-400";
 };
 
-export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, refreshToggle, onCurrentPathChange}: FileExplorerProps) {
+export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, refreshToggle, onCurrentPathChange}: FileExplorerProps) {
+// export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, refreshToggle, onCurrentPathChange}: FileExplorerProps) {
     const [items, setItems] = useState<FileSystemItem[]>([])
     const [cwd, setCwd] = useState<string>("")
     const [history, setHistory] = useState<string[]>([])
@@ -1148,4 +1149,4 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
             </div>
         </div>
     )
-}
+});

@@ -1,4 +1,4 @@
-import React, {useState, useRef, useEffect, use} from 'react';
+import React, {useState, useRef, useEffect, use, useCallback} from 'react';
 import {CloudLightning, HardDrive} from "lucide-react"
 import CanvaSettings from "@Components/CanvaSettings";
 import ActionBar from "@Components/ActionBar";
@@ -290,7 +290,7 @@ const HomePage = () => {
         setStorageBoxes(storageBoxes.filter((w) => w.id !== id));
     };
 
-    const bringToFront = (id: number) => {
+    const bringToFront = useCallback((id: number) => {
         setStorageBoxes((prevBoxes) => // prevBoxes ensures the latest state of storageBoxes / conflict with addStorageBox
             prevBoxes.map((window) => {
                 if (window.id === id) {
@@ -300,7 +300,7 @@ const HomePage = () => {
             }),
         );
         setNextZIndex((prevZIndex) => prevZIndex + 1);
-    };
+    }, []);
 
     const setBoxMaximized = (boxId: number, isMaximized: boolean) => {
         setMaximizedBoxes(prev => {
