@@ -38,3 +38,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url) as Promise<{ success: boolean, error?: any }>,
     openFile: (fileContent: FileContent) => ipcRenderer.invoke('open-file', fileContent) as Promise<void>,
 });
+
+contextBridge.exposeInMainWorld('mcpApi', {
+    processQuery: (query: string) => ipcRenderer.invoke('mcp-process-query', query)
+});

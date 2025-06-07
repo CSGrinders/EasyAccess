@@ -5,9 +5,32 @@ import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirect
 import { CloudType } from "@Types/cloudType";
 import { FileContent, FileSystemItem } from '@Types/fileSystem';
 import mime from 'mime';
+import MCPClient from './MCP/mcpClient';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { createFileSystemServer } from './MCP/fileSystemMcpServer';
 
+const setUpMCP = async () => {
+    const mcpClient = new MCPClient();
+    const transports = InMemoryTransport.createLinkedPair();
+    const fsClientTransport = transports[0];
+    const fsServerTransport = transports[1];
+    
+    // Create and start filesystem server
+    // Define allowed directories for the filesystem server
+    const allowedDirs = [
+        '~/Documents', 
+        '~/Downloads',
+        process.cwd()
+    ];
+    
+    const fsServer = await createFileSystemServer(allowedDirs);
+    fsServer.connect(fsServerTransport);
 
-const createWindow = () => {
+    mcpClient.connectToServer([fsClientTransport]) // add more transports if needed
+    return mcpClient;
+};
+
+const createWindow = async () => {
     const win = new BrowserWindow({
         width: 1200,
         height: 800,
@@ -23,6 +46,8 @@ const createWindow = () => {
     });
     console.log('window created');
 
+    const mcpClient = await setUpMCP();
+
     // load auth tokens from local storage
     loadStoredAccounts(); 
 
@@ -31,6 +56,17 @@ const createWindow = () => {
         win.show()
         win.webContents.openDevTools({ mode: 'right' })
     })
+
+    // Add IPC handler for MCP queries
+    ipcMain.handle('mcp-process-query', async (_e, query: string) => {
+        try {
+            console.log("Processing MCP query:", query);
+            return await mcpClient.processQuery(query);
+        } catch (error) {
+            console.error("Error in MCP query:", error);
+            throw error;
+        }
+    });
 };
 
 app.whenReady().then(() => {
