@@ -3,7 +3,7 @@ TODO
 Fix id (BoxDrag.target?.boxId) number vs string with item.id 
 */
 
-import React, {useEffect, useState, useRef, useCallback} from "react"
+import React, {useEffect, useState, useRef, useCallback, memo} from "react"
 import {
     ChevronLeft,
     ChevronRight,
@@ -152,7 +152,7 @@ const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected
     return "text-gray-400";
 };
 
-export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, refreshToggle, onCurrentPathChange}: FileExplorerProps) {
+export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, refreshToggle, onCurrentPathChange}: FileExplorerProps) {
     const [items, setItems] = useState<FileSystemItem[]>([])
     const [cwd, setCwd] = useState<string>("")
     const [history, setHistory] = useState<string[]>([])
@@ -608,6 +608,11 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
         document.addEventListener("mouseup", handleItemMouseUp)
     }
 
+    const resetTarget = () => {
+        console.log("Mouse is outside container, no drop target")
+        BoxDrag.setTarget({ boxId: -1, targetPath: "" });
+        localTargetRef.current = null;
+    }
 
     const handleItemMouseMove = (e: MouseEvent) => {
         if (!localDragStartedRef.current && !localIsDraggingRef.current) {
@@ -657,10 +662,9 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
                 e.clientY >= containerRect.top &&
                 e.clientY <= containerRect.bottom;
 
-            let newDropTarget: string | null = null
-
             if (isWithinContainer) {
                 console.log("Mouse is within container, checking for drop target")
+                let foundDropTarget = false
                 for (const item of sortedItems) {
                     if (draggedItemsRef.current.includes(item.id)) continue
 
@@ -676,7 +680,6 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
                     if (relativeX >= itemLeft && relativeX <= itemRight &&
                         relativeY >= itemTop && relativeY <= itemBottom) {
                         console.log("Mouse is over item:", item.name)
-                        // newDropTarget = item.id;
                         BoxDrag.setTarget({
                             boxId: boxId,
                             targetPath: item.path,
@@ -687,12 +690,16 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
                             targetPath: item.path,
                             targetId: item.id
                         };
+                        foundDropTarget = true
                         break
                     }
+                    if (!foundDropTarget) {
+                        resetTarget();
+                    }
                 }
+            } else {
+                resetTarget();
             }
-
-            // updateDropTarget(newDropTarget)
 
             const scrollThreshold = 60
             const scrollAmount = 10
@@ -1148,4 +1155,4 @@ export function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, 
             </div>
         </div>
     )
-}
+});

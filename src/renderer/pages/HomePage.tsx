@@ -1,4 +1,4 @@
-import React, {useState, useRef, useEffect, use} from 'react';
+import React, {useState, useRef, useEffect, use, useCallback} from 'react';
 import {CloudLightning, HardDrive} from "lucide-react"
 import CanvaSettings from "@Components/CanvaSettings";
 import ActionBar from "@Components/ActionBar";
@@ -36,7 +36,7 @@ const HomePage = () => {
     const [action, setAction] = useState("dashboard");
     const [maximizedBoxes, setMaximizedBoxes] = useState<Set<number>>(new Set());
     const [position, setPosition] = useState({x: 0, y: 0});
-    const [nextZIndex, setNextZIndex] = useState(4);
+    const nextZIndexRef = useRef(4);
     const canvasVwpRef = useRef<HTMLDivElement>({} as HTMLDivElement);
     const [canvasVwpSize, setCanvasViewportSize] = useState({ width: 0, height: 0 });
     const [showStorageWindow, setShowStorageWindow] = useState(false);
@@ -67,7 +67,7 @@ const HomePage = () => {
         }
         // source from the cloud file system
         await (window as any).cloudFsApi.deleteFile(fileContentCache.sourceCloudType, fileContentCache.sourceAccountId, fileContentCache.path); // TODO remove from the corresponding source file owner
-        storageBoxes.forEach((box) => {
+        storageBoxesRef.current.forEach((box) => {
             console.log("Checking box:", box.id, "for file deletion");
             console.log("Box sourceAccountId:", box.accountId, "Box cloudType:", box.cloudType);
             console.log("File sourceAccountId:", fileContentCache.sourceAccountId, "File cloudType:", fileContentCache.sourceCloudType);
@@ -79,8 +79,7 @@ const HomePage = () => {
                 const ref = boxRefs.current.get(box.id);
                 ref.current?.callDoRefresh?.(); 
             }
-        }
-        );
+        });
     }
 
 
@@ -236,6 +235,12 @@ const HomePage = () => {
         }
     ]);
 
+    // To sync storageBoxes with a ref for performance.. not sure actually..
+    const storageBoxesRef = useRef<StorageBoxData[]>(storageBoxes);
+
+    useEffect(() => {
+        storageBoxesRef.current = storageBoxes;
+    }, [storageBoxes]);
 
     useEffect(() => {
         const observedElement = canvasVwpRef.current;
@@ -276,13 +281,14 @@ const HomePage = () => {
             icon: icon,
             position: { x: 0, y: 0 },
             size: { width: 400, height: 300 },
-            zIndex: nextZIndex,
+            // zIndex: nextZIndexRef.current,
             cloudType: cloudType,
             accountId: accountId,
         };
         setStorageBoxes([...storageBoxes, newStorageBox]);
         setNextBoxId(nextBoxId + 1);
-        setNextZIndex(nextZIndex + 1);
+        // setNextZIndex(nextZIndex + 1);
+        // nextZIndexRef.current += 1;
         setShowStorageWindow(false); // Close the storage window after adding
     };
 
@@ -290,17 +296,27 @@ const HomePage = () => {
         setStorageBoxes(storageBoxes.filter((w) => w.id !== id));
     };
 
-    const bringToFront = (id: number) => {
-        setStorageBoxes((prevBoxes) => // prevBoxes ensures the latest state of storageBoxes / conflict with addStorageBox
-            prevBoxes.map((window) => {
-                if (window.id === id) {
-                    return { ...window, zIndex: nextZIndex };
-                }
-                return window;
-            }),
-        );
-        setNextZIndex((prevZIndex) => prevZIndex + 1);
-    };
+    const bringToFront = useCallback((id: number) => {
+        // Skip if box is maximized
+        if (maximizedBoxes.has(id)) return;
+
+        // Increment zIndex
+        nextZIndexRef.current += 1;
+        const newZIndex = nextZIndexRef.current;
+
+        // Update all box z-indices
+        storageBoxesRef.current.forEach((box) => {
+            const boxRef = boxRefs.current.get(box.id);
+            console.log(box.id === id);
+            console.log("Box ref:", boxRef);
+            if (boxRef && boxRef.current) {
+                // Set higher z-index for clicked box, lower for others
+                boxRef?.current?.setStyle({
+                    zIndex: box.id === id ? newZIndex : (box.zIndex || 1) - 1,
+                });
+            }
+        });
+    }, [storageBoxes, maximizedBoxes]);
 
     const setBoxMaximized = (boxId: number, isMaximized: boolean) => {
         setMaximizedBoxes(prev => {

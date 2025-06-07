@@ -13,7 +13,7 @@ export const WINDOW_TYPES = ["local", "cloud"]
 export interface StorageBoxProps {
     box: StorageBoxData
     onClose?: (id: number) => void
-    onFocus: (id: number) => void
+    onFocus?: (id: number) => void
     viewportSize: { width: number; height: number };
     viewportRef: React.RefObject<HTMLDivElement>;
     canvasZoom: number;
@@ -34,7 +34,7 @@ export interface StorageBoxData {
     position: { x: number; y: number }
     size: { width: number; height: number }
     icon?: React.ReactNode
-    zIndex: number
+    zIndex?: number
     cloudType?: CloudType
     accountId?: string
 }

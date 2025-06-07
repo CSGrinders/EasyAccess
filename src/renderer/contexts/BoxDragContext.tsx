@@ -16,7 +16,6 @@ export interface TargetLocation {
 export interface BoxDragContextType {
     isDragging: boolean;
     sourceBoxId: number | null;
-    dragPreviewRef: React.RefObject<HTMLDivElement | null>;
     dragItems: DragItems;
     target: TargetLocation | null; // Target location for the drag operation
     setDragItems: (items: FileSystemItem[], sourceBoxId: number | null, sourceCloudType?: string, sourceAccountId?: string) => void;
@@ -39,7 +38,6 @@ interface BoxDragProviderProps {
 }
 
 export const BoxDragProvider: React.FC<BoxDragProviderProps> = ({ children }) => {
-    const dragPreviewRef = useRef<HTMLDivElement>(null);
     const [dragItems, setDragItemsState] = useState<DragItems>({
         items: [],
         sourceBoxId: null,
@@ -74,7 +72,6 @@ export const BoxDragProvider: React.FC<BoxDragProviderProps> = ({ children }) =>
     const contextValue: BoxDragContextType = useMemo(() => ({
         isDragging: drag,
         sourceBoxId,
-        dragPreviewRef,
         dragItems,
         get target() {
             return targetRef.current;
