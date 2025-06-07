@@ -2,7 +2,8 @@ import React, { useEffect } from 'react';
 import {useBoxDrag} from '@/contexts/BoxDragContext';
 
 export const BoxDragPreview = ({ zoomLevel }: { zoomLevel: number }) => {
-    const {isDragging, dragItems, dragPreviewRef } = useBoxDrag();
+    const {isDragging, dragItems} = useBoxDrag();
+    const dragPreviewRef = React.useRef<HTMLDivElement | null>(null);
 
     // In BoxDragPreview component
     useEffect(() => {

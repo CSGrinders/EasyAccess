@@ -80,9 +80,11 @@ function StorageBoxInner({
     const sizeRef = useRef(box.size);
     const prevStateRef = useRef({position: box.position, size: box.size});
 
-    const [isDragging, setIsDragging] = useState(false);
+    // const [isDragging, setIsDragging] = useState(false);
+    const isDraggingRef = useRef(false);
     const [dragStart, setDragStart] = useState({x: 0, y: 0});
-    const [isResizing, setIsResizing] = useState(false);
+    // const [isResizing, setIsResizing] = useState(false);
+    const isResizingRef = useRef(false);
     const [resizeDirection, setResizeDirection] = useState<string | null>(null);
     const [resizeStart, setResizeStart] = useState({x: 0, y: 0});
     const [resizeStartSize, setResizeStartSize] = useState(box.size);
@@ -104,10 +106,15 @@ function StorageBoxInner({
         console.log("Function called from parent for box", box.id);
           setRefreshToggle(!refreshToggle); // Toggle to trigger a refresh in the FileExplorer
         // You can add any custom behavior here
-      }
+      };
 
     useImperativeHandle(ref, () => ({
         callDoRefresh: doRefresh,
+        setStyle: (style: Partial<CSSStyleDeclaration>) => {
+            if (boxRef.current) {
+                Object.assign(boxRef.current.style, style);
+            }
+        },
       }));
 
     const handleCurrentPathChange = useCallback((newPath: string) => {
@@ -303,11 +310,10 @@ function StorageBoxInner({
     }, []);
 
 
-    const handleHeaderMouseDown = (e: React.MouseEvent) => {
+    const handleHeaderMouseDown = useCallback((e: React.MouseEvent) => {
         e.stopPropagation();
-        if (isDropdownOpen || isResizing) return;
+        if (isDropdownOpen || isResizingRef.current) return;
 
-        onFocus(id);
 
         if (isMaximized) {
             positionRef.current = prevStateRef.current.position;
@@ -317,36 +323,60 @@ function StorageBoxInner({
             return;
         }
 
-        setIsDragging(true);
+        // setIsDragging(true);
+        isDraggingRef.current = true;
+        
+        // To make animations smooth
+        requestAnimationFrame(() => {
+            // setIsDragging(true);
+            isDraggingRef.current = true;
+            if (boxRef.current) {
+                boxRef.current.style.opacity = '0.7';
+            }
+             // Calculate drag start once
+            const dragStartX = e.clientX - positionRef.current.x;
+            const dragStartY = e.clientY - positionRef.current.y;
+            setDragStart({
+                x: dragStartX,
+                y: dragStartY   
+            });
 
-        setDragStart({
-            x: e.clientX - positionRef.current.x,
-            y: e.clientY - positionRef.current.y
         });
-    };
+        // onFocus(id);
+        onFocus?.(id);
+    }, [onFocus, id, isDropdownOpen, isMaximized, updateBox]);
 
 
     const handleWindowClick = useCallback((e: React.MouseEvent) => {
         e.stopPropagation();
-        onFocus(id);
-    }, [onFocus, id]);
+    }, [id]);
 
 
     const handleMouseUp = useCallback(() => {
-        setIsDragging(false);
-        setIsResizing(false);
-        setResizeDirection(null);
-    }, []);    const handleMouseMove = useCallback((e: React.MouseEvent) => {
+        requestAnimationFrame(() => {
+            // setIsDragging(false);
+            isDraggingRef.current = false;
+            if (boxRef.current) {
+                boxRef.current.style.opacity = '1';
+                boxRef.current.style.willChange = 'transform';
+            }
+            // setIsResizing(false);
+            isResizingRef.current = false;
+            setResizeDirection(null);
+        });
+    }, []);
+    
+    const handleMouseMove = useCallback((e: React.MouseEvent) => {
         if (isDropdownOpen) return;
 
-        if (isDragging) {
+        if (isDraggingRef.current) {
             const newX = e.clientX - dragStart.x;
             const newY = e.clientY - dragStart.y;
 
             positionRef.current = { x: newX, y: newY };
 
             updateBox();
-        } else if (isResizing && resizeDirection) {
+        } else if (isResizingRef.current && resizeDirection) {
            const dx = e.clientX - resizeStart.x;
            const dy = e.clientY - resizeStart.y;
 
@@ -401,7 +431,7 @@ function StorageBoxInner({
            positionRef.current = { x: newX, y: newY };
            updateBox();
         }
-    }, [isDropdownOpen, isDragging, dragStart.x, dragStart.y, isResizing, resizeDirection, resizeStart.x, resizeStart.y, resizeStartSize, resizeStartPosition, updateBox]);
+    }, [isDropdownOpen, dragStart, resizeDirection, resizeStart.x, resizeStart.y, resizeStartSize, resizeStartPosition, updateBox]);
 
 
     // Add initial transform application in useEffect
@@ -418,8 +448,8 @@ function StorageBoxInner({
         if (isDropdownOpen || isMaximized) return; // Prevent resize if dropdown is open or box is maximized
         e.stopPropagation();
         e.preventDefault();
-        onFocus(id);
-        setIsResizing(true);
+        onFocus?.(id);
+        isResizingRef.current = true;
         setResizeDirection(direction);
         setResizeStart({x: e.clientX, y: e.clientY});
         setResizeStartSize(sizeRef.current);
@@ -488,18 +518,20 @@ function StorageBoxInner({
         console.log("StorageBox useEffect triggered");
         const handleGlobalMouseMove = (e: MouseEvent) => {
             if (isDropdownOpen) return;
-            if (isDragging || isResizing) {
+            if (isDraggingRef.current || isResizingRef.current) {
                 handleMouseMove(e as unknown as React.MouseEvent);
             }
         };
 
 
         const handleGlobalMouseUp = () => {
+            document.removeEventListener("mousemove", handleGlobalMouseMove);
+            document.removeEventListener("mouseup", handleGlobalMouseUp);
             handleMouseUp();
         };
 
 
-        if (isDragging || isResizing) {
+        if (isDraggingRef.current || isResizingRef.current) {
             document.addEventListener("mousemove", handleGlobalMouseMove);
             document.addEventListener("mouseup", handleGlobalMouseUp);
         }
@@ -509,10 +541,10 @@ function StorageBoxInner({
             document.removeEventListener("mousemove", handleGlobalMouseMove);
             document.removeEventListener("mouseup", handleGlobalMouseUp);
         };
-    }, [isDragging, isResizing, dragStart, resizeDirection, resizeStart, resizeStartSize, resizeStartPosition, isDropdownOpen]); // Added dependencies
+    }, [dragStart, resizeDirection, resizeStart, resizeStartSize, resizeStartPosition, isDropdownOpen]); // Added dependencies
 
 
-    const opacity = isDragging || isResizing ? 0.7 : 1;
+    const opacity = isDraggingRef.current || isResizingRef.current ? 0.7 : 1;
     const defaultIcon = <Folder className="h-5 w-5 text-amber-500"/>;
 
 
@@ -525,20 +557,16 @@ function StorageBoxInner({
             ref={boxRef}
             className={cn(
                 "box-container absolute flex flex-col bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden",
-                isDragging && "cursor-grabbing", "will-change-transform",
                 isMaximized ? "border-blue-500 dark:border-blue-400" : "rounded-xl",
                 isDropZoneActive && "ring-4 ring-green-400 bg-green-50 dark:bg-green-900/20 border-green-400"
             )}
             style={{
-                zIndex: box.zIndex,
+                // zIndex: box.zIndex,
                 opacity,
                 // Ensure no conflicting transitions
                 transitionProperty: isMaximized ? 'none' : 'opacity',
             }}
             onClick={handleWindowClick}
-            onMouseDown={(e) => {
-                if (isResizing) e.stopPropagation();
-            }}
         >
             {isDropZoneActive && (
                 <div className="absolute inset-0 bg-green-100/50 dark:bg-green-900/30 border-4 border-green-400 border-dashed rounded-xl flex items-center justify-center z-20 pointer-events-none select-none">
@@ -620,11 +648,11 @@ function StorageBoxInner({
             <div className="flex flex-1 overflow-hidden bg-slate-50 dark:bg-slate-900/50">
                 {type == "local" ?  (
                     <>
-                        <FileExplorer tempGetFile={tempGetFile} tempPostFile={tempPostFile} boxId={id} isBoxToBoxTransfer={isDropZoneActive} onCurrentPathChange={handleCurrentPathChange} refreshToggle={refreshToggle}/>
+                        <FileExplorer tempGetFile={tempGetFile} tempPostFile={tempPostFile} boxId={id} onCurrentPathChange={handleCurrentPathChange} refreshToggle={refreshToggle}/>
                     </>
                 ) : (
                     <>
-                        <FileExplorer cloudType={box.cloudType} accountId={box.accountId} tempGetFile={tempGetFile} tempPostFile={tempPostFile} boxId={id} isBoxToBoxTransfer={isDropZoneActive} onCurrentPathChange={handleCurrentPathChange} refreshToggle={refreshToggle} />
+                        <FileExplorer cloudType={box.cloudType} accountId={box.accountId} tempGetFile={tempGetFile} tempPostFile={tempPostFile} boxId={id} onCurrentPathChange={handleCurrentPathChange} refreshToggle={refreshToggle} />
                     </>
                 )}
             </div>
