@@ -72,6 +72,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { showAreYouSure } from "@/pages/HomePage"
+import { toast } from "sonner"
 
 interface FileExplorerProps {
     cloudType?: CloudType
@@ -304,6 +305,12 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                 .catch((err: Error) => {
                     console.error(err)
                     setIsLoading(false)
+                    
+                    // Show user-visible error for cloud access issues
+                    toast.error("Cloud Directory Access Failed", {
+                        description: `Failed to load cloud directory: ${err.message || 'Unknown error'}`,
+                        duration: 2000,
+                    });
                 })
         } else {
             // Fetch files from the local directory
@@ -320,6 +327,26 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                 .catch((err) => {
                     console.error(err)
                     setIsLoading(false)
+                    
+                    if (err && typeof err === 'object' && 'message' in err) {
+                        const errorMessage = (err as Error).message;
+                        if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
+                            toast.error("Permission Required", {
+                                description: "Unable to access directory.",
+                                duration: 2000,
+                            });
+                        } else {
+                            toast.error("Directory Access Failed", {
+                                description: `Failed to load directory: ${errorMessage}`,
+                                duration: 2000,
+                            });
+                        }
+                    } else {
+                        toast.error("Directory Access Failed", {
+                            description: "An unexpected error occurred while loading the directory.",
+                            duration: 2000,
+                        });
+                    }
                 })
         }
         updateSelectedItemsColor();
@@ -341,44 +368,84 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
     const openFile = async (e: React.MouseEvent, item: FileSystemItem) => {
         e.preventDefault();
         setIsOpeningBrowser(true);
-        let fileContent: FileContent | null = null;
-        if (!cloudType || !accountId) {
-            // For local file system, just pass the current
-            console.log("Opening local file:", item.path);
-            fileContent =  await (window as any).fsApi.getFile(item.path);
-        } else {
-            console.log("Opening cloud file:", item.path);
-            fileContent = await (window as any).cloudFsApi.getFile(cloudType, accountId, item.path);
-        }
-
-        if (!fileContent) {
-            console.log("No file content to open");
-            return;
-        }
-        console.log("Opening file:", fileContent);
-        if (fileContent.url) {
-            const response = await (window as any).electronAPI.openExternalUrl(fileContent.url);
-            if (response && response.success) {
-                console.log("File URL opened successfully:", fileContent.url);
+        
+        try {
+            let fileContent: FileContent | null = null;
+            if (!cloudType || !accountId) {
+                // For local file system, just pass the current
+                console.log("Opening local file:", item.path);
+                fileContent =  await (window as any).fsApi.getFile(item.path);
             } else {
-                console.error("Failed to open file URL:", fileContent.url, response?.error);
+                console.log("Opening cloud file:", item.path);
+                fileContent = await (window as any).cloudFsApi.getFile(cloudType, accountId, item.path);
             }
-        } else {
-            console.log("File URL is undefined, create blob URL instead");
-            // Create a blob URL for the file content
-            if (!fileContent.content) {
-                console.error("File content is undefined, cannot create blob URL");
+
+            if (!fileContent) {
+                console.log("No file content to open");
+                toast.error("File Open Failed", {
+                    description: "Unable to read file content.",
+                    duration: 4000,
+                });
                 return;
             }
-            const isTextFile = ['.txt', '.csv', '.py', '.json', '.log'].some(ext => item.path.endsWith(ext));
-            const blob = new Blob(
-                [fileContent.content],
-                { type: isTextFile ? 'text/plain' : fileContent.type }
-            );
-            const response = await (window as any).electronAPI.openFile(fileContent);
-            console.log( "File opened successfully:", fileContent.path, response);
+            
+            console.log("Opening file:", fileContent);
+            if (fileContent.url) {
+                const response = await (window as any).electronAPI.openExternalUrl(fileContent.url);
+                if (response && response.success) {
+                    console.log("File URL opened successfully:", fileContent.url);
+                } else {
+                    console.error("Failed to open file URL:", fileContent.url, response?.error);
+                    toast.error("File Open Failed", {
+                        description: `Failed to open file: ${response?.error || 'Unknown error'}`,
+                        duration: 2000,
+                    });
+                }
+            } else {
+                console.log("File URL is undefined, create blob URL instead");
+                // Create a blob URL for the file content
+                if (!fileContent.content) {
+                    console.error("File content is undefined, cannot create blob URL");
+                    toast.error("File Open Failed", {
+                        description: "File content is empty or corrupted.",
+                        duration: 4000,
+                    });
+                    return;
+                }
+                const isTextFile = ['.txt', '.csv', '.py', '.json', '.log'].some(ext => item.path.endsWith(ext));
+                const blob = new Blob(
+                    [fileContent.content],
+                    { type: isTextFile ? 'text/plain' : fileContent.type }
+                );
+                const response = await (window as any).electronAPI.openFile(fileContent);
+                console.log( "File opened successfully:", fileContent.path, response);
+            }
+        } catch (error) {
+            console.error("Error opening file:", error);
+            
+            // Show user-visible error for permission issues
+            if (error && typeof error === 'object' && 'message' in error) {
+                const errorMessage = (error as Error).message;
+                if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
+                    toast.error("Permission Error", {
+                        description: "Unable to open file.",
+                        duration: 2000,
+                    });
+                } else {
+                    toast.error("File Open Failed", {
+                        description: `Failed to open file: ${errorMessage}`,
+                        duration: 2000,
+                    });
+                }
+            } else {
+                toast.error("File Open Failed", {
+                    description: "An unexpected error occurred while opening the file.",
+                    duration: 2000,
+                });
+            }
+        } finally {
+            setIsOpeningBrowser(false);
         }
-        setIsOpeningBrowser(false);
     }
 
 
@@ -445,6 +512,12 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                 .catch((err: Error) => {
                     console.error(err)
                     setIsLoading(false)
+                    
+                    // Show user-visible error for cloud access issues
+                    toast.error("Cloud Refresh Failed", {
+                        description: `Failed to refresh cloud directory: ${err.message || 'Unknown error'}`,
+                        duration: 2000,
+                    });
                 })
         } else {
             // Fetch files from the local directory
@@ -466,8 +539,28 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                 })
                 .catch((err) => {
                     console.error(err)
-
                     setIsLoading(false)
+                    
+                    // Show user-visible error for permission issues
+                    if (err && typeof err === 'object' && 'message' in err) {
+                        const errorMessage = (err as Error).message;
+                        if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
+                            toast.error("Permission Error", {
+                                description: "Unable to refresh directory.",
+                                duration: 2000,
+                            });
+                        } else {
+                            toast.error("Directory Refresh Failed", {
+                                description: `Failed to refresh directory: ${errorMessage}`,
+                                duration: 2000,
+                            });
+                        }
+                    } else {
+                        toast.error("Directory Refresh Failed", {
+                            description: "An unexpected error occurred while refreshing the directory.",
+                            duration: 2000,
+                        });
+                    }
                 })
         }
         updateSelectedItemsColor();
@@ -878,13 +971,45 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             if (targetItem && targetItem.isDirectory) {
                 console.log(`Target directory detected: ${targetItem.path}`)
                 // implement the actual move TODO
-                await tempPostFile?.(targetItem.path, cloudType, accountId);
-                
-                refreshDirectory(); // Refresh the directory after moving files
-                // TODO Clear the fileCache in the HomePage?
+                try {
+                    await tempPostFile?.(targetItem.path, cloudType, accountId);
+                    refreshDirectory(); // Refresh the directory after moving files
+                    // TODO Clear the fileCache in the HomePage?
+                } catch (error) {
+                    console.error("Error moving files:", error);
+                    
+                    // Show user-visible error for permission issues
+                    if (error && typeof error === 'object' && 'message' in error) {
+                        const errorMessage = (error as Error).message;
+                        if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
+                            toast.error("Permission Error", {
+                                description: "Unable to move files.",
+                                duration: 2000,
+                            });
+                        } else {
+                            toast.error("Move Failed", {
+                                description: `Failed to move files: ${errorMessage}`,
+                                duration: 2000,
+                            });
+                        }
+                    } else {
+                        toast.error("Move Failed", {
+                            description: "An unexpected error occurred while moving the files.",
+                            duration: 2000,
+                        });
+                    }
+                }
             } else if (targetItem && !targetItem.isDirectory) {
                 console.log(`Target file detected: ${targetItem.name}`)
-                tempPostFile?.(targetItem.path, cloudType, accountId)
+                try {
+                    tempPostFile?.(targetItem.path, cloudType, accountId);
+                } catch (error) {
+                    console.error("Error posting file:", error);
+                    toast.error("File Operation Failed", {
+                        description: "Failed to complete file operation.",
+                        duration: 4000,
+                    });
+                }
                 // implement the actual creating of folder and move both files?
             }
         } else {
@@ -970,9 +1095,13 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             // Ctrl+A or Cmd+A:
             if ((e.ctrlKey || e.metaKey) && e.key === "a") {
                 e.preventDefault()
+<<<<<<< HEAD
                 const allItems = new Set(sortedItems.map((item) => item.id))
                 // setSelectedItems(allItems)
                 selectedItemsRef.current = allItems;
+=======
+                return
+>>>>>>> origin/main
             }
 
             if (e.key === "Escape") {
@@ -1054,7 +1183,27 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             selectedItemsRef.current = new Set();
         } catch (error) {
             console.error("Error deleting items:", error);
-            // Handle error (maybe show error message to user)
+            
+            // Show user-visible error message with permission guidance
+            if (error && typeof error === 'object' && 'message' in error) {
+                const errorMessage = (error as Error).message;
+                if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
+                    toast.error("Permission Error", {
+                        description: "Unable to delete files.",
+                        duration: 2000,
+                    });
+                } else {
+                    toast.error("Delete Failed", {
+                        description: `Failed to delete selected items: ${errorMessage}`,
+                        duration: 2000,
+                    });
+                }
+            } else {
+                toast.error("Delete Failed", {
+                    description: "An unexpected error occurred while deleting the selected items.",
+                    duration: 2000,
+                });
+            }
         }
     }
 

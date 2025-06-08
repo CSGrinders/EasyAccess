@@ -12,6 +12,7 @@ import { FileContent } from '@Types/fileSystem';
 import { BoxDragProvider } from "@/contexts/BoxDragContext";
 import { BoxDragPreview } from '@/components/BoxDragPreview';
 import { FileUploadMessage } from '@/components/FileUploadMessage';
+import SettingsPanel from '@/components/SettingsPanel';
 
 import { motion, AnimatePresence } from "framer-motion" // Uncomment if available
 import { Button } from '@/components/ui/button';
@@ -48,6 +49,7 @@ const HomePage = () => {
     const [fileUploadMessageOpen, setFileUploadMessageOpen] = useState<boolean>(false);
     // Add after existing state declarations
     const [showMcpTest, setShowMcpTest] = useState(false);
+    const [disabledAction, setDisabledAction] = useState(false);
 
     const fileContentsCacheRef = useRef<FileContent[]>([]);
     const isContentLoading = useRef(false);
@@ -343,6 +345,16 @@ const HomePage = () => {
     // Check if any box is maximized
     const anyBoxMaximized = maximizedBoxes.size > 0;
 
+    const handleActionChange: React.Dispatch<React.SetStateAction<string>> = (newAction) => {
+        if (newAction === "settings") {
+            setShowMcpTest(false);
+            setDisabledAction(true)
+        } else {
+            setDisabledAction(false)
+        }
+        setAction(newAction);
+    };
+
     return (
         <div className="flex flex-col h-screen bg-white dark:bg-gray-900 text-black dark:text-white">
             <header className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-md">
@@ -359,7 +371,7 @@ const HomePage = () => {
                         </div>
                     </div>
                     <CanvaSettings zoomLevel={zoomLevel} setZoomLevel={setZoomLevel} isPanMode={isPanMode}
-                        setIsPanMode={setIsPanMode} isBoxMaximized={anyBoxMaximized} />
+                        setIsPanMode={setIsPanMode} isBoxMaximized={anyBoxMaximized} isDisabled={disabledAction}/>
                 </div>
             </header>
             <FileUploadMessage open={fileUploadMessageOpen} setOpen={setFileUploadMessageOpen} message={fileUploadMessage} showCloseButton={true}></FileUploadMessage>
@@ -369,12 +381,14 @@ const HomePage = () => {
                         <p>Moving item...</p>
                     </div>
                 )}
-                <ActionBar action={action} setAction={setAction} toggleShowSideWindow={toggleShowSideWindow} toggleShowAgentWindow={toggleShowAgentWindow} />
+                <ActionBar action={action} setAction={handleActionChange} toggleShowSideWindow={toggleShowSideWindow} toggleShowAgentWindow={toggleShowAgentWindow} />
                 <BoxDragProvider>
                     <div className="relative flex flex-1">
                         <StorageSideWindow show={showStorageWindow} addStorage={addStorageBox} />
                         <div className="relative flex flex-col flex-1">
-                            {canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
+                            {action === "settings" ? (
+                                <SettingsPanel />
+                            ) : canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
                                 <CanvasContainer
                                     zoomLevel={zoomLevel}
                                     setZoomLevel={setZoomLevel}
@@ -405,8 +419,8 @@ const HomePage = () => {
                                 </CanvasContainer>
                             ) : (
                                 <div className="flex-1 flex items-center justify-center">Loading canvas...</div>
-                            )}
-                            <AgentWindow show={showMcpTest} />
+                            )}                      
+                             <AgentWindow show={showMcpTest} />
                         </div>
                     </div>
                     <BoxDragPreview zoomLevel={zoomLevel} />

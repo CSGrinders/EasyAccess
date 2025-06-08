@@ -7,8 +7,12 @@
     "build-main": "tsc --project tsconfig.main.json",
     "watch-main": "tsc --watch --project tsconfig.main.json",
     "dev": "webpack serve --config webpack.renderer.js",
-    "build": "webpack --config webpack.renderer.js",
-    "start:server": "node dist/main/MCPServer.js"
+    "build": "NODE_ENV=production webpack --config webpack.renderer.js",
+    "start:server": "node dist/main/MCPServer.js",
+    "build:full": "npm run build-main && npm run build",
+    "pack": "npm run build:full && electron-builder --dir",
+    "dist": "npm run build:full && electron-builder --publish=never",
+    "dist:mac": "npm run build:full && electron-builder --mac --publish=never"
   },
   "keywords": [],
   "author": "",
@@ -20,11 +24,14 @@
     "@babel/preset-react": "^7.26.3",
     "@tailwindcss/postcss": "^4.1.3",
     "@types/electron-store": "^3.2.2",
+    "@types/mime": "^3.0.4",
+    "@types/mime-types": "^3.0.1",
     "@types/react": "^19.1.1",
     "@types/react-dom": "^19.1.2",
     "babel-loader": "^9.2.1",
     "css-loader": "^7.1.2",
     "electron": "^35.1.5",
+    "electron-builder": "^26.0.12",
     "html-webpack-plugin": "^5.6.3",
     "postcss": "^8.5.3",
     "postcss-loader": "^8.1.1",
@@ -70,6 +77,7 @@
     "google-auth-library": "^9.15.1",
     "googleapis": "^148.0.0",
     "lucide-react": "^0.510.0",
+    "mime": "^4.0.7",
     "mime-types": "^3.0.1",
     "minimatch": "^10.0.1",
     "next-themes": "^0.4.6",
@@ -82,5 +90,60 @@
     "tailwind-merge": "^3.3.0",
     "tailwindcss-animate": "^1.0.7",
     "tw-animate-css": "^1.2.9"
+  },
+  "build": {
+    "appId": "com.easyaccess.app",
+    "productName": "EasyAccess",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**/*",
+      "public/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": ".env",
+        "to": ".env"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/keytar/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "identity": null
+    },
+    "dmg": {
+      "title": "EasyAccess",
+      "icon": false,
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

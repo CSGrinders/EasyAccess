@@ -26,5 +26,6 @@ export interface CanvaSettingsProps {
     isPanMode: boolean
     setIsPanMode: React.Dispatch<React.SetStateAction<boolean>>
     isBoxMaximized: boolean
+    isDisabled: boolean
 }
 

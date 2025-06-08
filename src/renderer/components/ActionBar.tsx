@@ -68,6 +68,7 @@ const ActionBar = ({action, setAction, toggleShowSideWindow, toggleShowAgentWind
                     </div>
                         <Button onClick={() => toggleShowAgentWindow()}
                             variant="outline"
+                            disabled={action !== "dashboard"}
                             size="icon"
                             className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-200 hover:border-blue-300 dark:hover:border-blue-700"
                             >
