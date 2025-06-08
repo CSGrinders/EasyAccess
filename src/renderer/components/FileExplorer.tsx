@@ -1048,8 +1048,7 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
             // Ctrl+A or Cmd+A:
             if ((e.ctrlKey || e.metaKey) && e.key === "a") {
                 e.preventDefault()
-                const allItems = new Set(sortedItems.map((item) => item.id))
-                setSelectedItems(allItems)
+                return
             }
 
             if (e.key === "Escape") {
