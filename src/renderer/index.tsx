@@ -4,6 +4,7 @@ import HomePage from '@Pages/HomePage';
 import {FileExplorer} from "@Components/FileExplorer";
 import "./global.css";
 import Titlebar from "@Components/Titlebar";
+import { Toaster } from "@Components/ui/sonner";
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 
@@ -11,5 +12,6 @@ root.render(
     <div className="w-screen h-screen overflow-hidden">
         <Titlebar />
         <HomePage />
+        <Toaster />
     </div>
 );

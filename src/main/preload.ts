@@ -40,5 +40,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 });
 
 contextBridge.exposeInMainWorld('mcpApi', {
-    processQuery: (query: string) => ipcRenderer.invoke('mcp-process-query', query)
+    processQuery: (query: string) => ipcRenderer.invoke('mcp-process-query', query),
+    reinitialize: () => ipcRenderer.invoke('reinitialize-mcp'),
+    getStatus: () => ipcRenderer.invoke('get-mcp-status')
+});
+
+contextBridge.exposeInMainWorld('permissionApi', {
+    getPermissions: () => ipcRenderer.invoke('get-permissions'),
+    requestPermissions: () => ipcRenderer.invoke('request-permissions'),
+    resetPermissions: () => ipcRenderer.invoke('reset-permissions'),
 });
