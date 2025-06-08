@@ -1,14 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Loader2, ArrowUp } from "lucide-react";
+import { MCPStatus } from "@Types/permissions";
 
 export default function AgentWindow({ show }: { show: boolean }) {
     const [query, setQuery] = useState('');
     const [response, setResponse] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [mcpInfo, setMcpInfo] = useState<MCPStatus | null>(null);
+
+    const loadMCPStatus = async () => {
+        try {
+            const status = await window.mcpApi.getStatus();
+            console.log('MCP Status:', status);
+            setMcpInfo(status);
+        } catch (error) {
+            console.error('Error loading MCP status:', error);
+        }
+    };
+
+
+    useEffect(() => {
+        if (show) {
+            loadMCPStatus();
+        }
+    }, [show]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -33,13 +52,16 @@ export default function AgentWindow({ show }: { show: boolean }) {
             } absolute h-80 bottom-35 right-0 z-50 backdrop-blur-none  border-blue-400/20 shadow-2xl transition-all duration-300 ease-out overflow-hidden rounded-t-xl`}
         >
             <div className="h-full flex flex-col max-w-full">
-                {/* Response Area */}
                 <div className="flex-1 overflow-hidden">
                     <div className="h-full p-4 pb-2">
                         <div className="h-full bg-black/30 rounded-lg border border-blue-400/20 p-3 overflow-y-auto backdrop-blur-sm">
                             <div className="flex items-center gap-2 mb-2">
                                 <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-                                <span className="text-blue-300 text-sm font-medium">Agent Ready</span>
+                                {mcpInfo && mcpInfo.isEnabled ? (
+                                    <span className={`text-green-300 text-sm font-medium`}>Agent Ready</span>
+                                ) : (
+                                    <span className={`text-red-300 text-sm font-medium`}>Agent Disabled</span>
+                                )}
                             </div>
 
                             {error && (
@@ -49,7 +71,8 @@ export default function AgentWindow({ show }: { show: boolean }) {
                             )}
 
                             <div className="text-gray-100 text-sm font-mono leading-relaxed">
-                                {isLoading ? (
+                                {mcpInfo && mcpInfo.isEnabled ? (
+                                isLoading ? (
                                     <div className="flex items-center gap-2 text-blue-400">
                                         <Loader2 className="animate-spin w-4 h-4" />
                                         <span>Processing query...</span>
@@ -58,7 +81,10 @@ export default function AgentWindow({ show }: { show: boolean }) {
                                     <pre className="whitespace-pre-wrap break-words">{response}</pre>
                                 ) : (
                                     <span className="text-gray-500 italic">Agent will answer here...</span>
-                                )}
+                                )) : (
+                                <>
+                                    <span className="text-gray-500 italic">Agent is disabled due to insufficient permissions.</span>
+                                </>)}
                             </div>
                         </div>
                     </div>
