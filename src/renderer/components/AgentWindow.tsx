@@ -19,6 +19,7 @@ export default function AgentWindow({ show }: { show: boolean }) {
 
     const MIN_WIDTH = 320;
     const MIN_HEIGHT = 240;
+    const ACTION_BAR_WIDTH = 80; 
 
     const loadMCPStatus = async () => {
         try {
@@ -61,7 +62,6 @@ export default function AgentWindow({ show }: { show: boolean }) {
         setIsResizing(true);
         resizeStartRef.current = { x: e.clientX, y: e.clientY };
         resizeStartSizeRef.current = { ...size };
-        
         document.body.style.userSelect = 'none';
         document.body.style.cursor = 'nw-resize';
     }, [size]);
@@ -72,7 +72,11 @@ export default function AgentWindow({ show }: { show: boolean }) {
         const dx = resizeStartRef.current.x - e.clientX; 
         const dy = resizeStartRef.current.y - e.clientY; 
 
-        const newWidth = Math.max(MIN_WIDTH, resizeStartSizeRef.current.width + dx);
+        // Calculate maximum width based on current window position and ActionBar constraint
+        const windowRect = windowRef.current?.getBoundingClientRect();
+        const maxWidth = windowRect ? window.innerWidth - ACTION_BAR_WIDTH : window.innerWidth - ACTION_BAR_WIDTH;
+
+        const newWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, resizeStartSizeRef.current.width + dx));
         const newHeight = Math.max(MIN_HEIGHT, resizeStartSizeRef.current.height + dy);
 
         setSize({ width: newWidth, height: newHeight });
@@ -91,7 +95,7 @@ export default function AgentWindow({ show }: { show: boolean }) {
         if (isResizing) {
             document.addEventListener('mousemove', handleMouseMove);
             document.addEventListener('mouseup', handleMouseUp);
-            document.addEventListener('mouseleave', handleMouseUp); 
+            document.addEventListener('mouseleave', handleMouseUp);
         }
 
         return () => {
@@ -189,7 +193,6 @@ export default function AgentWindow({ show }: { show: boolean }) {
                     </div>
                 </div>
 
-                {/* Top-left resize handle */}
                 <div
                     onMouseDown={handleResizeStart}
                     className="absolute left-0 top-0 w-6 h-6 cursor-nw-resize bg-transparent hover:bg-blue-500/10 z-10 rounded-br-lg transition-colors duration-200"
@@ -197,7 +200,6 @@ export default function AgentWindow({ show }: { show: boolean }) {
                         touchAction: 'none',
                     }}
                 >
-                    {/* Visual indicator for resize handle */}
                     <div className="absolute inset-1 opacity-0 hover:opacity-100 transition-opacity duration-200">
                         <div className="w-full h-full border-l-2 border-t-2 border-blue-500/60 rounded-tl-sm"></div>
                     </div>
