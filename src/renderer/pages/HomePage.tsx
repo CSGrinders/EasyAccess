@@ -419,11 +419,8 @@ const HomePage = () => {
                                 </CanvasContainer>
                             ) : (
                                 <div className="flex-1 flex items-center justify-center">Loading canvas...</div>
-                            )}
-                            {action === "dashboard" && (
-                                <AgentWindow show={showMcpTest} />
-                            )}
-                            <AgentWindow show={showMcpTest} />
+                            )}                      
+                             <AgentWindow show={showMcpTest} />
                         </div>
                     </div>
                     <BoxDragPreview zoomLevel={zoomLevel} />

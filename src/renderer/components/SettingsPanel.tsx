@@ -87,10 +87,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ className }) => {
                                     <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Platform</span>
                                     <span className="text-sm text-slate-600 dark:text-slate-400">macOS</span>
                                 </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Framework</span>
-                                    <span className="text-sm text-slate-600 dark:text-slate-400">Electron</span>
-                                </div>
                             </div>
 
                             <Button

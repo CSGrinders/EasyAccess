@@ -75,6 +75,10 @@ export class PermissionManager {
         if (this.permissions.hasBeenPrompted && this.permissions.rememberChoice) {
             return this.permissions;
         }
+
+        if (this.permissions.hasBeenPrompted && !this.permissions.rememberChoice) {
+            this.resetPermissions()
+        }
         
         if (!this.permissions.hasBeenPrompted) {
             const result = await this.showPermissionDialog();
@@ -85,8 +89,7 @@ export class PermissionManager {
             };
             
             this.savePermissions();
-        }
-
+        } 
         return this.permissions;
     }
 

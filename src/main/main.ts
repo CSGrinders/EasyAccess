@@ -1,10 +1,20 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
+import { config } from 'dotenv';
 import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile } from './cloud/cloudManager';
+
+// Load environment variables
+// In development, load from project root; in production, load from app Contents directory
+const envPath = app.isPackaged 
+    ? path.join(path.dirname(app.getPath('exe')), '..', '.env')
+    : path.join(__dirname, '../../.env');
+
+console.log('Loading .env from:', envPath);
+config({ path: envPath });
 import { CloudType } from "@Types/cloudType";
 import { FileContent, FileSystemItem } from '@Types/fileSystem';
-import mime from 'mime';
+import * as mime from 'mime-types';
 import MCPClient from './MCP/mcpClient';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createFileSystemServer } from './MCP/fileSystemMcpServer';
@@ -83,7 +93,12 @@ const createWindow = async () => {
     // load auth tokens from local storage
     loadStoredAccounts(); 
 
-    win.loadURL('http://localhost:3000').then(r => console.log("loaded"));
+    if (process.env.NODE_ENV === 'development') {
+        win.loadURL('http://localhost:3000').then(r => console.log("loaded"));
+    } else {
+        win.loadFile(path.join(__dirname, '../index.html')).then(r => console.log("loaded"));
+    }
+    
     win.once('ready-to-show', () => {
         win.show()
         win.webContents.openDevTools({ mode: 'right' })
