@@ -794,11 +794,21 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
 
     }, [isSelectingRef.current, updateSelectedItemsFromBox, selectionStartRef.current.x, selectionStartRef.current.y]);
 
+    const removeSelectionBox = useCallback(() => {
+        // just hide it on the top left corner... it works
+        if (selectionBoxRef.current) {
+            selectionBoxRef.current.style.display = "none";
+            selectionBoxRef.current.style.left = "0px";
+            selectionBoxRef.current.style.top = "0px";
+            selectionBoxRef.current.style.width = "0px";
+            selectionBoxRef.current.style.height = "0px";
+        }
+    }, [selectionBoxRef.current]);
 
     const handleMouseUp = () => {
         if (isSelectingRef.current) {
             isSelectingRef.current = false;
-            selectionBoxRef.current!.style.display = "none";
+            removeSelectionBox();
         }
     }
 
@@ -1065,6 +1075,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
 
     const handleSelectionEnd = () => {
         isSelectingRef.current = false;
+        removeSelectionBox();
 
         document.removeEventListener("mousemove", handleMouseMove);
         document.removeEventListener("mouseup", handleSelectionEnd);
@@ -1095,13 +1106,9 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             // Ctrl+A or Cmd+A:
             if ((e.ctrlKey || e.metaKey) && e.key === "a") {
                 e.preventDefault()
-<<<<<<< HEAD
                 const allItems = new Set(sortedItems.map((item) => item.id))
                 // setSelectedItems(allItems)
                 selectedItemsRef.current = allItems;
-=======
-                return
->>>>>>> origin/main
             }
 
             if (e.key === "Escape") {
@@ -1129,6 +1136,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                 }
                 if (isSelectingRef.current) {
                     isSelectingRef.current = false;
+                    removeSelectionBox();
                 }
             }
 
