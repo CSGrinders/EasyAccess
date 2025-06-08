@@ -76,6 +76,7 @@ import { showAreYouSure } from "@/pages/HomePage"
 interface FileExplorerProps {
     cloudType?: CloudType
     accountId?: string
+    zoomLevel: number
     tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void
     tempGetFile?: (filePaths: string[], cloudType?: CloudType, accountId?: string) => void
     boxId: number
@@ -176,7 +177,7 @@ const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected
 
 
 
-export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, refreshToggle, onCurrentPathChange}: FileExplorerProps) {
+export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, refreshToggle, onCurrentPathChange}: FileExplorerProps) {
     const [items, setItems] = useState<FileSystemItem[]>([])
     const [cwd, setCwd] = useState<string>("")
     const [history, setHistory] = useState<string[]>([])
@@ -191,6 +192,7 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
     const [selectionStart, setSelectionStart] = useState({x: 0, y: 0})
     const [selectionEnd, setSelectionEnd] = useState({x: 0, y: 0})
     const [selectionBox, setSelectionBox] = useState({left: 0, top: 0, width: 0, height: 0})
+    const selectionBoxRef = useRef<HTMLDivElement | null>(null);
     const [isAdditiveDrag, setIsAdditiveDrag] = useState(false);
     const [isOpeningBrowser, setIsOpeningBrowser] = useState(false);
 
@@ -556,7 +558,7 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
         setIsSelecting(true);
         setSelectionStart({x, y});
         setSelectionEnd({x, y});
-        setSelectionBox({left: x, top: y + container.scrollTop, width: 0, height: 0});
+        setSelectionBox({left: x / zoomLevel, top: y / zoomLevel + container.scrollTop, width: 0, height: 0});
     }
 
     const updateSelectedItemsFromBox = useCallback((box: {
@@ -570,32 +572,65 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
         const itemsCurrentlyInBox = new Set<string>();
         const containerRect = containerRef.current.getBoundingClientRect();
 
+        // Convert selection box to viewport coordinates
+        const selectionViewportBox = {
+            left: box.left + containerRect.left,
+            top: box.top + containerRect.top,
+            right: box.left + containerRect.left + box.width,
+            bottom: box.top + containerRect.top + box.height
+        };
+
         itemRefs.current.forEach((element, id) => {
             if (!element) return;
 
+            // itemRect is already in viewport coordinates
             const itemRect = element.getBoundingClientRect();
 
-            const itemLeft = itemRect.left - containerRect.left;
-            const itemTop = itemRect.top - containerRect.top;
-            const itemRight = itemLeft + itemRect.width;
-            const itemBottom = itemTop + itemRect.height;
+            // Direct comparison since both are in viewport coordinates
+            const isIntersecting = !(
+                itemRect.right < selectionViewportBox.left ||
+                itemRect.left > selectionViewportBox.right ||
+                itemRect.bottom < selectionViewportBox.top ||
+                itemRect.top > selectionViewportBox.bottom
+            );
 
-            // Check for intersection
-            if (itemLeft < box.left + box.width &&
-                itemRight > box.left &&
-                itemTop < box.top + box.height &&
-                itemBottom > box.top) {
+            if (isIntersecting) {
                 itemsCurrentlyInBox.add(id);
             }
         });
 
-        if (isAdditiveDrag) {
-            const combinedSelection = new Set([...selectionSnapshotRef.current, ...itemsCurrentlyInBox]);
-            setSelectedItems(combinedSelection);
-        } else {
-            setSelectedItems(itemsCurrentlyInBox);
-        }
+        setSelectedItems(isAdditiveDrag 
+            ? new Set([...selectionSnapshotRef.current, ...itemsCurrentlyInBox])
+            : itemsCurrentlyInBox
+        );
     }, [isSelecting, isAdditiveDrag]);
+
+    const updateSelectionBox = useCallback((currentX: number, currentY: number) => {
+        if (!containerRef.current) return;
+
+        // Account for zoom level in calculations
+        const zoomAdjustedBox = {
+            left: Math.min(selectionStart.x, currentX) / zoomLevel,
+            top: Math.min(selectionStart.y, currentY) / zoomLevel + containerRef.current.scrollTop,
+            width: Math.abs(currentX - selectionStart.x) / zoomLevel,
+            height: Math.abs(currentY - selectionStart.y) / zoomLevel,
+        };
+        // setSelectionBox(zoomAdjustedBox);
+
+        selectionBoxRef.current!.style.left = `${zoomAdjustedBox.left}px`;
+        selectionBoxRef.current!.style.top = `${zoomAdjustedBox.top}px`;
+        selectionBoxRef.current!.style.width = `${zoomAdjustedBox.width}px`;
+        selectionBoxRef.current!.style.height = `${zoomAdjustedBox.height}px`;
+
+        // Adjust intersection checking for zoomed coordinates
+        const boxForIntersection = {
+            left: Math.min(selectionStart.x, currentX),
+            top: Math.min(selectionStart.y, currentY),
+            width: Math.abs(currentX - selectionStart.x),
+            height: Math.abs(currentY - selectionStart.y),
+        };
+        updateSelectedItemsFromBox(boxForIntersection);
+    }, [selectionStart, zoomLevel]);
 
     const handleMouseMove = useCallback((e: React.MouseEvent | MouseEvent) => {
         if (!isSelecting || !containerRef.current) return;
@@ -605,14 +640,7 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
         const currentY = Math.max(0, Math.min(rect.height - 1, e.clientY - rect.top));
 
         setSelectionEnd({x: currentX, y: currentY});
-
-        const newSelectionBox = {
-            left: Math.min(selectionStart.x, currentX),
-            top: Math.min(selectionStart.y, currentY) + containerRef.current.scrollTop,
-            width: Math.abs(currentX - selectionStart.x),
-            height: Math.abs(currentY - selectionStart.y),
-        };
-        setSelectionBox(newSelectionBox);
+        updateSelectionBox(currentX, currentY);
 
         const scrollThreshold = 50;
         const scrollAmount = 5;
@@ -622,13 +650,6 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
             containerRef.current.scrollTop += scrollAmount;
         }
 
-        const boxForIntersection = {
-            left: Math.min(selectionStart.x, currentX),
-            top: Math.min(selectionStart.y, currentY),
-            width: Math.abs(currentX - selectionStart.x),
-            height: Math.abs(currentY - selectionStart.y),
-        };
-        updateSelectedItemsFromBox(boxForIntersection);
     }, [isSelecting, updateSelectedItemsFromBox, selectionStart.x, selectionStart.y]);
 
 
@@ -1516,13 +1537,8 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
             >
                 {isSelecting && (
                     <div
+                        ref={selectionBoxRef}
                         className="absolute border-2 border-blue-500 bg-blue-500/20 z-10 pointer-events-none rounded-sm"
-                        style={{
-                            left: `${selectionBox.left}px`,
-                            top: `${selectionBox.top}px`,
-                            width: `${selectionBox.width}px`,
-                            height: `${selectionBox.height}px`,
-                        }}
                     />
                 )}
 
