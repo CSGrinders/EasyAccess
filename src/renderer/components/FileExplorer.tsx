@@ -77,6 +77,7 @@ import { toast } from "sonner"
 interface FileExplorerProps {
     cloudType?: CloudType
     accountId?: string
+    zoomLevel: number
     tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void
     tempGetFile?: (filePaths: string[], cloudType?: CloudType, accountId?: string) => void
     boxId: number
@@ -172,12 +173,7 @@ const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected
 };
 
 
-
-
-
-
-
-export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, refreshToggle, onCurrentPathChange}: FileExplorerProps) {
+export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, refreshToggle, onCurrentPathChange}: FileExplorerProps) {
     const [items, setItems] = useState<FileSystemItem[]>([])
     const [cwd, setCwd] = useState<string>("")
     const [history, setHistory] = useState<string[]>([])
@@ -186,13 +182,17 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
     const [isLoading, setIsLoading] = useState(true)
     const [currentPath, setCurrentPath] = useState<string[]>([])
     const [showHidden, setShowHidden] = useState(false)
-    const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
-    const [lastSelectedItem, setLastSelectedItem] = useState<string | null>(null)
-    const [isSelecting, setIsSelecting] = useState(false)
-    const [selectionStart, setSelectionStart] = useState({x: 0, y: 0})
-    const [selectionEnd, setSelectionEnd] = useState({x: 0, y: 0})
-    const [selectionBox, setSelectionBox] = useState({left: 0, top: 0, width: 0, height: 0})
-    const [isAdditiveDrag, setIsAdditiveDrag] = useState(false);
+    // const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
+    const selectedItemsRef = useRef<Set<string>>(new Set())
+    // const [lastSelectedItem, setLastSelectedItem] = useState<string | null>(null)
+    const lastSelectedItemRef = useRef<string | null>(null)
+    // const [isSelecting, setIsSelecting] = useState(false)
+    const isSelectingRef = useRef(false)
+    const selectionStartRef = useRef({x: 0, y: 0})
+    const selectionStartViewRef = useRef({scrollTop: 0});
+    const selectionBoxRef = useRef<HTMLDivElement | null>(null);
+    // const [isAdditiveDrag, setIsAdditiveDrag] = useState(false);
+    const isAdditiveDragRef = useRef(false);
     const [isOpeningBrowser, setIsOpeningBrowser] = useState(false);
 
     const selectionSnapshotRef = useRef<Set<string>>(new Set());
@@ -230,6 +230,14 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
     const [isCalculatingSize, setIsCalculatingSize] = useState(false);
     const [folderSize, setFolderSize] = useState<number | null>(null);
 
+    const [selectedCount , setSelectedCount] = useState(0);
+
+
+    const zoomLevelRef = useRef(zoomLevel);
+    useEffect(() => {
+        console.log(zoomLevel, "Zoom level changed, updating selection box style");
+        zoomLevelRef.current = zoomLevel;
+    }, [zoomLevel])
 
     useEffect(() => {
         const fetchHome = async () => {
@@ -298,8 +306,9 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                     setItems(files)
                     updatePathSegments(cwd)
                     setIsLoading(false)
-                    setSelectedItems(new Set())
-                    setLastSelectedItem(null)
+                    // setSelectedItems(new Set())
+                    selectedItemsRef.current = new Set()
+                    lastSelectedItemRef.current = null
                 })
                 .catch((err: Error) => {
                     console.error(err)
@@ -319,8 +328,9 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                     setItems(files)
                     updatePathSegments(cwd)
                     setIsLoading(false)
-                    setSelectedItems(new Set())
-                    setLastSelectedItem(null)
+                    // setSelectedItems(new Set())
+                    selectedItemsRef.current = new Set()
+                    lastSelectedItemRef.current = null
                 })
                 .catch((err) => {
                     console.error(err)
@@ -347,7 +357,7 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                     }
                 })
         }
-
+        updateSelectedItemsColor();
     }, [cwd])
 
     useEffect(() => {
@@ -503,8 +513,9 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                     setItems(files)
                     updatePathSegments(cwd)
                     setIsLoading(false)
-                    setSelectedItems(new Set())
-                    setLastSelectedItem(null)
+                    // setSelectedItems(new Set())
+                    selectedItemsRef.current = new Set()
+                    lastSelectedItemRef.current = null
                 })
                 .catch((err: Error) => {
                     console.error(err)
@@ -530,8 +541,9 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                     setItems(files)
                     updatePathSegments(cwd)
                     setIsLoading(false)
-                    setSelectedItems(new Set())
-                    setLastSelectedItem(null)
+                    // setSelectedItems(new Set())
+                    selectedItemsRef.current = new Set()
+                    lastSelectedItemRef.current = null
                 })
                 .catch((err) => {
                     console.error(err)
@@ -559,11 +571,18 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                     }
                 })
         }
+        updateSelectedItemsColor();
     }
+
+    const updateSelectedItemsColor = () => {
+        itemRefs.current.forEach((element, id) => {
+            if (!element) return;
+            element.classList.toggle("selected", selectedItemsRef.current.has(id));
+        });
+    };
 
 
     const handleItemClick = (e: React.MouseEvent, item: FileSystemItem) => {
-
         // Double click to navigate into directory
         if (e.detail === 2) {
             if (!item.isDirectory) {
@@ -574,20 +593,18 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
             return
         }
 
-        console.log("Item clicked:", item)
-
 
         const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
-        if (e.shiftKey && lastSelectedItem) {
+        if (e.shiftKey && lastSelectedItemRef.current) {
             const itemsPathList = sortedItems.map((i) => i.id); // TODO item path list to item id list?
             const currentIndex = itemsPathList.indexOf(item.id); // TODO
-            const lastIndex = itemsPathList.indexOf(lastSelectedItem);
+            const lastIndex = itemsPathList.indexOf(lastSelectedItemRef.current);
 
             if (currentIndex !== -1 && lastIndex !== -1) {
                 const start = Math.min(currentIndex, lastIndex);
                 const end = Math.max(currentIndex, lastIndex);
-                const newSelectedItemsUpdate = ctrlOrMeta ? new Set(selectedItems) : new Set<string>();
+                const newSelectedItemsUpdate = ctrlOrMeta ? new Set(selectedItemsRef.current) : new Set<string>();
 
                 for (let i = start; i <= end; i++) {
                     newSelectedItemsUpdate.add(itemsPathList[i]);
@@ -598,59 +615,99 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                     for (let i = start; i <= end; i++) {
                         rangeSelection.add(itemsPathList[i]);
                     }
-                    setSelectedItems(prev => new Set([...prev, ...rangeSelection]));
+                    // setSelectedItems(prev => new Set([...prev, ...rangeSelection]));
+                    selectedItemsRef.current = new Set([...selectedItemsRef.current, ...rangeSelection]);
                 } else {
                     const rangeSelection = new Set<string>();
                     for (let i = start; i <= end; i++) {
                         rangeSelection.add(itemsPathList[i]);
                     }
-                    setSelectedItems(rangeSelection);
+                    // setSelectedItems(rangeSelection);
+                    selectedItemsRef.current = rangeSelection;
                 }
 
             }
         } else if (ctrlOrMeta) {
-            const newSelectedItemsUpdate = new Set(selectedItems);
+            const newSelectedItemsUpdate = new Set(selectedItemsRef.current);
             if (newSelectedItemsUpdate.has(item.id)) {
                 newSelectedItemsUpdate.delete(item.id);
             } else {
                 newSelectedItemsUpdate.add(item.id);
             }
-            setSelectedItems(newSelectedItemsUpdate);
-            setLastSelectedItem(item.id);
+            // setSelectedItems(newSelectedItemsUpdate);
+            selectedItemsRef.current = newSelectedItemsUpdate;
+            lastSelectedItemRef.current = item.id;
         } else {
-            setSelectedItems(new Set([item.id]));
-            setLastSelectedItem(item.id);
+            // setSelectedItems(new Set([item.id]));
+            selectedItemsRef.current = new Set([item.id]);
+            lastSelectedItemRef.current = item.id;
         }
+
+        updateSelectedItemsColor();
+
     }
 
 
-    const handleMouseDown = (e: React.MouseEvent) => {
+    const handleMouseDown = useCallback((e: React.MouseEvent) => {
         if ((e.target as HTMLElement).closest(".file-item") || e.button !== 0) {
             return;
         }
+        console.log("Mouse down on container, starting selection box");
+        isSelectingRef.current = true;
+        selectionBoxRef.current!.style.display = "block";
 
         const additive = e.ctrlKey || e.metaKey;
-        setIsAdditiveDrag(additive);
+        isAdditiveDragRef.current = additive;
 
         if (!additive) {
-            setSelectedItems(new Set());
+            // setSelectedItems(new Set());
+            selectedItemsRef.current = new Set();
             selectionSnapshotRef.current = new Set();
         } else {
-            selectionSnapshotRef.current = new Set(selectedItems);
+            selectionSnapshotRef.current = new Set(selectedItemsRef.current);
+
         }
 
         const container = containerRef.current;
         if (!container) return;
 
+        //The x and y values calculated here are in pixels and are relative to the top-left corner of rect (i.e., the container).
         const rect = container.getBoundingClientRect();
         const x = Math.max(0, Math.min(rect.width - 1, e.clientX - rect.left));
         const y = Math.max(0, Math.min(rect.height - 1, e.clientY - rect.top));
 
-        setIsSelecting(true);
-        setSelectionStart({x, y});
-        setSelectionEnd({x, y});
-        setSelectionBox({left: x, top: y + container.scrollTop, width: 0, height: 0});
-    }
+        selectionStartRef.current = {
+            x: x,
+            y: y
+        };
+        selectionStartViewRef.current = {
+            scrollTop: container.scrollTop
+        };
+        updateSelectedItemsColor();
+
+        const globalMouseMove = (e: MouseEvent) => {
+            if (isSelectingRef.current && containerRef.current) {
+                const event = e as unknown as React.MouseEvent;
+                handleMouseMove(event);
+            }
+        };
+
+        const globalMouseUp = () => {
+            if (isSelectingRef.current) {
+                handleMouseUp();
+            }
+        };
+
+        if (isSelectingRef.current) {
+            document.addEventListener('mousemove', globalMouseMove);
+            document.addEventListener('mouseup', globalMouseUp);
+        }
+
+        return () => {
+            document.removeEventListener('mousemove', globalMouseMove);
+            document.removeEventListener('mouseup', globalMouseUp);
+        };
+    }, [containerRef.current, isSelectingRef.current, isAdditiveDragRef.current]);
 
     const updateSelectedItemsFromBox = useCallback((box: {
         left: number;
@@ -658,54 +715,90 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
         width: number;
         height: number
     }) => {
-        if (!isSelecting || !containerRef.current) return;
+        if (!isSelectingRef.current || !containerRef.current) return;
 
         const itemsCurrentlyInBox = new Set<string>();
         const containerRect = containerRef.current.getBoundingClientRect();
 
+        const selectionBox = {
+            left: box.left,
+            top: box.top,
+            right: box.left + box.width,
+            bottom: box.top + box.height,
+        };
+
         itemRefs.current.forEach((element, id) => {
             if (!element) return;
+            if (!containerRef.current) return;
 
             const itemRect = element.getBoundingClientRect();
 
-            const itemLeft = itemRect.left - containerRect.left;
-            const itemTop = itemRect.top - containerRect.top;
-            const itemRight = itemLeft + itemRect.width;
-            const itemBottom = itemTop + itemRect.height;
+            // Convert item rect to container-relative coordinates
+            const relativeItemRect = {
+                left: itemRect.left - containerRect.left,
+                top: itemRect.top - containerRect.top + containerRef.current.scrollTop,
+                right: itemRect.right - containerRect.left,
+                bottom: itemRect.bottom - containerRect.top + containerRef.current.scrollTop,
+            };
 
-            // Check for intersection
-            if (itemLeft < box.left + box.width &&
-                itemRight > box.left &&
-                itemTop < box.top + box.height &&
-                itemBottom > box.top) {
+            const isIntersecting = !(
+                relativeItemRect.right < selectionBox.left ||
+                relativeItemRect.left > selectionBox.right ||
+                relativeItemRect.bottom < selectionBox.top ||
+                relativeItemRect.top > selectionBox.bottom
+            );
+
+            if (isIntersecting) {
                 itemsCurrentlyInBox.add(id);
             }
         });
 
-        if (isAdditiveDrag) {
-            const combinedSelection = new Set([...selectionSnapshotRef.current, ...itemsCurrentlyInBox]);
-            setSelectedItems(combinedSelection);
-        } else {
-            setSelectedItems(itemsCurrentlyInBox);
-        }
-    }, [isSelecting, isAdditiveDrag]);
+        // setSelectedItems(isAdditiveDrag
+        //     ? new Set([...selectionSnapshotRef.current, ...itemsCurrentlyInBox])
+        //     : itemsCurrentlyInBox
+        // );
+        selectedItemsRef.current = isAdditiveDragRef.current
+            ? new Set([...selectionSnapshotRef.current, ...itemsCurrentlyInBox])
+            : itemsCurrentlyInBox;
+        
+        updateSelectedItemsColor();
+    }, [isSelectingRef.current, isAdditiveDragRef.current]);
+
+    const updateSelectionBox = useCallback((currentX: number, currentY: number) => {
+        console.log("zoom level:", zoomLevelRef.current);
+        if (!containerRef.current) return;
+
+        const containerRect = containerRef.current.getBoundingClientRect();
+        // Account for zoom level in calculations
+        const zoomAdjustedBox = {
+            left: (Math.min(selectionStartRef.current.x, currentX)) / zoomLevelRef.current,
+            top: (Math.min(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop * zoomLevelRef.current, currentY + containerRef.current.scrollTop * zoomLevelRef.current)) / zoomLevelRef.current,
+            width: Math.abs(currentX - selectionStartRef.current.x) / zoomLevelRef.current,
+            height: Math.abs(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop * zoomLevelRef.current - (currentY + containerRef.current.scrollTop * zoomLevelRef.current)) / zoomLevelRef.current
+        };
+
+        selectionBoxRef.current!.style.left = `${zoomAdjustedBox.left}px`;
+        selectionBoxRef.current!.style.top = `${zoomAdjustedBox.top}px`;
+        selectionBoxRef.current!.style.width = `${zoomAdjustedBox.width}px`;
+        selectionBoxRef.current!.style.height = `${zoomAdjustedBox.height}px`;
+
+        const detectSelectionBox = {
+            left: (Math.min(selectionStartRef.current.x, currentX)),
+            top: (Math.min(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop , currentY + containerRef.current.scrollTop )),
+            width: Math.abs(currentX - selectionStartRef.current.x) ,
+            height: Math.abs(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop - (currentY + containerRef.current.scrollTop ))
+        };
+
+        updateSelectedItemsFromBox(detectSelectionBox);
+    }, [updateSelectedItemsFromBox, zoomLevelRef.current]);
 
     const handleMouseMove = useCallback((e: React.MouseEvent | MouseEvent) => {
-        if (!isSelecting || !containerRef.current) return;
+        if (!isSelectingRef.current || !containerRef.current) return;
 
         const rect = containerRef.current.getBoundingClientRect();
+        // The x and y of mouse position values calculated here are in pixels and are relative to the top-left corner of rect (i.e., the container).
         const currentX = Math.max(0, Math.min(rect.width - 1, e.clientX - rect.left));
         const currentY = Math.max(0, Math.min(rect.height - 1, e.clientY - rect.top));
-
-        setSelectionEnd({x: currentX, y: currentY});
-
-        const newSelectionBox = {
-            left: Math.min(selectionStart.x, currentX),
-            top: Math.min(selectionStart.y, currentY) + containerRef.current.scrollTop,
-            width: Math.abs(currentX - selectionStart.x),
-            height: Math.abs(currentY - selectionStart.y),
-        };
-        setSelectionBox(newSelectionBox);
 
         const scrollThreshold = 50;
         const scrollAmount = 5;
@@ -714,25 +807,33 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
         } else if (e.clientY > rect.bottom - scrollThreshold) {
             containerRef.current.scrollTop += scrollAmount;
         }
+        updateSelectionBox(currentX, currentY);
 
-        const boxForIntersection = {
-            left: Math.min(selectionStart.x, currentX),
-            top: Math.min(selectionStart.y, currentY),
-            width: Math.abs(currentX - selectionStart.x),
-            height: Math.abs(currentY - selectionStart.y),
-        };
-        updateSelectedItemsFromBox(boxForIntersection);
-    }, [isSelecting, updateSelectedItemsFromBox, selectionStart.x, selectionStart.y]);
+    }, [isSelectingRef.current, updateSelectedItemsFromBox, selectionStartRef.current.x, selectionStartRef.current.y]);
 
+    const removeSelectionBox = useCallback(() => {
+        // just hide it on the top left corner... it works
+        if (selectionBoxRef.current) {
+            selectionBoxRef.current.style.display = "none";
+            selectionBoxRef.current.style.left = "0px";
+            selectionBoxRef.current.style.top = "0px";
+            selectionBoxRef.current.style.width = "0px";
+            selectionBoxRef.current.style.height = "0px";
+        }
+    }, [selectionBoxRef.current]);
 
     const handleMouseUp = () => {
-        if (isSelecting) {
-            setIsSelecting(false);
+        if (isSelectingRef.current) {
+            isSelectingRef.current = false;
+            console.log("Mouse up, ending selection box");
+            setSelectedCount(selectedItemsRef.current.size);
+            removeSelectionBox();
         }
     }
 
     const handleItemMouseDown = (e: React.MouseEvent, item: FileSystemItem) => {
         if (e.button !== 0) return;
+
 
         dragStartPosRef.current = {x: e.clientX, y: e.clientY}
 
@@ -746,12 +847,12 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
         }
 
         let itemsToDrag: string[]
-        if (selectedItems.has(item.id)) {
-            itemsToDrag = Array.from(selectedItems)
+        if (selectedItemsRef.current.has(item.id)) {
+            itemsToDrag = Array.from(selectedItemsRef.current)
         } else {
             itemsToDrag = [item.id]
-            setSelectedItems(new Set([item.id]))
-            setLastSelectedItem(item.id)
+            selectedItemsRef.current = new Set([item.id])
+            lastSelectedItemRef.current = item.id
         }
 
         draggedItemsRef.current = itemsToDrag
@@ -981,6 +1082,7 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
             // BoxDrag.setDragItems([], null);
             // BoxDrag.setIsDragging(false);
         } else {
+            console.log("No box drag operation to end, resetting state");
             return;
         }
         BoxDrag.setDragItems([], null);
@@ -990,44 +1092,19 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
         localTargetRef.current = null;
     }
 
-
-    useEffect(() => {
-        const globalMouseMove = (e: MouseEvent) => {
-            if (isSelecting && containerRef.current) {
-                const event = e as unknown as React.MouseEvent;
-                handleMouseMove(event);
-            }
-        };
-
-        const globalMouseUp = () => {
-            if (isSelecting) {
-                handleMouseUp();
-            }
-        };
-
-        if (isSelecting) {
-            document.addEventListener('mousemove', globalMouseMove);
-            document.addEventListener('mouseup', globalMouseUp);
-        }
-
-        return () => {
-            document.removeEventListener('mousemove', globalMouseMove);
-            document.removeEventListener('mouseup', globalMouseUp);
-        };
-    }, [isSelecting, handleMouseMove, handleMouseUp]);
-
     const handleSelectionEnd = () => {
-        setIsSelecting(false)
+        isSelectingRef.current = false;
+        removeSelectionBox();
 
-        document.removeEventListener("mousemove", handleMouseMove)
-        document.removeEventListener("mouseup", handleSelectionEnd)
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleSelectionEnd);
     }
 
     useEffect(() => {
         return () => {
-            document.removeEventListener("mousemove", handleItemMouseMove)
-            document.removeEventListener("mouseup", handleItemMouseUp)
-            document.removeEventListener("mousemove", handleMouseMove)
+            document.removeEventListener("mousemove", handleItemMouseMove);
+            document.removeEventListener("mouseup", handleItemMouseUp);
+            document.removeEventListener("mousemove", handleMouseMove);
             document.removeEventListener("mouseup", handleSelectionEnd)
             if (throttleTimeoutRef.current) {
                 clearTimeout(throttleTimeoutRef.current)
@@ -1048,12 +1125,15 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
             // Ctrl+A or Cmd+A:
             if ((e.ctrlKey || e.metaKey) && e.key === "a") {
                 e.preventDefault()
-                return
+                const allItems = new Set(sortedItems.map((item) => item.id))
+                // setSelectedItems(allItems)
+                selectedItemsRef.current = allItems;
             }
 
             if (e.key === "Escape") {
-                setSelectedItems(new Set())
-                setLastSelectedItem(null)
+                // setSelectedItems(new Set())
+                selectedItemsRef.current = new Set();
+                lastSelectedItemRef.current = null;
                 if (BoxDrag.isDragging) {
                     // setIsDragging(false)
                     // setDraggedItem(null)
@@ -1073,24 +1153,25 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                         BoxDrag.setIsDragging(false);
                     }
                 }
-                if (isSelecting) {
-                    setIsSelecting(false)
+                if (isSelectingRef.current) {
+                    isSelectingRef.current = false;
+                    removeSelectionBox();
                 }
             }
 
             // Delete
-            if (e.key === "Delete" && selectedItems.size > 0) {
-                console.log("Delete selected items:", Array.from(selectedItems));
+            if (e.key === "Delete" && selectedItemsRef.current.size > 0) {
+                console.log("Delete selected items:", Array.from(selectedItemsRef.current));
             }
         }
 
         window.addEventListener("keydown", handleKeyDown)
         return () => window.removeEventListener("keydown", handleKeyDown)
-    }, [selectedItems, BoxDrag.isDragging, isSelecting, sortedItems])
+    }, [selectedItemsRef.current, BoxDrag.isDragging, isSelectingRef.current, sortedItems])
 
 
     async function handleDelete() {
-        if (selectedItems.size === 0) return;
+        if (selectedItemsRef.current.size === 0) return;
 
         try {
             await showAreYouSure()
@@ -1098,13 +1179,13 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
             console.log("User cancelled the delete operation");
             return;
         }
-        
-        console.log("Delete selected items:", Array.from(selectedItems));
-        
+
+        console.log("Delete selected items:", Array.from(selectedItemsRef.current));
+
         try {
             // Wait for all delete operations to complete
             await Promise.all(
-                Array.from(selectedItems).map(async (itemId) => {
+                Array.from(selectedItemsRef.current).map(async (itemId) => {
                     const item = sortedItems.find((i) => i.id === itemId);
                     if (!item) return;
                     
@@ -1126,7 +1207,7 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
             await refreshDirectory();
             
             // Clear selection after successful deletion
-            setSelectedItems(new Set());
+            selectedItemsRef.current = new Set();
         } catch (error) {
             console.error("Error deleting items:", error);
             
@@ -1214,9 +1295,9 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
     };
 
     const showFileStats = async () => {
-        if (selectedItems.size === 0) return;
-        
-        const firstSelectedId = Array.from(selectedItems)[0];
+        if (selectedItemsRef.current.size === 0) return;
+
+        const firstSelectedId = Array.from(selectedItemsRef.current)[0];
         const selectedFile = sortedItems.find(item => item.id === firstSelectedId);
         
         if (!selectedFile) return;
@@ -1441,10 +1522,6 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
         );
     };
 
-
-
-    const selectedCount = selectedItems.size
-
     return (
         <div className="flex h-full w-full flex-col text-white rounded-lg overflow-hidden select-none">
             <div className="pl-4 pt-4 bg-white dark:bg-slate-800">
@@ -1553,7 +1630,7 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                                     variant="outline"
                                     size="sm"
                                     className="flex items-center gap-2 text-xs font-medium border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 transition-all duration-200 action-button"
-                                    onClick={() => console.log("Copy selected items:", Array.from(selectedItems))}
+                                    // onClick={() => console.log("Copy selected items:", Array.from(selectedItems))}
                                 >
                                     <Copy className="h-3.5 w-3.5"/>
                                     Copy
@@ -1562,7 +1639,7 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                                     variant="outline"
                                     size="sm"
                                     className="flex items-center gap-2 text-xs font-medium border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 transition-all duration-200 action-button"
-                                    onClick={() => console.log("Move selected items:", Array.from(selectedItems))}
+                                    // onClick={() => console.log("Move selected items:", Array.from(selectedItems))}
                                 >
                                     <Move className="h-3.5 w-3.5"/>
                                     Move
@@ -1611,7 +1688,7 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                                         </div>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem 
-                                        onClick={() => console.log("Copy selected items:", Array.from(selectedItems))}
+                                        onClick={() => console.log("Copy selected items:", Array.from(selectedItemsRef.current))}
                                         className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors"
                                     >
                                         <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50">
@@ -1623,7 +1700,7 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                                         </div>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem 
-                                        onClick={() => console.log("Move selected items:", Array.from(selectedItems))}
+                                        onClick={() => console.log("Move selected items:", Array.from(selectedItemsRef.current))}
                                         className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors"
                                     >
                                         <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50">
@@ -1658,17 +1735,16 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                 className="relative flex-1 bg-white dark:bg-slate-900 pt-2 px-4 pb-4 overflow-y-auto"
                 onMouseDown={handleMouseDown}
             >
-                {isSelecting && (
+                <div
+                    ref={selectionBoxRef}
+                    className="absolute border-2 border-blue-500 bg-blue-500/20 z-10 pointer-events-none rounded-sm"
+                />
+                {/* {isSelectingRef.current && (
                     <div
+                        ref={selectionBoxRef}
                         className="absolute border-2 border-blue-500 bg-blue-500/20 z-10 pointer-events-none rounded-sm"
-                        style={{
-                            left: `${selectionBox.left}px`,
-                            top: `${selectionBox.top}px`,
-                            width: `${selectionBox.width}px`,
-                            height: `${selectionBox.height}px`,
-                        }}
                     />
-                )}
+                )} */}
 
                 {isOpeningBrowser ? (
                     // TODO: change this to something else?
@@ -1684,7 +1760,7 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                         <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4">
                             {sortedItems.map((item) => {
                                 const IconComponent = getFileIcon(item.name, item.isDirectory);
-                                const iconColor = getIconColor(item.name, item.isDirectory, selectedItems.has(item.id), BoxDrag.target?.boxId === Number(item.id));
+                                const iconColor = getIconColor(item.name, item.isDirectory, false, BoxDrag.target?.boxId === Number(item.id));
                                 return (
                                     <div
                                         key={item.id}
@@ -1695,10 +1771,10 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                                         onClick={(e) => handleItemClick(e, item)}
                                         onMouseDown={(e) => handleItemMouseDown(e, item)}
                                         className={cn(
-                                            "file-item flex flex-col items-center justify-center p-3 rounded-md cursor-pointer transition-all",
-                                            selectedItems.has(item.id)
-                                                ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700"
-                                                : !isBoxToBoxTransfer
+                                            "file-item flex flex-col items-center justify-center p-3 rounded-md cursor-pointer transition-all hover:bg-slate-100 dark:hover:bg-slate-800",
+                                            // selectedItems.has(item.id)
+                                            //     ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700"
+                                                !isBoxToBoxTransfer
                                                     ? "hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent"
                                                     : "border border-transparent",
                                             // Add hover effect when dragging
@@ -1717,9 +1793,9 @@ export const FileExplorer = memo(function FileExplorer ({cloudType, accountId, t
                                             className={cn(
                                                 "block w-full px-1 text-sm leading-tight text-center",
                                                 "break-all line-clamp-2 min-h-[2.5rem]",
-                                                selectedItems.has(item.id)
-                                                    ? "text-blue-700 dark:text-blue-300 font-medium"
-                                                    : "text-slate-800 dark:text-slate-200",
+                                                // selectedItems.has(item.id)
+                                                //     ? "text-blue-700 dark:text-blue-300 font-medium"
+                                                //     : "text-slate-800 dark:text-slate-200",
                                                     BoxDrag.target?.boxId === Number(item.id) && "text-green-700 dark:text-green-300",
                                             )}
                                             title={item.name}

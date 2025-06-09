@@ -648,11 +648,11 @@ function StorageBoxInner({
             <div className="flex flex-1 overflow-hidden bg-slate-50 dark:bg-slate-900/50">
                 {type == "local" ?  (
                     <>
-                        <FileExplorer tempGetFile={tempGetFile} tempPostFile={tempPostFile} boxId={id} onCurrentPathChange={handleCurrentPathChange} refreshToggle={refreshToggle}/>
+                        <FileExplorer zoomLevel={canvasZoom} tempGetFile={tempGetFile} tempPostFile={tempPostFile} boxId={id} onCurrentPathChange={handleCurrentPathChange} refreshToggle={refreshToggle}/>
                     </>
                 ) : (
                     <>
-                        <FileExplorer cloudType={box.cloudType} accountId={box.accountId} tempGetFile={tempGetFile} tempPostFile={tempPostFile} boxId={id} onCurrentPathChange={handleCurrentPathChange} refreshToggle={refreshToggle} />
+                        <FileExplorer zoomLevel={canvasZoom} cloudType={box.cloudType} accountId={box.accountId} tempGetFile={tempGetFile} tempPostFile={tempPostFile} boxId={id} onCurrentPathChange={handleCurrentPathChange} refreshToggle={refreshToggle} />
                     </>
                 )}
             </div>
