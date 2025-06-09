@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Info, HelpCircle, Settings, Bell, Palette, Database, Github } from 'lucide-react';
+import { Shield, Info, HelpCircle, Settings, Bell, Palette, Database, Github, Trash2 } from 'lucide-react';
 import { Button } from '@Components/ui/button';
 import { Card } from '@Components/ui/card';
 import PermissionSettings from '@Components/PermissionSettings';
@@ -61,6 +61,46 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ className }) => {
                 </Card>
 
 
+                <Card className="p-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/50">
+                                <Trash2 className="h-5 w-5 text-red-600 dark:text-red-400" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                                    Delete Your Data
+                                </h3>
+                                <p className="text-sm text-slate-600 dark:text-slate-400">
+                                    Delete all the accounts linked to EasyAction
+                                </p>
+                            </div>
+                        </div>
+                        <Button
+                            variant="outline"
+                            className="w-full justify-start h-auto p-4 bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 border-orange-200 dark:border-orange-700 hover:bg-gradient-to-r hover:from-orange-100 hover:to-red-100 dark:hover:from-orange-900/30 dark:hover:to-red-900/30"
+                            onClick={() => {
+                                if (window.confirm("Are you sure you want to delete all your accounts? This action is irreversible.")) {
+                                    (window as any).cloudFsApi.clearData();
+                                }
+                            }}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/50">
+                                    <Trash2 className="h-4 w-4 text-orange-600 dark:text-orange-400"/>
+                                </div>
+                                <div className="text-left">
+                                    <div className="text-sm font-medium text-red-800 dark:text-red-200">
+                                                Delete Accounts
+                                    </div>
+                                    <div className="text-xs text-yellow-600 dark:text-yellow-400">
+                                       This action is irreversible and will delete all your accounts.
+                                    </div>
+                                </div>
+                            </div>
+                        </Button>
+                    </div>
+                </Card>
                 <Card className="p-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
                     <div className="space-y-4">
                         <div className="flex items-center gap-3">

@@ -18,6 +18,16 @@ export const store = new Store();
 // List <CloudStorage> StoredAccounts
 const StoredAccounts: Map<CloudType, CloudStorage[]> = new Map();
 
+// To keep track of active authentication processes
+interface ActiveAuth {
+  cloudType: CloudType;
+  promise: Promise<string | null>;
+  cancel: () => void;
+  browserWindow?: BrowserWindow;
+}
+
+const activeAuthentications: Map<CloudType, ActiveAuth> = new Map();
+
 // Traverse electron local storage to load all stored accounts into StoredAccounts
 export async function clearStore(): Promise<void> {
   store.clear(); // debugging
@@ -91,7 +101,22 @@ export async function loadStoredAccounts(): Promise<void> {
 // Create New CloudStorage Class, connect to the cloud, and save the account to local storage & add to StoredAccounts
 export async function connectNewCloudAccount(cloudType: CloudType) : Promise<string | null> {
   console.log('Connecting to cloud account:', cloudType);
+  
+  // Check if there's already an active authentication 
+  if (activeAuthentications.has(cloudType)) {
+    throw new Error(`Authentication already in progress for ${cloudType}`);
+  }
+  
   let cloudStorageInstance: CloudStorage | null = null;
+  let authCancelled = false;
+  
+  const cancelAuth = () => {
+    authCancelled = true;
+    if (cloudStorageInstance && 'cancelAuthentication' in cloudStorageInstance) {
+      (cloudStorageInstance as any).cancelAuthentication();
+    }
+    activeAuthentications.delete(cloudType);
+  };
   
   try {
     switch (cloudType) {
@@ -117,31 +142,67 @@ export async function connectNewCloudAccount(cloudType: CloudType) : Promise<str
       throw new Error('Failed to create cloud storage instance');
     }
 
-    // oauth2 authentication process ==> get tokens and accountId for the cloudStorageInstance
-    await cloudStorageInstance.connect();
-    console.log('Connected to cloud account:', cloudType);
-
-    // get the auth tokens and accountId from the cloudStorageInstance
-    const authTokens = cloudStorageInstance.getAuthToken();
-    const accountId = cloudStorageInstance.getAccountId();
-
-    // TODO allow null authTokens?
-    if (accountId) {
-      // Save the account to local storage
-      await saveCloudAccountLocaStorage(cloudType, accountId, authTokens);
-      // Add the account to StoredAccounts
-      if (!StoredAccounts.has(cloudType)) {
-        StoredAccounts.set(cloudType, []);
+    const authPromise = cloudStorageInstance.connect().then(async () => {
+      if (authCancelled) {
+        throw new Error('Authentication cancelled');
       }
-      StoredAccounts.get(cloudType)?.push(cloudStorageInstance);
-      return accountId;
-    } else {
-      throw new Error(`Failed to connect to ${cloudType} account - no account ID received`);
-    }
+      
+      console.log('Connected to cloud account:', cloudType);
+
+      const authTokens = cloudStorageInstance!.getAuthToken();
+      const accountId = cloudStorageInstance!.getAccountId();
+
+      // TODO allow null authTokens?
+      if (accountId) {
+        // Save the account to local storage
+        await saveCloudAccountLocaStorage(cloudType, accountId, authTokens);
+        // Add the account to StoredAccounts
+        if (!StoredAccounts.has(cloudType)) {
+          StoredAccounts.set(cloudType, []);
+        }
+        StoredAccounts.get(cloudType)?.push(cloudStorageInstance!);
+        return accountId;
+      } else {
+        throw new Error(`Failed to connect to ${cloudType} account - no account ID received`);
+      }
+    });
+
+    // Register the active authentication
+    activeAuthentications.set(cloudType, {
+      cloudType,
+      promise: authPromise,
+      cancel: cancelAuth
+    });
+
+    const result = await authPromise;
+
+    activeAuthentications.delete(cloudType);
+    return result;
+    
   } catch (error: any) {
+    activeAuthentications.delete(cloudType);
     console.error(`Error connecting to ${cloudType}:`, error);
-    throw error; // Re-throw the error to be handled by the UI
+    throw error; 
   }
+}
+
+export function cancelCloudAuthentication(cloudType: CloudType): boolean {
+  console.log('Cancelling authentication for:', cloudType);
+  
+  const activeAuth = activeAuthentications.get(cloudType);
+  if (activeAuth) {
+    activeAuth.cancel();
+
+    if (activeAuth.browserWindow && !activeAuth.browserWindow.isDestroyed()) {
+      activeAuth.browserWindow.close();
+    }
+    
+    console.log(`Authentication cancelled for ${cloudType}`);
+    return true;
+  }
+  
+  console.log(`No active authentication found for ${cloudType}`);
+  return false;
 }
 
 // Get all connected cloud accounts (of a cloud type) from local storage
@@ -342,6 +403,49 @@ export async function deleteFile(cloudType: CloudType, accountId: string, filePa
   } catch (error: any) {
     console.error(`Cloud file delete error for ${cloudType}:`, error);
     throw error; // Re-throw to be handled by the UI
+  }
+}
+
+// Remove CloudStorage account from local storage and StoredAccounts
+export async function removeCloudAccount(cloudType: CloudType, accountId: string): Promise<boolean> {
+  try {
+    console.log(`Removing cloud account: ${cloudType}, Account ID: ${accountId}`);
+    
+    // Remove from local storage
+    const encodedAccountId = encodeAccountId(accountId);
+    const cloudTypeData = store.get(cloudType) as Record<string, any> || {};
+    
+    if (cloudTypeData[encodedAccountId]) {
+      delete cloudTypeData[encodedAccountId];
+      
+      // If there are no more accounts for this cloud type, remove the cloud type 
+      if (Object.keys(cloudTypeData).length === 0) {
+        store.delete(cloudType);
+      } else {
+        store.set(cloudType, cloudTypeData);
+      }
+      
+      console.log(`Removed ${cloudType} account ${accountId} from local storage`);
+    }
+    
+    const accounts = StoredAccounts.get(cloudType);
+    if (accounts) {
+      const index = accounts.findIndex(account => account.getAccountId() === accountId);
+      if (index !== -1) {
+        accounts.splice(index, 1);
+        console.log(`Removed ${cloudType} account ${accountId} from StoredAccounts`);
+        
+        // If no more accounts for this cloud type, remove the entry
+        if (accounts.length === 0) {
+          StoredAccounts.delete(cloudType);
+        }
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    console.error(`Failed to remove cloud account ${cloudType}.${accountId}:`, error);
+    return false;
   }
 }
 

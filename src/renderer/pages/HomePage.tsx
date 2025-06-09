@@ -348,6 +348,7 @@ const HomePage = () => {
     const handleActionChange: React.Dispatch<React.SetStateAction<string>> = (newAction) => {
         if (newAction === "settings") {
             setShowMcpTest(false);
+            setShowStorageWindow(false);
             setDisabledAction(true)
         } else {
             setDisabledAction(false)

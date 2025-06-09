@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { config } from 'dotenv';
-import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile } from './cloud/cloudManager';
+import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication } from './cloud/cloudManager';
 
 // Load environment variables
 // In development, load from project root; in production, load from app Contents directory
@@ -140,6 +140,16 @@ ipcMain.handle('cloud-post-file', async (_e, cloudType: CloudType, accountId: st
 });
 ipcMain.handle('cloud-delete-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return deleteFile(cloudType, accountId, filePath);
+});
+ipcMain.handle('remove-cloud-account', async (_e, cloudType: CloudType, accountId: string) => {
+    return removeCloudAccount(cloudType, accountId);
+});
+ipcMain.handle('cancel-cloud-authentication', async (_e, cloudType: CloudType) => {
+    return cancelCloudAuthentication(cloudType);
+});
+
+ipcMain.handle('delete-accounts', async (_e) => {
+    return clearStore();
 });
 
 // Permission management handlers

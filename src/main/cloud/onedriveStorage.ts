@@ -32,6 +32,7 @@ export class OneDriveStorage implements CloudStorage {
   graphClient?: any; // Graph client for OneDrive / Need for file operations
 
   account: any; // an account for this storage
+  authCancelled: boolean = false; // Flag to track if authentication was cancelled
 
   constructor() {
     this.initClient();
@@ -118,6 +119,8 @@ export class OneDriveStorage implements CloudStorage {
   }
 
   async connect(): Promise<void | any> {
+    this.authCancelled = false; 
+    
     if (!this.client) {
       await this.initClient();
     }
@@ -125,6 +128,10 @@ export class OneDriveStorage implements CloudStorage {
     if (!this.client) {
       console.error('MSAL client is not initialized');
       throw new Error('OneDrive client initialization failed');
+    }
+    
+    if (this.authCancelled) {
+      throw new Error('Authentication cancelled');
     }
     
     const tokenRequest = {
@@ -150,6 +157,12 @@ export class OneDriveStorage implements CloudStorage {
       });
       
       console.log('authResponse: ', authResponse);
+      
+  
+      if (this.authCancelled) {
+        throw new Error('Authentication cancelled');
+      }
+      
       if (authResponse && authResponse.account) {
         this.accountId = authResponse.account?.username || '';
         this.AuthToken = null; // AuthToken is not set here since MSAL handles it internally. This should be allowed to be null
@@ -175,6 +188,12 @@ export class OneDriveStorage implements CloudStorage {
             throw new Error('Authentication failed. Please try again.');
         }
     }
+  }
+
+  // Cancel authentication process
+  cancelAuthentication(): void {
+    console.log('Cancelling OneDrive authentication...');
+    this.authCancelled = true;
   }
 
   async readDir(dir: string): Promise<FileSystemItem[]> {
