@@ -124,7 +124,7 @@ export class OneDriveStorage implements CloudStorage {
 
     if (!this.client) {
       console.error('MSAL client is not initialized');
-      return;
+      throw new Error('OneDrive client initialization failed');
     }
     
     const tokenRequest = {
@@ -148,8 +148,9 @@ export class OneDriveStorage implements CloudStorage {
           successTemplate: '<h1>Successfully signed in!</h1> <p>You can close this window now.</p>',
           errorTemplate: '<h1>Oops! Something went wrong</h1> <p>Check the console for more information.</p>',
       });
+      
       console.log('authResponse: ', authResponse);
-      if (authResponse) {
+      if (authResponse && authResponse.account) {
         this.accountId = authResponse.account?.username || '';
         this.AuthToken = null; // AuthToken is not set here since MSAL handles it internally. This should be allowed to be null
         this.account = authResponse.account;
@@ -160,10 +161,19 @@ export class OneDriveStorage implements CloudStorage {
         });
         console.log('OneDrive account connected:', this.accountId);
       } else {
-        console.error('Failed to authenticate with OneDrive');
+        throw new Error('Authentication failed - no account information received');
       }
-    } catch (error) {
-        throw error;
+    } catch (error: any) {
+        console.error('OneDrive authentication error:', error);
+        if (error.errorCode === 'user_cancelled' || error.message?.includes('cancelled') || error.message?.includes('aborted')) {
+            throw new Error('Authentication cancelled');
+        } else if (error.errorCode === 'network_error' || error.message?.includes('network') || error.message?.includes('timeout')) {
+            throw new Error('Network connection failed');
+        } else if (error.errorCode === 'invalid_grant' || error.message?.includes('invalid')) {
+            throw new Error('Authentication failed');
+        } else {
+            throw new Error('Authentication failed. Please try again.');
+        }
     }
   }
 

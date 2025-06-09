@@ -28,13 +28,18 @@ export class GoogleDriveStorage implements CloudStorage {
   AuthToken?: AuthTokens | null | undefined;
 
   async connect(): Promise<void | any> {
-    const authTokens = await this.authenticateGoogle();
-    if (authTokens) {
-      this.AuthToken = authTokens.token;
-      this.accountId = authTokens.email; // TODO
-      console.log('Google Drive account connected:', this.accountId);
-    } else {
-      console.error('Failed to authenticate with Google');
+    try {
+        const authTokens = await this.authenticateGoogle();
+        if (authTokens) {
+            this.AuthToken = authTokens.token;
+            this.accountId = authTokens.email; // TODO
+            console.log('Google Drive account connected:', this.accountId);
+        } else {
+            throw new Error('Authentication failed');
+        }
+    } catch (error: any) {
+        console.error('Google Drive connection error:', error);
+        throw error; 
     }
   }
 
@@ -194,46 +199,69 @@ export class GoogleDriveStorage implements CloudStorage {
       if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
           throw new Error("Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in environment variables");
       }
-      const myApiOauth = new ElectronGoogleOAuth2(
-          GOOGLE_CLIENT_ID,
-          GOOGLE_CLIENT_SECRET,
-          GOOGLE_SCOPE,
-          { successRedirectURL: SUCCESS_REDIRECT_URL }, // TODO: redirect uri...
-      );
-      const authToken = await myApiOauth.openAuthWindowAndGetTokens();
-      const validatedTokens: AuthTokens = {
-          access_token: authToken.access_token || '',
-          refresh_token: authToken.refresh_token || '',
-          expiry_date: authToken.expiry_date || 0,
-      };
+      
+      try {
+          const myApiOauth = new ElectronGoogleOAuth2(
+              GOOGLE_CLIENT_ID,
+              GOOGLE_CLIENT_SECRET,
+              GOOGLE_SCOPE,
+              { successRedirectURL: SUCCESS_REDIRECT_URL }, // TODO: redirect uri...
+          );
+          
+          const authToken = await myApiOauth.openAuthWindowAndGetTokens();
+          
+          // Check if authentication was cancelled
+          if (!authToken || !authToken.access_token) {
+              console.log('Google authentication was cancelled by user');
+              throw new Error('Authentication cancelled');
+          }
+          
+          const validatedTokens: AuthTokens = {
+              access_token: authToken.access_token || '',
+              refresh_token: authToken.refresh_token || '',
+              expiry_date: authToken.expiry_date || 0,
+          };
 
-      // Check if the token is valid
-      if (!isValidToken(validatedTokens)) {
-          console.error('Invalid token received from Google OAuth');
-          return Promise.resolve(null);
+          // Check if the token is valid
+          if (!isValidToken(validatedTokens)) {
+              console.error('Invalid token received from Google OAuth');
+              throw new Error('Invalid authentication token received');
+          }
+
+          const oauth2Client = new google.auth.OAuth2();
+          oauth2Client.setCredentials({
+              access_token: validatedTokens.access_token,
+              refresh_token: validatedTokens.refresh_token,
+              expiry_date: validatedTokens.expiry_date,
+          });
+
+          const userinfo = await google.oauth2({version: 'v2', auth: oauth2Client }).userinfo.get();
+          const email = userinfo.data.email;
+          if (!email) {
+              console.error('Failed to retrieve email from Google UserInfo API');
+              throw new Error('Failed to retrieve user information');
+          }
+
+          // Return the validated tokens along with the email
+          const validatedTokensWithEmail = {
+              token: validatedTokens,
+              email: email,
+          };
+
+          return Promise.resolve(validatedTokensWithEmail);
+      } catch (error: any) {
+          console.error('Google authentication error:', error);
+        
+          if (error.message?.includes('cancelled') || error.message?.includes('aborted')) {
+              throw new Error('Authentication cancelled');
+          } else if (error.message?.includes('network') || error.message?.includes('timeout')) {
+              throw new Error('Network connection failed');
+          } else if (error.message?.includes('Invalid') || error.message?.includes('token')) {
+              throw new Error('Authentication failed');
+          } else {
+              throw new Error('Authentication failed. Please try again.');
+          }
       }
-
-      const oauth2Client = new google.auth.OAuth2();
-      oauth2Client.setCredentials({
-          access_token: validatedTokens.access_token,
-          refresh_token: validatedTokens.refresh_token,
-          expiry_date: validatedTokens.expiry_date,
-      });
-
-      const userinfo = await google.oauth2({version: 'v2', auth: oauth2Client }).userinfo.get();
-      const email = userinfo.data.email;
-      if (!email) {
-          console.error('Failed to retrieve email from Google UserInfo API');
-          return Promise.resolve(null);
-      }
-
-      // Return the validated tokens along with the email
-      const validatedTokensWithEmail = {
-          token: validatedTokens,
-          email: email,
-      };
-
-      return Promise.resolve(validatedTokensWithEmail);
   }
 
   private async getOAuthClient({
@@ -278,7 +306,7 @@ export class GoogleDriveStorage implements CloudStorage {
         fileId: fileId,
         fields: 'mimeType'
       });
-      const mimeType = result.data.mimeType; // maybe use mimetype from mime-types package?
+      const mimeType = result.data.mimeType; 
 
       try {
         const file = await drive.files.get(

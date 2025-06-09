@@ -92,52 +92,56 @@ export async function loadStoredAccounts(): Promise<void> {
 export async function connectNewCloudAccount(cloudType: CloudType) : Promise<string | null> {
   console.log('Connecting to cloud account:', cloudType);
   let cloudStorageInstance: CloudStorage | null = null;
-  switch (cloudType) {
-    case CloudType.GoogleDrive:
-      console.log('Cloud type is GoogleDrive');
-      cloudStorageInstance = new GoogleDriveStorage();
-      break;
-    case CloudType.Dropbox:
-      console.log('Cloud type is Dropbox');
-      cloudStorageInstance = new DropboxStorage();
-      // cloudStorageInstance = new DropboxStorage();
-      break;
-    case CloudType.OneDrive:
-      console.log('Cloud type is OneDrive');
-      cloudStorageInstance = new OneDriveStorage();
-      // cloudStorageInstance = new OneDriveStorage();
-      break;
-    default:
-      console.error('Cloud type is not supported');
-      return null;
-  }
-
-  if (!cloudStorageInstance) {
-    console.error('Cloud storage instance is null');
-    return null;
-  }
-
-  // oauth2 authentication process ==> get tokens and accountId for the cloudStorageInstance
-  await cloudStorageInstance.connect();
-  console.log('Connected to cloud account:', cloudType);
-
-  // get the auth tokens and accountId from the cloudStorageInstance
-  const authTokens = cloudStorageInstance.getAuthToken();
-  const accountId = cloudStorageInstance.getAccountId();
-
-  // TODO allow null authTokens?
-  if (accountId) {
-    // Save the account to local storage
-    await saveCloudAccountLocaStorage(cloudType, accountId, authTokens);
-    // Add the account to StoredAccounts
-    if (!StoredAccounts.has(cloudType)) {
-      StoredAccounts.set(cloudType, []);
+  
+  try {
+    switch (cloudType) {
+      case CloudType.GoogleDrive:
+        console.log('Cloud type is GoogleDrive');
+        cloudStorageInstance = new GoogleDriveStorage();
+        break;
+      case CloudType.Dropbox:
+        console.log('Cloud type is Dropbox');
+        cloudStorageInstance = new DropboxStorage();
+        break;
+      case CloudType.OneDrive:
+        console.log('Cloud type is OneDrive');
+        cloudStorageInstance = new OneDriveStorage();
+        break;
+      default:
+        console.error('Cloud type is not supported');
+        throw new Error(`Unsupported cloud type: ${cloudType}`);
     }
-    StoredAccounts.get(cloudType)?.push(cloudStorageInstance);
-  } else {
-    console.error(`Failed to connect to ${cloudType} account`);
+
+    if (!cloudStorageInstance) {
+      console.error('Cloud storage instance is null');
+      throw new Error('Failed to create cloud storage instance');
+    }
+
+    // oauth2 authentication process ==> get tokens and accountId for the cloudStorageInstance
+    await cloudStorageInstance.connect();
+    console.log('Connected to cloud account:', cloudType);
+
+    // get the auth tokens and accountId from the cloudStorageInstance
+    const authTokens = cloudStorageInstance.getAuthToken();
+    const accountId = cloudStorageInstance.getAccountId();
+
+    // TODO allow null authTokens?
+    if (accountId) {
+      // Save the account to local storage
+      await saveCloudAccountLocaStorage(cloudType, accountId, authTokens);
+      // Add the account to StoredAccounts
+      if (!StoredAccounts.has(cloudType)) {
+        StoredAccounts.set(cloudType, []);
+      }
+      StoredAccounts.get(cloudType)?.push(cloudStorageInstance);
+      return accountId;
+    } else {
+      throw new Error(`Failed to connect to ${cloudType} account - no account ID received`);
+    }
+  } catch (error: any) {
+    console.error(`Error connecting to ${cloudType}:`, error);
+    throw error; // Re-throw the error to be handled by the UI
   }
-  return accountId;
 }
 
 // Get all connected cloud accounts (of a cloud type) from local storage
@@ -160,60 +164,132 @@ export async function getConnectedCloudAccounts(cloudType: CloudType) : Promise<
   return accountIds.length > 0 ? accountIds : null;
 }
 
-export async function readDirectory(CloudType: CloudType, accountId: string, dir: string): Promise<FileSystemItem[]> { // TODO return list of files?
+export async function readDirectory(CloudType: CloudType, accountId: string, dir: string): Promise<FileSystemItem[]> {
   console.log('Getting files from cloud account:', CloudType, accountId, dir);
-  const accounts = StoredAccounts.get(CloudType);
-  dir = dir.replace(CLOUD_HOME, "");
-  if (accounts) {
-    for (const account of accounts) {
-      if (account.getAccountId() === accountId) {
-        return await account.readDir(dir);
+  
+  try {
+    const accounts = StoredAccounts.get(CloudType);
+    dir = dir.replace(CLOUD_HOME, "");
+    
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            return await account.readDir(dir);
+          } catch (error: any) {
+            console.error(`Error reading directory from ${CloudType}:`, error);
+            
+            // Categorize and re-throw with user-friendly messages
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
+              throw new Error('Directory not found or no longer exists.');
+            } else if (error.message?.includes('quota') || error.message?.includes('storage')) {
+              throw new Error('Storage quota exceeded or storage service unavailable.');
+            } else {
+              throw new Error(`Failed to read directory: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
       }
     }
+    
+    throw new Error(`No ${CloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud directory read error for ${CloudType}:`, error);
+    throw error; // Re-throw to be handled by the UI
   }
-  console.log(`No ${CloudType} accounts found`);
-  return [];
 }
 
 
   // filePath: /HOME/dir/temp.txt
   // returns the file content in base64 format
-export async function getFile(CloudType: CloudType, accountId: string, filePath: string): Promise<FileContent | null> { // TODO return list of files?
-  // TODO: implement readFile for each cloud type
-  filePath = filePath.replace(CLOUD_HOME, "");
-  console.log('Getting files from cloud account:', CloudType, accountId, filePath);
-  const accounts = StoredAccounts.get(CloudType);
-  if (accounts) {
-    for (const account of accounts) {
-      if (account.getAccountId() === accountId) {
-        return await account.getFile(filePath);
+export async function getFile(CloudType: CloudType, accountId: string, filePath: string): Promise<FileContent | null> {
+  try {
+    filePath = filePath.replace(CLOUD_HOME, "");
+    console.log('Getting file from cloud account:', CloudType, accountId, filePath);
+    
+    const accounts = StoredAccounts.get(CloudType);
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            return await account.getFile(filePath);
+          } catch (error: any) {
+            console.error(`Error getting file from ${CloudType}:`, error);
+            
+            // Categorize and re-throw with user-friendly messages
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
+              throw new Error('File not found or no longer exists.');
+            } else if (error.message?.includes('too large') || error.message?.includes('size limit')) {
+              throw new Error('File is too large to download.');
+            } else if (error.message?.includes('quota') || error.message?.includes('storage')) {
+              throw new Error('Storage quota exceeded or storage service unavailable.');
+            } else {
+              throw new Error(`Failed to download file: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
       }
     }
+    
+    throw new Error(`No ${CloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud file get error for ${CloudType}:`, error);
+    throw error; // Re-throw to be handled by the UI
   }
-  console.log(`No ${CloudType} accounts found`);
-  return null;
 }
 
 // post the file content (Buffer) to the cloud
 // filePath: /HOME/dir/temp.txt
 // data: Buffer
-export async function postFile(CloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer): Promise<void> { // TODO return list of files?
-  // TODO: implement readFile for each cloud type
-  
-  folderPath = folderPath.replace(CLOUD_HOME, "");
-
-  console.log('Getting files from cloud account:', CloudType, accountId, fileName, folderPath);
-  const accounts = StoredAccounts.get(CloudType);
-  if (accounts) {
-    for (const account of accounts) {
-      if (account.getAccountId() === accountId) {
-        const type = mime.lookup(fileName) || 'application/octet-stream'; // default to binary if no mime type found
-        return await account.postFile(fileName, folderPath, type, data);
+export async function postFile(CloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer): Promise<void> {
+  try {
+    folderPath = folderPath.replace(CLOUD_HOME, "");
+    console.log('Posting file to cloud account:', CloudType, accountId, fileName, folderPath);
+    
+    const accounts = StoredAccounts.get(CloudType);
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            const type = mime.lookup(fileName) || 'application/octet-stream'; // default to binary if no mime type found
+            return await account.postFile(fileName, folderPath, type, data);
+          } catch (error: any) {
+            console.error(`Error posting file to ${CloudType}:`, error);
+            
+            // Categorize and re-throw with user-friendly messages
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('quota') || error.message?.includes('storage full') || error.message?.includes('insufficient storage')) {
+              throw new Error('Storage quota exceeded. Please free up space or upgrade your account.');
+            } else if (error.message?.includes('too large') || error.message?.includes('size limit') || error.message?.includes('file size')) {
+              throw new Error('File is too large for upload. Please reduce file size.');
+            } else if (error.message?.includes('permission') || error.message?.includes('forbidden')) {
+              throw new Error('Permission denied. You may not have write access to this location.');
+            } else if (error.message?.includes('exists') || error.message?.includes('conflict')) {
+              throw new Error('A file with this name already exists.');
+            } else {
+              throw new Error(`Failed to upload file: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
       }
     }
+    
+    throw new Error(`No ${CloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud file post error for ${CloudType}:`, error);
+    throw error; // Re-throw to be handled by the UI
   }
-  console.log(`No ${CloudType} accounts found`);
-  return;
 }
 
 // TODO: implement encryption for local storage, or we don't need it?
@@ -230,18 +306,43 @@ export async function saveCloudAccountLocaStorage(cloudType: CloudType, accountI
 }
 
 export async function deleteFile(cloudType: CloudType, accountId: string, filePath: string): Promise<void> {
-  filePath = filePath.replace(CLOUD_HOME, "");
-  console.log('Deleting file from cloud account:', cloudType, accountId, filePath);
-  const accounts = StoredAccounts.get(cloudType);
-  if (accounts) {
-    for (const account of accounts) {
-      if (account.getAccountId() === accountId) {
-        return await account.deleteFile(filePath);
+  try {
+    filePath = filePath.replace(CLOUD_HOME, "");
+    console.log('Deleting file from cloud account:', cloudType, accountId, filePath);
+    
+    const accounts = StoredAccounts.get(cloudType);
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            return await account.deleteFile(filePath);
+          } catch (error: any) {
+            console.error(`Error deleting file from ${cloudType}:`, error);
+            
+            // Categorize and re-throw with user-friendly messages
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
+              throw new Error('File not found or already deleted.');
+            } else if (error.message?.includes('permission') || error.message?.includes('forbidden')) {
+              throw new Error('Permission denied. You may not have delete access for this file.');
+            } else if (error.message?.includes('locked') || error.message?.includes('in use')) {
+              throw new Error('File is currently locked or in use by another application.');
+            } else {
+              throw new Error(`Failed to delete file: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
       }
     }
+    
+    throw new Error(`No ${cloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud file delete error for ${cloudType}:`, error);
+    throw error; // Re-throw to be handled by the UI
   }
-  console.log(`No ${cloudType} accounts found`);
-  return;
 }
 
 // to avoid conflict with dot in accountId

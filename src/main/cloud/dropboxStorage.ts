@@ -26,22 +26,33 @@ export class DropboxStorage implements CloudStorage {
             });
 
             let handled = false;
+            let authTimeout: NodeJS.Timeout;
         
             const authUrl = `https://www.dropbox.com/oauth2/authorize?response_type=code&client_id=${DROPBOX_APP_KEY}&redirect_uri=${REDIRECT_URI}&token_access_type=offline`;
         
             authWindow.loadURL(authUrl);
+            
+            // Set a timeout for authentication
+            authTimeout = setTimeout(() => {
+                if (!handled) {
+                    handled = true;
+                    authWindow.close();
+                    reject(new Error('Authentication timeout - please try again'));
+                }
+            }, 300000); // 5 minutes timeout
         
             authWindow.webContents.on('will-redirect', async (event, url) => {
                 const matched = url.match(/[?&]code=([^&]+)/);
                 if (matched) {
                     handled = true;
+                    clearTimeout(authTimeout);
                     const code = matched[1];
                     authWindow.close();
             
                     // Exchange code for access token
                     try {
                         if (!code || !DROPBOX_APP_KEY || !DROPBOX_APP_SECRET) {
-                        throw new Error('Missing required parameters');
+                            throw new Error('Missing required authentication parameters');
                         }
 
                         const tokenResponse = await fetch('https://api.dropboxapi.com/oauth2/token', {
@@ -56,7 +67,15 @@ export class DropboxStorage implements CloudStorage {
                             }).toString()
                         });
                 
+                        if (!tokenResponse.ok) {
+                            throw new Error(`Token exchange failed: ${tokenResponse.status}`);
+                        }
+                        
                         const tokenData = await tokenResponse.json();
+                        
+                        if (!tokenData.access_token) {
+                            throw new Error('No access token received from Dropbox');
+                        }
 
                         this.AuthToken = {
                             access_token: tokenData.access_token,
@@ -70,17 +89,34 @@ export class DropboxStorage implements CloudStorage {
                         console.log(accountInfo.result.email); 
                 
                         resolve(accountInfo);
-                    } catch (error) {
+                    } catch (error: any) {
                         console.error('Error exchanging code for token:', error);
-                        reject('Dropbox client is not initialized');
+                        if (error.message?.includes('network') || error.message?.includes('timeout')) {
+                            reject(new Error('Network connection failed during authentication'));
+                        } else if (error.message?.includes('Token exchange failed')) {
+                            reject(new Error('Authentication failed - invalid authorization code'));
+                        } else {
+                            reject(new Error('Authentication failed. Please try again.'));
+                        }
                     }
                 }
             });
         
             authWindow.on('closed', () => {
+                clearTimeout(authTimeout);
                 if (!handled) {
                     handled = true;
-                    reject('User closed window');
+                    reject(new Error('Authentication cancelled'));
+                }
+            });
+            
+            // Handle navigation failures
+            authWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+                if (!handled) {
+                    handled = true;
+                    clearTimeout(authTimeout);
+                    authWindow.close();
+                    reject(new Error('Failed to load authentication page. Please check your internet connection.'));
                 }
             });
         });
