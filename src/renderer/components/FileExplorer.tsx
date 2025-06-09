@@ -230,6 +230,14 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
     const [isCalculatingSize, setIsCalculatingSize] = useState(false);
     const [folderSize, setFolderSize] = useState<number | null>(null);
 
+    const [selectedCount , setSelectedCount] = useState(0);
+
+
+    const zoomLevelRef = useRef(zoomLevel);
+    useEffect(() => {
+        console.log(zoomLevel, "Zoom level changed, updating selection box style");
+        zoomLevelRef.current = zoomLevel;
+    }, [zoomLevel])
 
     useEffect(() => {
         const fetchHome = async () => {
@@ -757,14 +765,16 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
     }, [isSelectingRef.current, isAdditiveDragRef.current]);
 
     const updateSelectionBox = useCallback((currentX: number, currentY: number) => {
+        console.log("zoom level:", zoomLevelRef.current);
         if (!containerRef.current) return;
 
+        const containerRect = containerRef.current.getBoundingClientRect();
         // Account for zoom level in calculations
         const zoomAdjustedBox = {
-            left: (Math.min(selectionStartRef.current.x, currentX)) / zoomLevel,
-            top: (Math.min(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop * zoomLevel, currentY + containerRef.current.scrollTop * zoomLevel)) / zoomLevel,
-            width: Math.abs(currentX - selectionStartRef.current.x) / zoomLevel,
-            height: Math.abs(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop * zoomLevel - (currentY + containerRef.current.scrollTop * zoomLevel)) / zoomLevel
+            left: (Math.min(selectionStartRef.current.x, currentX)) / zoomLevelRef.current,
+            top: (Math.min(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop * zoomLevelRef.current, currentY + containerRef.current.scrollTop * zoomLevelRef.current)) / zoomLevelRef.current,
+            width: Math.abs(currentX - selectionStartRef.current.x) / zoomLevelRef.current,
+            height: Math.abs(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop * zoomLevelRef.current - (currentY + containerRef.current.scrollTop * zoomLevelRef.current)) / zoomLevelRef.current
         };
 
         selectionBoxRef.current!.style.left = `${zoomAdjustedBox.left}px`;
@@ -772,8 +782,15 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         selectionBoxRef.current!.style.width = `${zoomAdjustedBox.width}px`;
         selectionBoxRef.current!.style.height = `${zoomAdjustedBox.height}px`;
 
-        updateSelectedItemsFromBox(zoomAdjustedBox);
-    }, [selectionStartRef.current, zoomLevel]);
+        const detectSelectionBox = {
+            left: (Math.min(selectionStartRef.current.x, currentX)),
+            top: (Math.min(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop , currentY + containerRef.current.scrollTop )),
+            width: Math.abs(currentX - selectionStartRef.current.x) ,
+            height: Math.abs(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop - (currentY + containerRef.current.scrollTop ))
+        };
+
+        updateSelectedItemsFromBox(detectSelectionBox);
+    }, [updateSelectedItemsFromBox, zoomLevelRef.current]);
 
     const handleMouseMove = useCallback((e: React.MouseEvent | MouseEvent) => {
         if (!isSelectingRef.current || !containerRef.current) return;
@@ -808,6 +825,8 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
     const handleMouseUp = () => {
         if (isSelectingRef.current) {
             isSelectingRef.current = false;
+            console.log("Mouse up, ending selection box");
+            setSelectedCount(selectedItemsRef.current.size);
             removeSelectionBox();
         }
     }
@@ -1502,10 +1521,6 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             </Dialog>
         );
     };
-
-
-
-    const selectedCount = selectedItemsRef.current.size
 
     return (
         <div className="flex h-full w-full flex-col text-white rounded-lg overflow-hidden select-none">
