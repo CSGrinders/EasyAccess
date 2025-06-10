@@ -29,9 +29,20 @@ interface ActiveAuth {
 const activeAuthentications: Map<CloudType, ActiveAuth> = new Map();
 
 // Traverse electron local storage to load all stored accounts into StoredAccounts
-export async function clearStore(): Promise<void> {
-  store.clear(); // debugging
-  console.log('Cleared local storage');
+export async function clearStore(): Promise<boolean> {
+  try {
+    // Clear the in-memory accounts
+    StoredAccounts.clear();
+    
+    // Clear local storage
+    store.clear();
+    
+    console.log('Cleared all stored accounts and local storage');
+    return true;
+  } catch (error) {
+    console.error('Error clearing store:', error);
+    return false;
+  }
 }
 
 // Traverse electron local storage to load all stored accounts into StoredAccounts

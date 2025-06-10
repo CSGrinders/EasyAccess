@@ -149,7 +149,7 @@ ipcMain.handle('cancel-cloud-authentication', async (_e, cloudType: CloudType) =
 });
 
 ipcMain.handle('delete-accounts', async (_e) => {
-    return clearStore();
+    return await clearStore();
 });
 
 // Permission management handlers

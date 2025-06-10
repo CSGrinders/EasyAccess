@@ -307,6 +307,12 @@ const HomePage = () => {
         setStorageBoxes(storageBoxes.filter((w) => w.id !== id));
     };
 
+    // Function to close all storage boxes when accounts are cleared
+    const handleAccountsCleared = () => {
+        console.log('All accounts cleared, closing all storage boxes');
+        setStorageBoxes([]);
+    };
+
     // Function to close storage boxes 
     const closeStorageBoxesForAccount = (cloudType: CloudType, accountId: string) => {
         console.log(`Closing storage boxes for deleted account ${accountId} of type ${cloudType}`);
@@ -397,7 +403,7 @@ const HomePage = () => {
                         <StorageSideWindow show={showStorageWindow} addStorage={addStorageBox} onAccountDeleted={closeStorageBoxesForAccount} />
                         <div className="relative flex flex-col flex-1">
                             {action === "settings" ? (
-                                <SettingsPanel />
+                                <SettingsPanel onAccountsCleared={handleAccountsCleared} />
                             ) : canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
                                 <CanvasContainer
                                     zoomLevel={zoomLevel}

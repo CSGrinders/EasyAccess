@@ -1,14 +1,41 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Shield, Info, HelpCircle, Settings, Bell, Palette, Database, Github, Trash2 } from 'lucide-react';
 import { Button } from '@Components/ui/button';
 import { Card } from '@Components/ui/card';
 import PermissionSettings from '@Components/PermissionSettings';
+import { toast } from 'sonner';
 
 interface SettingsPanelProps {
     className?: string;
+    onAccountsCleared?: () => void;
 }
 
-export const SettingsPanel: React.FC<SettingsPanelProps> = ({ className }) => {
+export const SettingsPanel: React.FC<SettingsPanelProps> = ({ className, onAccountsCleared }) => {
+    const [isClearing, setIsClearing] = useState(false);
+
+    const handleClearAccounts = async () => {
+        if (!window.confirm("Are you sure you want to delete all your accounts? This action is irreversible.")) {
+            return;
+        }
+
+        setIsClearing(true);
+        
+        try {
+            const success = await (window as any).cloudFsApi.clearData();
+            
+            if (success) {
+                toast.success("All accounts have been deleted successfully.");
+                onAccountsCleared?.(); 
+            } else {
+                toast.error("Failed to delete accounts. Please try again.");
+            }
+        } catch (error) {
+            console.error("Error clearing accounts:", error);
+            toast.error("An error occurred while deleting accounts.");
+        } finally {
+            setIsClearing(false);
+        }
+    };
     return (
         <div className={`p-6 space-y-6 ${className}`}>
             <div className="space-y-2">
@@ -79,11 +106,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ className }) => {
                         <Button
                             variant="outline"
                             className="w-full justify-start h-auto p-4 bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 border-orange-200 dark:border-orange-700 hover:bg-gradient-to-r hover:from-orange-100 hover:to-red-100 dark:hover:from-orange-900/30 dark:hover:to-red-900/30"
-                            onClick={() => {
-                                if (window.confirm("Are you sure you want to delete all your accounts? This action is irreversible.")) {
-                                    (window as any).cloudFsApi.clearData();
-                                }
-                            }}
+                            onClick={handleClearAccounts}
+                            disabled={isClearing}
                         >
                             <div className="flex items-center gap-3">
                                 <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/50">
@@ -91,7 +115,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ className }) => {
                                 </div>
                                 <div className="text-left">
                                     <div className="text-sm font-medium text-red-800 dark:text-red-200">
-                                                Delete Accounts
+                                        {isClearing ? "Deleting..." : "Delete Accounts"}
                                     </div>
                                     <div className="text-xs text-yellow-600 dark:text-yellow-400">
                                        This action is irreversible and will delete all your accounts.
