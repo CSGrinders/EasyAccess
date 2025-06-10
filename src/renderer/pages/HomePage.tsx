@@ -11,12 +11,12 @@ import { CloudType } from '@Types/cloudType';
 import { FileContent } from '@Types/fileSystem';
 import { BoxDragProvider } from "@/contexts/BoxDragContext";
 import { BoxDragPreview } from '@/components/BoxDragPreview';
-import { FileUploadMessage } from '@/components/FileUploadMessage';
 import SettingsPanel from '@/components/SettingsPanel';
 
 import { motion, AnimatePresence } from "framer-motion" // Uncomment if available
 import { Button } from '@/components/ui/button';
 import AgentWindow from '../components/AgentWindow';
+import { MovingItemStatus } from '@/components/MovingItemStatus';
 const test = {
     folders: ["Documents", "Pictures", "Downloads", "Desktop"],
     files: ["readme.txt", "report.pdf", "image.jpg", "data.csv"],
@@ -45,13 +45,19 @@ const HomePage = () => {
     const [showStorageWindow, setShowStorageWindow] = useState(false);
     const [nextBoxId, setNextBoxId] = useState(3);
     const [isMovingItem, setIsMovingItem] = useState(false);
-    const [fileUploadMessage, setFileUploadMessage] = useState<string>("");
-    const [fileUploadMessageOpen, setFileUploadMessageOpen] = useState<boolean>(false);
+    const [movingItemProgress, setMovingItemProgress] = useState(0);
+    const [movingItemError, setMovingItemError] = useState<string | null>(null);
+    const [movingItemCompleted, setMovingItemCompleted] = useState(false);
+    const [currentMovingItem, setCurrentMovingItem] = useState<string>("");
+    const [transferStartTime, setTransferStartTime] = useState<number>(0);
+    const [totalItemsToTransfer, setTotalItemsToTransfer] = useState<number>(0);
     const [showMcpTest, setShowMcpTest] = useState(false);
     const [disabledAction, setDisabledAction] = useState(false);
+    const [isCancelling, setIsCancelling] = useState(false);
 
     const fileContentsCacheRef = useRef<FileContent[]>([]);
     const isContentLoading = useRef(false);
+    const transferAbortController = useRef<AbortController | null>(null);
 
     const boxRefs = useRef(new Map());
 
@@ -93,11 +99,22 @@ const HomePage = () => {
             // Wait for user confirmation
             await showAreYouSure();
 
+            // Show MovingItemStatus popup immediately after confirmation
             setIsMovingItem(true);
+            setMovingItemProgress(0);
+            setMovingItemError(null);
+            setMovingItemCompleted(false);
+            setCurrentMovingItem("Preparing transfer...");
+            setIsCancelling(false);
+            setTransferStartTime(Date.now());
 
-            // Wait for content loading
+            // Create abort controller for cancellation
+            transferAbortController.current = new AbortController();
+
+            // Wait for download to complete if still in progress
             while (isContentLoading.current) {
-                await new Promise(resolve => setTimeout(resolve, 50));
+                setCurrentMovingItem("Downloading files...");
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
 
             const fileContentsCache = fileContentsCacheRef.current;
@@ -105,10 +122,26 @@ const HomePage = () => {
                 throw new Error("No file content to upload");
             }
 
+            const totalFiles = fileContentsCache.length;
+            setTotalItemsToTransfer(totalFiles);
+
+            const startProgress = fileContentsCache.length > 0 ? 50 : 0;
+            setMovingItemProgress(startProgress);
+
+            let completedFiles = 0;
+            const progressStart = startProgress;
+            const progressRange = 100 - progressStart;
+
             // Upload files based on destination type
             if (!cloudType || !accountId) {
                 // Local file system uploads
-                await Promise.all(fileContentsCache.map(async (fileContent) => {
+                for (const fileContent of fileContentsCache) {
+                    if (transferAbortController.current.signal.aborted) {
+                        throw new Error("Transfer cancelled by user");
+                    }
+
+                    setCurrentMovingItem(`Uploading ${fileContent.name}`);
+                    
                     try {
                         await (window as any).fsApi.postFile(
                             fileContent.name,
@@ -116,14 +149,21 @@ const HomePage = () => {
                             fileContent.content
                         );
                         await deleteFileFromSource(fileContent);
-                        return Promise.resolve();
+                        completedFiles++;
+                        setMovingItemProgress(progressStart + ((completedFiles / totalFiles) * progressRange));
                     } catch (err) {
-                        return Promise.reject(err);
+                        throw new Error(`Failed to upload ${fileContent.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
                     }
-                }));
+                }
             } else {
                 // Cloud file system uploads
-                await Promise.all(fileContentsCache.map(async (fileContent) => {
+                for (const fileContent of fileContentsCache) {
+                    if (transferAbortController.current.signal.aborted) {
+                        throw new Error("Transfer cancelled by user");
+                    }
+
+                    setCurrentMovingItem(`Uploading ${fileContent.name}`);
+                    
                     try {
                         await (window as any).cloudFsApi.postFile(
                             cloudType,
@@ -133,59 +173,107 @@ const HomePage = () => {
                             fileContent.content
                         );
                         await deleteFileFromSource(fileContent);
-                        return Promise.resolve();
+                        completedFiles++;
+                        setMovingItemProgress(progressStart + ((completedFiles / totalFiles) * progressRange));
                     } catch (err) {
-                        return Promise.reject(err);
+                        throw new Error(`Failed to upload ${fileContent.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
                     }
-                }));
+                }
             }
 
-            setFileUploadMessage("Files uploaded successfully");
-            setFileUploadMessageOpen(true);
+            // Success
+            setMovingItemCompleted(true);
+
+            setTimeout(() => {
+                if (!movingItemError) {
+                    resetMovingItemState();
+                }
+            }, 3000);
 
         } catch (error) {
             console.log("File upload failed:", error);
-            // setFileUploadMessage(error instanceof Error ? error.message : "Upload failed");
-            // setFileUploadMessageOpen(true);
+            const errorMessage = error instanceof Error ? error.message : "Upload failed";
+            
+            if (errorMessage.includes("cancelled")) {
+                setMovingItemError("Transfer cancelled");
+            } else {
+                setMovingItemError(errorMessage);
+            }
         } finally {
-            setIsMovingItem(false);
-            fileContentsCacheRef.current = [];
+            setIsCancelling(false);
+            transferAbortController.current = null;
         }
     }
 
-    const tempGetFile = async (filePaths: string[], cloudType?: CloudType, accountId?: string) => {
-        isContentLoading.current = true; // Set content loading state to true
-        if (!cloudType || !accountId) {
-            // local file system
-            console.log("local file system, call getFile from local file system:", filePaths);
-            for (const filePath of filePaths) {
-                await (window as any).fsApi.getFile(filePath)
-                    .then((fileContent: FileContent) => {
-                        console.log("File content:", fileContent);
-                        // fileContentCacheRef.current = fileContent; // Update the ref with the new file content
-                        fileContentsCacheRef.current.push(fileContent); // Update the ref with the new file content
-                        // setFileContentCache(fileContent);
-                    })
-                    .catch((err: Error) => {
-                        console.error(err)
-                    })
-            }
-        } else {
-            console.log("Fetching file content from cloud account:", cloudType, accountId, filePaths);
-
-            for (const filePath of filePaths) {
-                await (window as any).cloudFsApi.getFile(cloudType, accountId, filePath)
-                    .then((fileContent: FileContent) => {
-                        console.log("File content:", fileContent);
-                        fileContentsCacheRef.current.push(fileContent); // Update the ref with the new file content
-                    })
-                    .catch((err: Error) => {
-                        console.error(err)
-                    })
-            }
+    const handleCancelTransfer = () => {
+        if (transferAbortController.current && !isCancelling) {
+            setIsCancelling(true);
+            transferAbortController.current.abort();
         }
-        console.log("File content fetch completed");
-        isContentLoading.current = false; // Set content loading state to false
+    };
+
+    const resetMovingItemState = () => {
+        setIsMovingItem(false);
+        setMovingItemProgress(0);
+        setMovingItemError(null);
+        setMovingItemCompleted(false);
+        setCurrentMovingItem("");
+        setIsCancelling(false);
+        setTransferStartTime(0);
+        setTotalItemsToTransfer(0);
+        fileContentsCacheRef.current = [];
+        transferAbortController.current = null;
+    };
+
+    const tempGetFile = async (filePaths: string[], cloudType?: CloudType, accountId?: string) => {
+        try {
+            isContentLoading.current = true; 
+            
+            // Reset file cache
+            fileContentsCacheRef.current = [];
+            
+            const totalFiles = filePaths.length;
+            let downloadedFiles = 0;
+            
+            if (!cloudType || !accountId) {
+                // local file system
+                console.log("local file system, call getFile from local file system:", filePaths);
+                for (const filePath of filePaths) {
+                    try {
+                        const fileName = filePath.split('/').pop() || filePath;
+                        
+                        const fileContent: FileContent = await (window as any).fsApi.getFile(filePath);
+                        console.log("File content:", fileContent);
+                        fileContentsCacheRef.current.push(fileContent); // Update the ref with the new file content
+                        downloadedFiles++;
+                    } catch (err: any) {
+                        console.error(err);
+                        throw new Error(`Failed to read ${filePath}: ${err.message}`);
+                    }
+                }
+            } else {
+                console.log("Fetching file content from cloud account:", cloudType, accountId, filePaths);
+
+                for (const filePath of filePaths) {
+                    try {
+                        const fileName = filePath.split('/').pop() || filePath;
+                        
+                        const fileContent: FileContent = await (window as any).cloudFsApi.getFile(cloudType, accountId, filePath);
+                        console.log("File content:", fileContent);
+                        fileContentsCacheRef.current.push(fileContent); // Update the ref with the new file content
+                        downloadedFiles++;
+                    } catch (err: any) {
+                        console.error(err);
+                        throw new Error(`Failed to download ${filePath}: ${err.message}`);
+                    }
+                }
+            }
+            console.log("File content fetch completed");
+        } catch (error: any) {
+            throw error;
+        } finally {
+            isContentLoading.current = false;
+        }
     }
 
     //Manage box-to-box transfer
@@ -283,6 +371,27 @@ const HomePage = () => {
             resizeObserver.unobserve(observedElement);
         };
     }, [canvasVwpRef.current]);
+
+    useEffect(() => {
+        return () => {
+            if (transferAbortController.current) {
+                transferAbortController.current.abort();
+            }
+        };
+    }, []);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && isMovingItem && !movingItemCompleted && !movingItemError) {
+                handleCancelTransfer();
+            }
+        };
+
+        if (isMovingItem) {
+            document.addEventListener('keydown', handleKeyDown);
+            return () => document.removeEventListener('keydown', handleKeyDown);
+        }
+    }, [isMovingItem, movingItemCompleted, movingItemError]);
 
     const addStorageBox = (type: string, title: string, icon: React.ReactNode, cloudType?: CloudType, accountId?: string) => {
         const newStorageBox: StorageBoxData = {
@@ -390,12 +499,19 @@ const HomePage = () => {
                         setIsPanMode={setIsPanMode} isBoxMaximized={anyBoxMaximized} isDisabled={disabledAction}/>
                 </div>
             </header>
-            <FileUploadMessage open={fileUploadMessageOpen} setOpen={setFileUploadMessageOpen} message={fileUploadMessage} showCloseButton={true}></FileUploadMessage>
             <main className="flex flex-1 overflow-hidden" ref={canvasVwpRef}>
                 {isMovingItem && (
-                    <div className="fixed top-0 left-0 w-full h-full bg-gray-500/50 backdrop-blur-sm flex items-center justify-center z-50">
-                        <p>Moving item...</p>
-                    </div>
+                    <MovingItemStatus
+                        isVisible={isMovingItem}
+                        itemCount={totalItemsToTransfer}
+                        currentItem={currentMovingItem}
+                        progress={movingItemProgress}
+                        error={movingItemError}
+                        isCompleted={movingItemCompleted}
+                        onCancel={isCancelling ? undefined : handleCancelTransfer}
+                        onClose={resetMovingItemState}
+                        startTime={transferStartTime}
+                    />
                 )}
                 <ActionBar action={action} setAction={handleActionChange} toggleShowSideWindow={toggleShowSideWindow} toggleShowAgentWindow={toggleShowAgentWindow} />
                 <BoxDragProvider>
