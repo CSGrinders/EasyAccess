@@ -8,14 +8,44 @@ import { AuthTokens, CloudStorage } from './cloudStorage';
 import { GoogleDriveStorage } from './googleStorage';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { OneDriveStorage } from "./onedriveStorage";
-import { BrowserWindow } from "electron";
+import { BrowserWindow, safeStorage } from "electron";
 import { DropboxStorage } from "./dropboxStorage";
 
 const mime = require('mime-types');
 
 export const store = new Store();
 
-// List <CloudStorage> StoredAccounts
+// Helper functions for secure storage
+function encryptData(data: string): string {
+  if (!safeStorage.isEncryptionAvailable()) {
+    console.warn('Something went wrong with the secure storage.');
+    return data;
+  }
+  
+  try {
+    const encrypted = safeStorage.encryptString(data);
+    return encrypted.toString('base64');
+  } catch (error) {
+    console.error('Failed to encrypt data:', error);
+    return data; 
+  }
+}
+
+function decryptData(encryptedData: string): string {
+  if (!safeStorage.isEncryptionAvailable()) {
+    console.warn('safeStorage decryption is not available');
+    return encryptedData;
+  }
+  
+  try {
+    const encryptedBuffer = Buffer.from(encryptedData, 'base64');
+    return safeStorage.decryptString(encryptedBuffer);
+  } catch (error) {
+    console.error('Failed to decrypt data, data might be plain text:', error);
+    return encryptedData;
+  }
+}
+
 const StoredAccounts: Map<CloudType, CloudStorage[]> = new Map();
 
 // To keep track of active authentication processes
@@ -64,17 +94,21 @@ export async function loadStoredAccounts(): Promise<void> {
       const accountId = decodeAccountId(encodedAccountId); 
       
       try {
-        // const tokens: AuthTokens = typeof tokenData === 'string'
-        //   ? JSON.parse(tokenData)
-        //   : tokenData as AuthTokens;
+        let decryptedTokenData: string;
+        
+        // Handle both encrypted and plain text data for backward compatibility
+        if (typeof tokenData === 'string') {
+          decryptedTokenData = decryptData(tokenData);
+        } else {
+          // If it's not a string, it might be legacy plain object data
+          decryptedTokenData = JSON.stringify(tokenData);
+        }
 
-        const tokens: AuthTokens | null = !tokenData
+        const tokens: AuthTokens | null = !decryptedTokenData || decryptedTokenData === 'null'
           ? null
-          : typeof tokenData === 'string'
-            ? JSON.parse(tokenData)
-            : tokenData as AuthTokens;
+          : JSON.parse(decryptedTokenData);
 
-        console.log(`Cloud: ${cloudType}, Account ID: ${accountId}`, tokens);
+        console.log(`Cloud: ${cloudType}, Account ID: ${accountId} - tokens loaded securely`);
         
         // Now you can use `tokens` and `accountId` as needed
         let cloudStorageInstance: CloudStorage | null = null;
@@ -364,16 +398,19 @@ export async function postFile(CloudType: CloudType, accountId: string, fileName
   }
 }
 
-// TODO: implement encryption for local storage, or we don't need it?
+// Store cloud account tokens using safeStorage
 export async function saveCloudAccountLocaStorage(cloudType: CloudType, accountId: string, tokens: AuthTokens | null): Promise<void> {
   try {
     // token is null on onedrive
     const serializedTokens = JSON.stringify(tokens);
+    
+    // Encrypt data
+    const encryptedTokens = encryptData(serializedTokens);
   
-    store.set(`${cloudType}.${encodeAccountId(accountId)}`, serializedTokens);
-    console.log(`Saved ${cloudType}.${encodeAccountId(accountId)} to local storage:`, serializedTokens);
+    store.set(`${cloudType}.${encodeAccountId(accountId)}`, encryptedTokens);
+    console.log(`Saved encrypted ${cloudType}.${encodeAccountId(accountId)} to secure storage`);
   } catch (error) {
-    console.error('Error saving cloud account to local storage:', error);
+    console.error('Error saving cloud account to secure storage:', error);
   }
 }
 
