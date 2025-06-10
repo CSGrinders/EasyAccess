@@ -304,7 +304,7 @@ const HomePage = () => {
     };
 
     const removeWindow = (id: number) => {
-        setStorageBoxes(storageBoxes.filter((w) => w.id !== id));
+        setStorageBoxes(prevBoxes => prevBoxes.filter((w) => w.id !== id));
     };
 
     // Function to close all storage boxes when accounts are cleared
