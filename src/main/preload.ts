@@ -17,6 +17,12 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
         ipcRenderer.invoke('cloud-post-file', cloudType, accountId, fileName, folderPath, data) as Promise<void>,
     deleteFile: (cloudType: CloudType, accountId: string, filePath: string) =>
         ipcRenderer.invoke('cloud-delete-file', cloudType, accountId, filePath) as Promise<void>,
+    removeAccount: (cloudType: CloudType, accountId: string) =>
+        ipcRenderer.invoke('remove-cloud-account', cloudType, accountId) as Promise<boolean>,
+    cancelAuthentication: (cloudType: CloudType) =>
+        ipcRenderer.invoke('cancel-cloud-authentication', cloudType) as Promise<boolean>,
+    clearData: () =>
+        ipcRenderer.invoke('delete-accounts') as Promise<boolean>
 });
 
 contextBridge.exposeInMainWorld('fsApi', {

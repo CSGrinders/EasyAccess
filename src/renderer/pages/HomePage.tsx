@@ -47,7 +47,6 @@ const HomePage = () => {
     const [isMovingItem, setIsMovingItem] = useState(false);
     const [fileUploadMessage, setFileUploadMessage] = useState<string>("");
     const [fileUploadMessageOpen, setFileUploadMessageOpen] = useState<boolean>(false);
-    // Add after existing state declarations
     const [showMcpTest, setShowMcpTest] = useState(false);
     const [disabledAction, setDisabledAction] = useState(false);
 
@@ -308,6 +307,22 @@ const HomePage = () => {
         setStorageBoxes(storageBoxes.filter((w) => w.id !== id));
     };
 
+    // Function to close all storage boxes when accounts are cleared
+    const handleAccountsCleared = () => {
+        console.log('All accounts cleared, closing all storage boxes');
+        setStorageBoxes([]);
+    };
+
+    // Function to close storage boxes 
+    const closeStorageBoxesForAccount = (cloudType: CloudType, accountId: string) => {
+        console.log(`Closing storage boxes for deleted account ${accountId} of type ${cloudType}`);
+        
+        // Filter out storage boxes 
+        setStorageBoxes(prev => prev.filter(box => 
+            !(box.cloudType === cloudType && box.accountId === accountId)
+        ));
+    };
+
     const bringToFront = useCallback((id: number) => {
         // Skip if box is maximized
         if (maximizedBoxes.has(id)) return;
@@ -348,6 +363,7 @@ const HomePage = () => {
     const handleActionChange: React.Dispatch<React.SetStateAction<string>> = (newAction) => {
         if (newAction === "settings") {
             setShowMcpTest(false);
+            setShowStorageWindow(false);
             setDisabledAction(true)
         } else {
             setDisabledAction(false)
@@ -384,10 +400,10 @@ const HomePage = () => {
                 <ActionBar action={action} setAction={handleActionChange} toggleShowSideWindow={toggleShowSideWindow} toggleShowAgentWindow={toggleShowAgentWindow} />
                 <BoxDragProvider>
                     <div className="relative flex flex-1">
-                        <StorageSideWindow show={showStorageWindow} addStorage={addStorageBox} />
+                        <StorageSideWindow show={showStorageWindow} addStorage={addStorageBox} onAccountDeleted={closeStorageBoxesForAccount} />
                         <div className="relative flex flex-col flex-1">
                             {action === "settings" ? (
-                                <SettingsPanel />
+                                <SettingsPanel onAccountsCleared={handleAccountsCleared} />
                             ) : canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
                                 <CanvasContainer
                                     zoomLevel={zoomLevel}
