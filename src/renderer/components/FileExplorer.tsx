@@ -1793,6 +1793,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                                             className={cn(
                                                 "block w-full px-1 text-sm leading-tight text-center",
                                                 "break-all line-clamp-2 min-h-[2.5rem]",
+                                                "text-slate-800 dark:text-slate-200",
                                                 // selectedItems.has(item.id)
                                                 //     ? "text-blue-700 dark:text-blue-300 font-medium"
                                                 //     : "text-slate-800 dark:text-slate-200",
