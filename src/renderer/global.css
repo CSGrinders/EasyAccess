@@ -15,7 +15,15 @@
 }
 
 .selected {
-  background-color: rgba(0, 73, 192, 0.339); /* soft blue */
+  background: linear-gradient(135deg, rgb(59, 130, 246, 0.15), rgb(37, 99, 235, 0.2));
+  border: 1px solid rgb(59, 130, 246, 0.4);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.dark .selected {
+  background: linear-gradient(135deg, rgb(59, 130, 246, 0.25), rgb(37, 99, 235, 0.3));
+  border: 1px solid rgb(59, 130, 246, 0.6);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
 }
 
 body {
