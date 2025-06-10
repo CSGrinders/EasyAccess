@@ -309,6 +309,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     // setSelectedItems(new Set())
                     selectedItemsRef.current = new Set()
                     lastSelectedItemRef.current = null
+                    setSelectedCount(0)
                 })
                 .catch((err: Error) => {
                     console.error(err)
@@ -331,6 +332,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     // setSelectedItems(new Set())
                     selectedItemsRef.current = new Set()
                     lastSelectedItemRef.current = null
+                    setSelectedCount(0)
                 })
                 .catch((err) => {
                     console.error(err)
@@ -516,6 +518,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     // setSelectedItems(new Set())
                     selectedItemsRef.current = new Set()
                     lastSelectedItemRef.current = null
+                    setSelectedCount(0)
                 })
                 .catch((err: Error) => {
                     console.error(err)
@@ -544,6 +547,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     // setSelectedItems(new Set())
                     selectedItemsRef.current = new Set()
                     lastSelectedItemRef.current = null
+                    setSelectedCount(0)
                 })
                 .catch((err) => {
                     console.error(err)
@@ -644,6 +648,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         }
 
         updateSelectedItemsColor();
+        setSelectedCount(selectedItemsRef.current.size);
 
     }
 
@@ -663,6 +668,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             // setSelectedItems(new Set());
             selectedItemsRef.current = new Set();
             selectionSnapshotRef.current = new Set();
+            setSelectedCount(0);
         } else {
             selectionSnapshotRef.current = new Set(selectedItemsRef.current);
 
@@ -1128,12 +1134,16 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                 const allItems = new Set(sortedItems.map((item) => item.id))
                 // setSelectedItems(allItems)
                 selectedItemsRef.current = allItems;
+                setSelectedCount(allItems.size);
+                updateSelectedItemsColor();
             }
 
             if (e.key === "Escape") {
                 // setSelectedItems(new Set())
                 selectedItemsRef.current = new Set();
                 lastSelectedItemRef.current = null;
+                setSelectedCount(0);
+                updateSelectedItemsColor();
                 if (BoxDrag.isDragging) {
                     // setIsDragging(false)
                     // setDraggedItem(null)
@@ -1167,7 +1177,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
 
         window.addEventListener("keydown", handleKeyDown)
         return () => window.removeEventListener("keydown", handleKeyDown)
-    }, [selectedItemsRef.current, BoxDrag.isDragging, isSelectingRef.current, sortedItems])
+    }, [BoxDrag.isDragging, sortedItems])
 
 
     async function handleDelete() {
@@ -1208,6 +1218,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             
             // Clear selection after successful deletion
             selectedItemsRef.current = new Set();
+            setSelectedCount(0);
         } catch (error) {
             console.error("Error deleting items:", error);
             
