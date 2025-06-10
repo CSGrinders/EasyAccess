@@ -125,12 +125,11 @@ const HomePage = () => {
             const totalFiles = fileContentsCache.length;
             setTotalItemsToTransfer(totalFiles);
 
-            const startProgress = fileContentsCache.length > 0 ? 50 : 0;
+            const startProgress = 0;
             setMovingItemProgress(startProgress);
 
             let completedFiles = 0;
-            const progressStart = startProgress;
-            const progressRange = 100 - progressStart;
+            const progressRange = 100;
 
             // Upload files based on destination type
             if (!cloudType || !accountId) {
@@ -150,7 +149,7 @@ const HomePage = () => {
                         );
                         await deleteFileFromSource(fileContent);
                         completedFiles++;
-                        setMovingItemProgress(progressStart + ((completedFiles / totalFiles) * progressRange));
+                        setMovingItemProgress((completedFiles / totalFiles) * progressRange);
                     } catch (err) {
                         throw new Error(`Failed to upload ${fileContent.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
                     }
@@ -174,7 +173,7 @@ const HomePage = () => {
                         );
                         await deleteFileFromSource(fileContent);
                         completedFiles++;
-                        setMovingItemProgress(progressStart + ((completedFiles / totalFiles) * progressRange));
+                        setMovingItemProgress((completedFiles / totalFiles) * progressRange);
                     } catch (err) {
                         throw new Error(`Failed to upload ${fileContent.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
                     }
@@ -308,7 +307,6 @@ const HomePage = () => {
             }
         }
 
-        //TODO: Implement a notification like a loading spinner or progress bar or something?
         console.log("Box transfer completed");
     };
 

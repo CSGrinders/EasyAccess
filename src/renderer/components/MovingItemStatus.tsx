@@ -83,12 +83,14 @@ export function MovingItemStatus({
 
   return (
     <div className={cn(
-      "fixed bottom-6 right-6 bg-white/95 dark:bg-slate-800/95 border border-slate-200 dark:border-slate-700",
-      "rounded-xl shadow-xl backdrop-blur-sm z-50 overflow-hidden",
-      "animate-in fade-in-0 slide-in-from-bottom-4 duration-300",
+      "select-none fixed bottom-6 right-6 bg-white/95 dark:bg-slate-800/95 border border-slate-200 dark:border-slate-700",
+      "rounded-xl shadow-xl backdrop-blur-sm overflow-hidden",
+      "animate-in fade-in-0 slide-in-from-bottom-3 duration-300",
       "min-w-[320px] max-w-[400px]",
       "backdrop-saturate-150"
-    )}>
+    )}
+    style={{ zIndex: 99999 }}
+    >
       <div className={cn(
         "flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700",
         error ? "bg-red-50 dark:bg-red-900/20" : 
@@ -153,7 +155,6 @@ export function MovingItemStatus({
           </div>
         )}
 
-        {/* Action buttons */}
         <div className="flex gap-2 pt-2">
           {!error && !isCompleted && onCancel && (
             <Button
@@ -189,8 +190,6 @@ export function MovingItemStatus({
           )}
         </div>
       </div>
-
-      {/* Loading animation overlay for active transfers */}
       {!error && !isCompleted && (
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 opacity-80 overflow-hidden">
           <div className="h-full w-full bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse" />
