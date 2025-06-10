@@ -40,28 +40,15 @@ const ActionBar = ({action, setAction, toggleShowSideWindow, toggleShowAgentWind
                         {action === "dashboard" && (
                             <>
                                 <NavItem icon={<LayoutDashboard className="h-5 w-5"/>} label="Dashboard" active/>
-                                <NavItem icon={<Download className="h-5 w-5"/>} label="Downloads"
-                                         onClick={() => setAction("downloads")}/>
                                 <NavItem icon={<SettingsIcon className="h-5 w-5"/>} label="Settings"
                                          onClick={() => setAction("settings")}/>
                             </>
 
                         )}
-                        {action === "downloads" && (
-                            <>
-                                <NavItem icon={<LayoutDashboard className="h-5 w-5"/>} label="Dashboard"
-                                         onClick={() => setAction("dashboard")}/>
-                                <NavItem icon={<Download className="h-5 w-5"/>} label="Downloads" active/>
-                                <NavItem icon={<SettingsIcon className="h-5 w-5"/>} label="Settings"
-                                         onClick={() => setAction("settings")}/>
-                            </>
-                        )}
                         {action === "settings" && (
                             <>
                                 <NavItem icon={<LayoutDashboard className="h-5 w-5"/>} label="Dashboard"
                                          onClick={() => setAction("dashboard")}/>
-                                <NavItem icon={<Download className="h-5 w-5"/>} label="Downloads"
-                                         onClick={() => setAction("downloads")}/>
                                 <NavItem icon={<SettingsIcon className="h-5 w-5"/>} label="Settings" active/>
                             </>
                         )}

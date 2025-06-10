@@ -260,7 +260,7 @@ export async function readDirectory(CloudType: CloudType, accountId: string, dir
     throw new Error(`No ${CloudType} account found with ID: ${accountId}`);
   } catch (error: any) {
     console.error(`Cloud directory read error for ${CloudType}:`, error);
-    throw error; // Re-throw to be handled by the UI
+    throw error; 
   }
 }
 
@@ -303,7 +303,7 @@ export async function getFile(CloudType: CloudType, accountId: string, filePath:
     throw new Error(`No ${CloudType} account found with ID: ${accountId}`);
   } catch (error: any) {
     console.error(`Cloud file get error for ${CloudType}:`, error);
-    throw error; // Re-throw to be handled by the UI
+    throw error; 
   }
 }
 
@@ -349,7 +349,7 @@ export async function postFile(CloudType: CloudType, accountId: string, fileName
     throw new Error(`No ${CloudType} account found with ID: ${accountId}`);
   } catch (error: any) {
     console.error(`Cloud file post error for ${CloudType}:`, error);
-    throw error; // Re-throw to be handled by the UI
+    throw error; 
   }
 }
 
@@ -380,7 +380,6 @@ export async function deleteFile(cloudType: CloudType, accountId: string, filePa
           } catch (error: any) {
             console.error(`Error deleting file from ${cloudType}:`, error);
             
-            // Categorize and re-throw with user-friendly messages
             if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
               throw new Error('Authentication expired. Please reconnect your account.');
             } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
@@ -402,7 +401,7 @@ export async function deleteFile(cloudType: CloudType, accountId: string, filePa
     throw new Error(`No ${cloudType} account found with ID: ${accountId}`);
   } catch (error: any) {
     console.error(`Cloud file delete error for ${cloudType}:`, error);
-    throw error; // Re-throw to be handled by the UI
+    throw error; 
   }
 }
 

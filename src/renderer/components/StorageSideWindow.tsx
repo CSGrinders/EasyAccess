@@ -18,40 +18,42 @@ interface StorageCardProps {
     gradient: string;
     iconColor: string;
     isLoading?: boolean;
+    disabled?: boolean;
     type?: string;
     error?: string | null;
 }
 
-function StorageCard({ icon, label, description, onClick, onCancel, gradient, iconColor, isLoading = false, type, error }: StorageCardProps) {
+function StorageCard({ icon, label, description, onClick, onCancel, gradient, iconColor, isLoading = false, disabled = false, type, error }: StorageCardProps) {
     return (
         <div 
-            onClick={!isLoading ? onClick : undefined}
+            onClick={!isLoading && !disabled ? onClick : undefined}
             className={cn(
                 "group relative overflow-hidden rounded-xl border bg-white dark:bg-slate-800 transition-all duration-500 ease-out transform-gpu",
                 isLoading 
                     ? "cursor-wait opacity-75 scale-[0.98] border-slate-200 dark:border-slate-700" 
-                    : error 
-                        ? "cursor-pointer border-red-300 dark:border-red-600 hover:border-red-400 dark:hover:border-red-500 hover:shadow-2xl hover:shadow-red-500/20 hover:-translate-y-2 hover:scale-[1.02] active:scale-[0.98] active:transition-transform active:duration-150"
-                        : "cursor-pointer border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-2xl hover:shadow-blue-500/20 hover:-translate-y-2 hover:scale-[1.02] active:scale-[0.98] active:transition-transform active:duration-150"
+                    : disabled
+                        ? "cursor-not-allowed opacity-50 scale-[0.98] border-slate-200 dark:border-slate-700"
+                        : error 
+                            ? "cursor-pointer border-red-300 dark:border-red-600 hover:border-red-400 dark:hover:border-red-500 hover:shadow-2xl hover:shadow-red-500/20 hover:-translate-y-2 hover:scale-[1.02] active:scale-[0.98] active:transition-transform active:duration-150"
+                            : "cursor-pointer border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-2xl hover:shadow-blue-500/20 hover:-translate-y-2 hover:scale-[1.02] active:scale-[0.98] active:transition-transform active:duration-150"
             )}
         >
-            <div className={cn("absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-40 transition-all duration-700 ease-out", error ? "from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20" : gradient)} />
+            <div className={cn("absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-40 transition-all duration-700 ease-out", 
+                disabled ? "group-hover:opacity-0" : error ? "from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20" : gradient)} />
             
-            {!isLoading && !error && (
+            {!isLoading && !error && !disabled && (
                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-1000">
                     <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1200 ease-out delay-100" />
                 </div>
             )}
             
-            {!isLoading && !error && (
+            {!isLoading && !error && !disabled && (
                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700">
                     <div className="absolute top-4 right-4 w-2 h-2 bg-blue-400/30 rounded-full animate-pulse" />
                     <div className="absolute top-8 right-8 w-1 h-1 bg-indigo-400/40 rounded-full animate-ping" style={{ animationDelay: '0.5s' }} />
                     <div className="absolute bottom-8 left-8 w-1.5 h-1.5 bg-blue-300/20 rounded-full animate-pulse" style={{ animationDelay: '1s' }} />
                 </div>
             )}
-
-            {/* Cancel button for loading state */}
             {isLoading && onCancel && (
                 <button
                     onClick={(e) => {
@@ -89,7 +91,9 @@ function StorageCard({ icon, label, description, onClick, onCancel, gradient, ic
                         <p className={cn("text-sm mt-2 transition-all duration-500 ease-out group-hover:translate-x-1",
                             error 
                                 ? "text-red-600 dark:text-red-400 group-hover:text-red-700 dark:group-hover:text-red-300" 
-                                : "text-slate-600 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-300"
+                                : disabled
+                                    ? "text-slate-400 dark:text-slate-500"
+                                    : "text-slate-600 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-300"
                         )}>
                             {isLoading ? (
                                 <span className="flex items-center gap-2">
@@ -99,6 +103,10 @@ function StorageCard({ icon, label, description, onClick, onCancel, gradient, ic
                                         <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
                                         <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
                                     </span>
+                                </span>
+                            ) : disabled ? (
+                                <span className="flex items-center gap-2">
+                                    <span>Please wait for current connection</span>
                                 </span>
                             ) : error ? (
                                 <span className="flex flex-col gap-4">
@@ -125,7 +133,7 @@ function StorageCard({ icon, label, description, onClick, onCancel, gradient, ic
 }
 
 
-const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
+const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWindowProps) => {
     const [showAccountPopup, setShowAccountPopup] = useState<boolean>(false);
     const [toAddCloudType, setToAddCloudType] = useState<CloudType | null>(null); 
     const [toAddAccount, setToAddAccount] = useState<string | null>(null);
@@ -142,6 +150,12 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
         onedrive: null,
         local: null
     });
+    const [isCancellingConnections, setIsCancellingConnections] = useState<boolean>(false);
+
+    // Helper function to check if any cloud service is right now in connecting state
+    const isAnyServiceConnecting = () => {
+        return Object.values(loadingStates).some(isLoading => isLoading);
+    };
 
     // when the user selects an account from the popup / or connects a new account, effect will be triggered
     useEffect(() => {
@@ -201,25 +215,94 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
         fetchData();
     }, [toAddAccount]);
 
+    // Function to cancel all active connections
+    const cancelAllConnections = async () => {
+        console.log('Cancelling all active connections...');
+        setIsCancellingConnections(true);
+        
+        // Cancel cloud authentications
+        const cancelPromises = [];
+        
+        if (loadingStates.google) {
+            cancelPromises.push(
+                (window as any).cloudFsApi.cancelAuthentication(CloudType.GoogleDrive)
+                    .catch((error: any) => console.error('Error cancelling Google Drive:', error))
+            );
+        }
+        
+        if (loadingStates.dropbox) {
+            cancelPromises.push(
+                (window as any).cloudFsApi.cancelAuthentication(CloudType.Dropbox)
+                    .catch((error: any) => console.error('Error cancelling Dropbox:', error))
+            );
+        }
+        
+        if (loadingStates.onedrive) {
+            cancelPromises.push(
+                (window as any).cloudFsApi.cancelAuthentication(CloudType.OneDrive)
+                    .catch((error: any) => console.error('Error cancelling OneDrive:', error))
+            );
+        }
+        
+        // Wait for all cancellations to complete
+        await Promise.all(cancelPromises);
+        
+        // Reset all loading states
+        setLoadingStates({
+            google: false,
+            dropbox: false,
+            onedrive: false,
+            local: false
+        });
+        
+        // Clear all errors
+        setErrorStates({
+            google: null,
+            dropbox: null,
+            onedrive: null,
+            local: null
+        });
+        
+        setIsCancellingConnections(false);
+    };
+
     useEffect(() => {
         if (!showAccountPopup || !show) {
-            setLoadingStates({
-                google: false,
-                dropbox: false,
-                onedrive: false,
-                local: false
-            });
-            // Clear errors when closing sidebar
-            if (!show) {
-                setErrorStates({
-                    google: null,
-                    dropbox: null,
-                    onedrive: null,
-                    local: null
+            if (!show && isAnyServiceConnecting()) {
+                // Cancel all connections when the window is closed
+                cancelAllConnections();
+            } else {
+                // Just reset states if no connections are active
+                setLoadingStates({
+                    google: false,
+                    dropbox: false,
+                    onedrive: false,
+                    local: false
                 });
+                if (!show) {
+                    setErrorStates({
+                        google: null,
+                        dropbox: null,
+                        onedrive: null,
+                        local: null
+                    });
+                }
             }
         }
     }, [showAccountPopup, show]);
+
+    // Cleanup effect to cancel all connections when component unmounts
+    useEffect(() => {
+        return () => {
+            if (isAnyServiceConnecting()) {
+                console.log('Component unmounting, cancelling all connections...');
+                // Cancel all connections without awaiting since this is cleanup
+                cancelAllConnections().catch(error => 
+                    console.error('Error during cleanup:', error)
+                );
+            }
+        };
+    }, []);
 
     // Helper to clear the errors for the cards
     const clearError = (service: string) => {
@@ -231,7 +314,6 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
         setErrorStates(prev => ({ ...prev, [service]: message }));
     };
 
-    // Helper to get error message
     const getUserFriendlyError = (error: any): string => {
         if (typeof error === 'string') {
             if (error.includes('cancelled')) return 'Authentication cancelled';
@@ -250,7 +332,6 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
         return 'Connection failed';
     };
 
-    // Cancel functions for each storage
     const handleCancelGoogle = async () => {
         console.log('Cancelling Google Drive connection');
         try {
@@ -286,12 +367,16 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
 
     const handleCancelLocal = () => {
         console.log('Cancelling Local connection');
-        // Local doesn't need backend cancellation
         setLoadingStates(prev => ({ ...prev, local: false }));
         clearError('local');
     };
 
     const handleGoogleClick = async () => {
+        if (isAnyServiceConnecting()) {
+            console.log('Another service is already connecting, please wait...');
+            return;
+        }
+
         // TODO added for testing
         // await (window as any).electronAPI.clearAuthTokens(); 
         console.log('google drive clicked')
@@ -337,6 +422,11 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
     }
 
     const handleDropBoxClick = async () => {
+        if (isAnyServiceConnecting()) {
+            console.log('Another service is already connecting, please wait...');
+            return;
+        }
+
         // TODO added for testing
         // await (window as any).electronAPI.clearAuthTokens(); 
         console.log('dropbox clicked')
@@ -384,6 +474,11 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
     }
 
     const handleOneDriveClick = async () => {
+        if (isAnyServiceConnecting()) {
+            console.log('Another service is already connecting, please wait...');
+            return;
+        }
+
         // TODO added for testing
         // await (window as any).electronAPI.clearAuthTokens(); 
         console.log('onedrive clicked')
@@ -431,6 +526,11 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
     }
 
     const handleLocalClicked = async () => {
+        if (isAnyServiceConnecting()) {
+            console.log('Another service is already connecting, please wait...');
+            return;
+        }
+
         // TODO added for testing
         // await (window as any).electronAPI.clearAuthTokens(); 
         console.log('local clicked')
@@ -470,11 +570,20 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
         }
     }
 
+    const handleAccountDeleted = async (cloudType: CloudType, accountId: string) => {
+        console.log(`Account ${accountId} deleted for ${cloudType}, refreshing available accounts...`)
+        setAvailableAccounts(prev => prev.filter(account => account !== accountId))
+        
+        if (onAccountDeleted) {
+            onAccountDeleted(cloudType, accountId)
+        }
+    }
+
     return (
         <div
             className={`${
                 show ? "w-72" : "w-0"
-            } absolute left-0 top-0 h-full z-30 bg-white/95 dark:bg-slate-900/95 border-r border-slate-200 dark:border-slate-700 shadow-2xl transition-all duration-300 ease-out overflow-hidden backdrop-blur-lg`}
+            } select-none absolute left-0 top-0 h-full z-30 bg-white/95 dark:bg-slate-900/95 border-r border-slate-200 dark:border-slate-700 shadow-2xl transition-all duration-300 ease-out overflow-hidden backdrop-blur-lg`}
         >
             <div className={`h-full flex flex-col transition-all duration-300 ease-out ${
                 show ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4"
@@ -504,6 +613,7 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
                             gradient="from-slate-50 to-gray-50 dark:from-slate-800/50 dark:to-slate-700/50"
                             iconColor="text-slate-600 dark:text-slate-400"
                             isLoading={loadingStates.local}
+                            disabled={isAnyServiceConnecting() && !loadingStates.local}
                             type="local"
                             error={errorStates.local}
                             onCancel={handleCancelLocal}
@@ -516,6 +626,7 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
                             gradient="from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20"
                             iconColor="text-blue-600 dark:text-blue-400"
                             isLoading={loadingStates.google}
+                            disabled={isAnyServiceConnecting() && !loadingStates.google}
                             error={errorStates.google}
                             onCancel={handleCancelGoogle}
                         />
@@ -527,6 +638,7 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
                             gradient="from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20"
                             iconColor="text-blue-600 dark:text-cyan-400"
                             isLoading={loadingStates.dropbox}
+                            disabled={isAnyServiceConnecting() && !loadingStates.dropbox}
                             error={errorStates.dropbox}
                             onCancel={handleCancelDropbox}
                         />
@@ -538,19 +650,25 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
                             gradient="from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20"
                             iconColor="text-blue-600 dark:text-purple-400"
                             isLoading={loadingStates.onedrive}
+                            disabled={isAnyServiceConnecting() && !loadingStates.onedrive}
                             error={errorStates.onedrive}
                             onCancel={handleCancelOneDrive}
                         />
                     </div>
                 </div>
-                <div className="p-6 border-t border-slate-200 dark:border-slate-700 bg-gradient-to-r from-slate-50/50 to-gray-50/50 dark:from-slate-800/50 dark:to-slate-700/50">
+                <div className="select-none p-6 border-t border-slate-200 dark:border-slate-700 bg-gradient-to-r from-slate-50/50 to-gray-50/50 dark:from-slate-800/50 dark:to-slate-700/50">
                     <div className="flex items-center justify-center gap-2 mb-3">
                         <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
                         <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
                         <div className="w-1 h-1 bg-purple-400 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
                     </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 text-center transition-all duration-500 hover:text-slate-600 dark:hover:text-slate-300 font-medium">
-                        Choose a storage provider to get started
+                        {isCancellingConnections 
+                            ? "Cancelling active connections..." 
+                            : isAnyServiceConnecting() 
+                                ? "Connection in progress..." 
+                                : "Choose a storage provider to get started"
+                        }
                     </p>
                     <div className="mt-2 w-16 h-0.5 bg-gradient-to-r from-blue-400 to-purple-400 mx-auto rounded-full opacity-50" />
                 </div>
@@ -563,6 +681,7 @@ const StorageWideWindow = ({show, addStorage}: StorageWideWindowProps) => {
                 availableAccounts={availableAccounts} 
                 connectAddNewAccount={connectNewCloudAccount}
                 cloudType={toAddCloudType}
+                onAccountDeleted={handleAccountDeleted}
             />
         </div>
     );

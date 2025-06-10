@@ -42,6 +42,7 @@ export interface StorageBoxData {
 export interface StorageWideWindowProps {
     show: boolean
     addStorage: (type: string, title: string, icon: React.ReactNode, cloudType?: CloudType, accountId?: string) => void
+    onAccountDeleted?: (cloudType: CloudType, accountId: string) => void
 }
 
 

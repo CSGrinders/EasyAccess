@@ -19,6 +19,7 @@ type PopupAccountsProps = {
     connectAddNewAccount: (cloudType: CloudType) => void
     availableAccounts: string[]
     cloudType: CloudType | null
+    onAccountDeleted?: (cloudType: CloudType, accountId: string) => void
 }
 
 export function PopupAccounts({
@@ -27,7 +28,8 @@ export function PopupAccounts({
     setSelectedAccount, 
     availableAccounts, 
     connectAddNewAccount,
-    cloudType
+    cloudType,
+    onAccountDeleted
 }: PopupAccountsProps) {
     const [deletingAccount, setDeletingAccount] = useState<string | null>(null)
     const [isConnecting, setIsConnecting] = useState(false)
@@ -47,6 +49,7 @@ export function PopupAccounts({
             
             if (success) {
                 toast.success(`Account ${accountId} disconnected successfully.`)
+                onAccountDeleted?.(cloudType, accountId)
             } else {
                 toast.error("Failed to disconnect account.")
             }

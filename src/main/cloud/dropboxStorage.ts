@@ -1,28 +1,24 @@
-import { CloudStorage, AuthTokens, isValidToken } from './cloudStorage';
-import { saveCloudAccountLocaStorage } from './cloudManager';
-import { CLOUD_HOME, CloudType } from "../../types/cloudType";
+import { CloudStorage,AuthTokens, isValidToken } from './cloudStorage';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
+import { Client } from "@microsoft/microsoft-graph-client";
+import { CLOUD_HOME, CloudType } from '../../types/cloudType';
 import { BrowserWindow } from 'electron';
-import * as mime from 'mime-types';
-const { Dropbox } = require('dropbox');
-const fetch = require('node-fetch');
-import dotenv from 'dotenv';
-dotenv.config();
+import { Dropbox } from 'dropbox';
+const mime = require('mime-types');
 
-const DROPBOX_APP_KEY = process.env.DROPBOX_APP_KEY;
-const DROPBOX_APP_SECRET = process.env.DROPBOX_APP_SECRET;
-const REDIRECT_URI = 'http://localhost:3000/dropbox/callback';
+const DROPBOX_APP_KEY = process.env.DROPBOX_KEY;
+const DROPBOX_APP_SECRET = process.env.DROPBOX_SECRET;
+const REDIRECT_URI = 'http://localhost';
 
 export class DropboxStorage implements CloudStorage {
     accountId?: string | undefined;
     AuthToken?: AuthTokens | null | undefined;
-    client?: any; // TODO
-    private authWindow?: BrowserWindow;
-    private authCancelled = false;
+
+    client?: Dropbox | null = null;
 
     async connect(): Promise<void | any> {
         return new Promise((resolve, reject) => {
-            this.authWindow = new BrowserWindow({
+            const authWindow = new BrowserWindow({
                 width: 500,
                 height: 600,
                 show: true,
@@ -30,42 +26,22 @@ export class DropboxStorage implements CloudStorage {
             });
 
             let handled = false;
-            let authTimeout: NodeJS.Timeout;
         
             const authUrl = `https://www.dropbox.com/oauth2/authorize?response_type=code&client_id=${DROPBOX_APP_KEY}&redirect_uri=${REDIRECT_URI}&token_access_type=offline`;
         
-            this.authWindow.loadURL(authUrl);
-            
-            // Set a timeout for authentication
-            authTimeout = setTimeout(() => {
-                if (!handled) {
-                    handled = true;
-                    this.authWindow?.close();
-                    reject(new Error('Authentication timeout - please try again'));
-                }
-            }, 300000); // 5 minutes timeout
+            authWindow.loadURL(authUrl);
         
-            this.authWindow.webContents.on('will-redirect', async (event, url) => {
-                // Check if authentication was cancelled
-                if (this.authCancelled) {
-                    handled = true;
-                    clearTimeout(authTimeout);
-                    this.authWindow?.close();
-                    reject(new Error('Authentication cancelled'));
-                    return;
-                }
-                
+            authWindow.webContents.on('will-redirect', async (event, url) => {
                 const matched = url.match(/[?&]code=([^&]+)/);
                 if (matched) {
                     handled = true;
-                    clearTimeout(authTimeout);
                     const code = matched[1];
-                    this.authWindow?.close();
+                    authWindow.close();
             
                     // Exchange code for access token
                     try {
                         if (!code || !DROPBOX_APP_KEY || !DROPBOX_APP_SECRET) {
-                            throw new Error('Missing required authentication parameters');
+                        throw new Error('Missing required parameters');
                         }
 
                         const tokenResponse = await fetch('https://api.dropboxapi.com/oauth2/token', {
@@ -80,21 +56,7 @@ export class DropboxStorage implements CloudStorage {
                             }).toString()
                         });
                 
-                        if (!tokenResponse.ok) {
-                            throw new Error(`Token exchange failed: ${tokenResponse.status}`);
-                        }
-                        
                         const tokenData = await tokenResponse.json();
-                        
-                        if (!tokenData.access_token) {
-                            throw new Error('No access token received from Dropbox');
-                        }
-
-                        // Final check for cancellation before saving tokens
-                        if (this.authCancelled) {
-                            reject(new Error('Authentication cancelled'));
-                            return;
-                        }
 
                         this.AuthToken = {
                             access_token: tokenData.access_token,
@@ -108,46 +70,20 @@ export class DropboxStorage implements CloudStorage {
                         console.log(accountInfo.result.email); 
                 
                         resolve(accountInfo);
-                    } catch (error: any) {
+                    } catch (error) {
                         console.error('Error exchanging code for token:', error);
-                        if (error.message?.includes('network') || error.message?.includes('timeout')) {
-                            reject(new Error('Network connection failed during authentication'));
-                        } else if (error.message?.includes('Token exchange failed')) {
-                            reject(new Error('Authentication failed - invalid authorization code'));
-                        } else {
-                            reject(new Error('Authentication failed. Please try again.'));
-                        }
+                        reject('Dropbox client is not initialized');
                     }
                 }
             });
         
-            this.authWindow.on('closed', () => {
-                clearTimeout(authTimeout);
+            authWindow.on('closed', () => {
                 if (!handled) {
                     handled = true;
-                    reject(new Error('Authentication cancelled'));
-                }
-            });
-            
-            // Handle navigation failures
-            this.authWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-                if (!handled) {
-                    handled = true;
-                    clearTimeout(authTimeout);
-                    this.authWindow?.close();
-                    reject(new Error('Failed to load authentication page. Please check your internet connection.'));
+                    reject('User closed window');
                 }
             });
         });
-    }
-
-    // Method to cancel authentication
-    cancelAuthentication(): void {
-        console.log('Cancelling Dropbox authentication');
-        this.authCancelled = true;
-        if (this.authWindow && !this.authWindow.isDestroyed()) {
-            this.authWindow.close();
-        }
     }
 
     // initialize the Dropbox Client
@@ -201,7 +137,7 @@ export class DropboxStorage implements CloudStorage {
             const response = await this.client.filesListFolder({ path: dir }); 
             const entries = response.result.entries;
         
-            const fileSystemItems: FileSystemItem[] = entries.map((entry: any) => ({
+            const fileSystemItems: FileSystemItem[] = entries.map(entry => ({
                 id: CLOUD_HOME + entry.path_lower, // Use path_lower for unique ID (Dropbox does NOT allow duplicate names)
                 name: entry.name,
                 isDirectory: entry['.tag'] === 'folder',
