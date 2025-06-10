@@ -67,11 +67,11 @@ const HomePage = () => {
         console.log("Deleting file from source:", fileContentCache);
         // source from the local file system
         if (!fileContentCache.sourceCloudType || !fileContentCache.sourceAccountId) {
-            await (window as any).fsApi.deleteFile(fileContentCache.path); // TODO remove from the corresponding source file owner           
-
+            await (window as any).fsApi.deleteFile(fileContentCache.path);
+        } else {
+            // source from the cloud file system
+            await (window as any).cloudFsApi.deleteFile(fileContentCache.sourceCloudType, fileContentCache.sourceAccountId, fileContentCache.path);
         }
-        // source from the cloud file system
-        await (window as any).cloudFsApi.deleteFile(fileContentCache.sourceCloudType, fileContentCache.sourceAccountId, fileContentCache.path); // TODO remove from the corresponding source file owner
         storageBoxesRef.current.forEach((box) => {
             console.log("Checking box:", box.id, "for file deletion");
             console.log("Box sourceAccountId:", box.accountId, "Box cloudType:", box.cloudType);
