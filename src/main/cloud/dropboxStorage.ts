@@ -232,7 +232,10 @@ export class DropboxStorage implements CloudStorage {
             return Promise.reject('Dropbox client is not initialized');
         }
         console.log('folderPath: ', folderPath);
-        
+        if (folderPath.startsWith('/')) {
+            folderPath = folderPath.substring(1); // Remove leading slash if present
+        }
+    
 
         /*
         curl -X POST https://content.dropboxapi.com/2/files/upload \
