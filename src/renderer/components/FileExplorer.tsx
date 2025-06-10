@@ -873,7 +873,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         localTargetRef.current = null;
     }
 
-    const handleItemMouseMove = (e: MouseEvent) => {
+    const handleItemMouseMove = async (e: MouseEvent) => {
         if (!localDragStartedRef.current && !localIsDraggingRef.current) {
             console.log("Not dragging, checking for drag start")
             const dx = e.clientX - dragStartPosRef.current.x
@@ -897,7 +897,22 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     accountId
                 );
                 console.log("Box drag started with items:", draggedFileItems.map(item => item.path));
-                tempGetFile?.(draggedFileItems.map(item => item.path), cloudType, accountId);
+                try {
+                    await tempGetFile?.(draggedFileItems.map(item => item.path), cloudType, accountId);
+                } catch (error) {
+                    console.error("Error loading files for drag operation:", error);
+                    // Reset drag state if file loading fails
+                    BoxDrag.setDragItems([], null);
+                    BoxDrag.setIsDragging(false);
+                    localIsDraggingRef.current = false;
+                    localDragStartedRef.current = false;
+                    
+                    toast.error("File Load Failed", {
+                        description: "Failed to load files for transfer",
+                        duration: 3000,
+                    });
+                    return;
+                }
                 // tempGetFile?.(draggedFileItems.map(item => item.path).join(","), cloudType, accountId);
             } else {
                 console.log("Distance TOoooooooooooooooooooo short:", distance)
