@@ -168,7 +168,7 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
                         console.log("Google Drive account connected:", toAddAccount);
                         addStorage(
                             "cloud",
-                            `Google Drive: ${toAddAccount}`,
+                            `Google Driven`,
                             <FaGoogleDrive className="h-6 w-6" />,
                             CloudType.GoogleDrive,
                             toAddAccount
@@ -178,7 +178,7 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
                         console.log("Dropbox account connected:", toAddAccount);
                         addStorage(
                             "cloud",
-                            `Dropbox: ${toAddAccount}`,
+                            `Dropbox`,
                             <FaDropbox className="h-6 w-6" />,
                             CloudType.Dropbox,
                             toAddAccount
@@ -188,7 +188,7 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
                         console.log("OneDrive account connected:", toAddAccount);
                         addStorage(
                             "cloud",
-                            `OneDrive: ${toAddAccount}`,
+                            `OneDrive`,
                             <TbBrandOnedrive className="h-6 w-6" />,
                             CloudType.OneDrive,
                             toAddAccount

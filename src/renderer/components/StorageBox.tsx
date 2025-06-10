@@ -584,7 +584,11 @@ function StorageBoxInner({
                         className="select-none flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30">
                         {icon || defaultIcon}
                     </div>
-                    <div className="select-none text-slate-800 dark:text-slate-200">{title}</div>
+                    <div>
+                        <div className="select-none text-slate-800 dark:text-slate-200">{title}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                            {type === "local" ? "" : `(${box.accountId})`}</div>
+                    </div>
                 </div>
                 <div className="flex items-center gap-1 select-none">
                     <DropdownMenu onOpenChange={setIsDropdownOpen}>
