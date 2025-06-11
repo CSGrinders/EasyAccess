@@ -17,12 +17,7 @@ interface UploadConfirmationDialogProps {
     fileCount?: number;
 }
 
-export const UploadConfirmationDialog: React.FC<UploadConfirmationDialogProps> = ({
-    isOpen,
-    onConfirm,
-    onCancel,
-    fileCount = 1,
-}) => {
+export const UploadConfirmationDialog = ({isOpen, onConfirm, onCancel, fileCount = 1}: UploadConfirmationDialogProps) => {
     const [keepOriginal, setKeepOriginal] = useState(false);
 
     const handleConfirm = () => {
