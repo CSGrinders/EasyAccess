@@ -1,6 +1,8 @@
 import type React from "react";
 import { CloudType } from "./cloudType";
-import {FileContent, FileSystemItem} from "./fileSystem";
+
+export const MIN_BOX_WIDTH = 400;
+export const MIN_BOX_HEIGHT = 360;
 
 export const WINDOW_SIZES = {
     medium: {width: 480, height: 360},
@@ -9,6 +11,7 @@ export const WINDOW_SIZES = {
 }
 
 export const WINDOW_TYPES = ["local", "cloud"]
+
 
 export interface StorageBoxProps {
     box: StorageBoxData

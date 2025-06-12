@@ -1,35 +1,24 @@
-import React, { useState, useRef, useEffect, use, useCallback } from 'react';
-import { CloudLightning, HardDrive } from "lucide-react"
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import {HardDrive } from "lucide-react"
 import CanvaSettings from "@Components/CanvaSettings";
 import ActionBar from "@Components/ActionBar";
 import { CanvasContainer } from "@Components/CanvasContainer";
 import { StorageBox } from "@Components/StorageBox";
 import { type StorageBoxData } from "@Types/box";
-import { FaGoogleDrive } from "react-icons/fa";
 import StorageSideWindow from '@/components/StorageSideWindow';
 import { CloudType } from '@Types/cloudType';
 import { FileContent } from '@Types/fileSystem';
 import { BoxDragProvider } from "@/contexts/BoxDragContext";
 import { BoxDragPreview } from '@/components/BoxDragPreview';
 import SettingsPanel from '@/components/SettingsPanel';
-
-import { motion, AnimatePresence } from "framer-motion" // Uncomment if available
-import { Button } from '@/components/ui/button';
 import AgentWindow from '../components/AgentWindow';
 import { MovingItemStatus } from '@/components/MovingItemStatus';
-const test = {
-    folders: ["Documents", "Pictures", "Downloads", "Desktop"],
-    files: ["readme.txt", "report.pdf", "image.jpg", "data.csv"],
-};
+import { UploadConfirmationDialog } from '@/components/UploadConfirmationDialog';
 
-export async function showAreYouSure(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-        const userConfirmed = window.confirm("Are you sure you want to upload the file? This action cannot be undone.");
-        if (userConfirmed) {
-            resolve();
-        } else {
-            reject(new Error("User cancelled the operation"));
-        }
+
+export async function showAreYouSure(): Promise<{ confirmed: boolean; keepOriginal: boolean }> {
+    return new Promise<{ confirmed: boolean; keepOriginal: boolean }>((resolve) => {
+        resolve({ confirmed: false, keepOriginal: false });
     });
 };
 
@@ -54,6 +43,8 @@ const HomePage = () => {
     const [showMcpTest, setShowMcpTest] = useState(false);
     const [disabledAction, setDisabledAction] = useState(false);
     const [isCancelling, setIsCancelling] = useState(false);
+    const [showUploadDialog, setShowUploadDialog] = useState(false);
+    const [uploadDialogResolve, setUploadDialogResolve] = useState<((value: { confirmed: boolean; keepOriginal: boolean }) => void) | null>(null);
 
     const fileContentsCacheRef = useRef<FileContent[]>([]);
     const isContentLoading = useRef(false);
@@ -68,8 +59,39 @@ const HomePage = () => {
         return boxRefs.current.get(id);
     };
 
+    // Function to show upload confirmation dialog
+    const showUploadConfirmation = (): Promise<{ confirmed: boolean; keepOriginal: boolean }> => {
+        return new Promise((resolve) => {
+            setUploadDialogResolve(() => resolve);
+            setShowUploadDialog(true);
+        });
+    };
+
+    // Handle upload dialog confirmation
+    const handleUploadDialogConfirm = (keepOriginal: boolean) => {
+        setShowUploadDialog(false);
+        if (uploadDialogResolve) {
+            uploadDialogResolve({ confirmed: true, keepOriginal });
+            setUploadDialogResolve(null);
+        }
+    };
+
+    // Handle upload dialog cancellation
+    const handleUploadDialogCancel = () => {
+        setShowUploadDialog(false);
+        if (uploadDialogResolve) {
+            uploadDialogResolve({ confirmed: false, keepOriginal: false });
+            setUploadDialogResolve(null);
+        }
+    };
+
     // Should be called from the successful uploaded file
-    const deleteFileFromSource = async (fileContentCache: FileContent) => {
+    const deleteFileFromSource = async (fileContentCache: FileContent, keepOriginal: boolean = false) => {
+        if (keepOriginal) {
+            console.log("Keeping original file, skipping deletion:", fileContentCache.path);
+            return;
+        }
+
         console.log("Deleting file from source:", fileContentCache);
         // source from the local file system
         if (!fileContentCache.sourceCloudType || !fileContentCache.sourceAccountId) {
@@ -96,8 +118,11 @@ const HomePage = () => {
 
     const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
         try {
-            // Wait for user confirmation
-            await showAreYouSure();
+            // Wait for user confirmation with the new dialog
+            const confirmation = await showUploadConfirmation();
+            if (!confirmation.confirmed) {
+                throw new Error("User cancelled the operation");
+            }
 
             // Show MovingItemStatus popup immediately after confirmation
             setIsMovingItem(true);
@@ -139,7 +164,7 @@ const HomePage = () => {
                         throw new Error("Transfer cancelled by user");
                     }
 
-                    setCurrentMovingItem(`Uploading ${fileContent.name}`);
+                    setCurrentMovingItem(`${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${fileContent.name}`);
                     
                     try {
                         await (window as any).fsApi.postFile(
@@ -147,7 +172,7 @@ const HomePage = () => {
                             parentPath,
                             fileContent.content
                         );
-                        await deleteFileFromSource(fileContent);
+                        await deleteFileFromSource(fileContent, confirmation.keepOriginal);
                         completedFiles++;
                         setMovingItemProgress((completedFiles / totalFiles) * progressRange);
                     } catch (err) {
@@ -161,7 +186,7 @@ const HomePage = () => {
                         throw new Error("Transfer cancelled by user");
                     }
 
-                    setCurrentMovingItem(`Uploading ${fileContent.name}`);
+                    setCurrentMovingItem(`${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${fileContent.name}`);
                     
                     try {
                         await (window as any).cloudFsApi.postFile(
@@ -171,7 +196,7 @@ const HomePage = () => {
                             parentPath,
                             fileContent.content
                         );
-                        await deleteFileFromSource(fileContent);
+                        await deleteFileFromSource(fileContent, confirmation.keepOriginal);
                         completedFiles++;
                         setMovingItemProgress((completedFiles / totalFiles) * progressRange);
                     } catch (err) {
@@ -555,6 +580,13 @@ const HomePage = () => {
                     </div>
                     <BoxDragPreview zoomLevel={zoomLevel} />
                 </BoxDragProvider>
+                
+                <UploadConfirmationDialog
+                    isOpen={showUploadDialog}
+                    onConfirm={handleUploadDialogConfirm}
+                    onCancel={handleUploadDialogCancel}
+                    fileCount={fileContentsCacheRef.current?.length || 1}
+                />
             </main>
         </div>
     );
