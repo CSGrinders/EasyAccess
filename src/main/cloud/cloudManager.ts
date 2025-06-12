@@ -4,12 +4,13 @@ This file works as a middleman between the main process and the cloud storage pr
 
 import { CLOUD_HOME, CloudType } from "../../types/cloudType";
 import Store from 'electron-store';
-import { AuthTokens, CloudStorage } from './cloudStorage';
+import { CloudStorage } from './cloudStorage';
 import { GoogleDriveStorage } from './googleStorage';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { OneDriveStorage } from "./onedriveStorage";
 import { BrowserWindow, safeStorage } from "electron";
 import { DropboxStorage } from "./dropboxStorage";
+import { randomBytes } from 'crypto';
 
 const mime = require('mime-types');
 
@@ -74,11 +75,45 @@ export async function clearStore(): Promise<boolean> {
     return false;
   }
 }
+function generateUserKey(): string {
+    try {
+        // Generate 32 bytes of random data (256 bits)
+        const randomData = randomBytes(32);
+        
+        // Convert to base64 string
+        const randomKey = randomData.toString('base64');
+        
+        // Remove non-alphanumeric characters for cleaner keys
+        const cleanKey = randomKey.replace(/[^a-zA-Z0-9]/g, '');
+        
+        // Take first 32 characters to keep consistent length
+        return cleanKey.slice(0, 32);
+    } catch (error) {
+        console.error('Failed to generate user key:', error);
+        // Fallback to timestamp-based key if crypto fails
+        const timestamp = Date.now().toString(36);
+        const random = Math.random().toString(36).substring(2);
+        return `${timestamp}${random}`.slice(0, 32);
+    }
+}
+
+const getUserKey = () => {
+  const userKey = store.get('userKey') as string | null;
+  if (!userKey) {
+    console.warn('No user key found in local storage');
+    // insert logic to generate a new user key if needed
+    const newUserKey = generateUserKey();
+    store.set('userKey', encryptData(newUserKey));
+    return newUserKey;
+  }
+  return decryptData(userKey);
+}
 
 // Traverse electron local storage to load all stored accounts into StoredAccounts
 export async function loadStoredAccounts(): Promise<void> {
   StoredAccounts.clear(); // Clear the existing accounts
 
+  const userKey = getUserKey(); // Get the user key from local storage
   const allData = store.store; // Get all key-value pairs
 
   console.log('All stored data:', allData);
@@ -90,23 +125,23 @@ export async function loadStoredAccounts(): Promise<void> {
     // Ensure this is an object (not a primitive value)
     if (typeof accountId_tokens !== 'object' || accountId_tokens === null) continue;
 
-    for (const [encodedAccountId, tokenData] of Object.entries(accountId_tokens)) {
+    for (const [encodedAccountId, encryptedKey] of Object.entries(accountId_tokens)) {
       const accountId = decodeAccountId(encodedAccountId); 
       
       try {
-        let decryptedTokenData: string;
+        let decryptedKey: string;
         
         // Handle both encrypted and plain text data for backward compatibility
-        if (typeof tokenData === 'string') {
-          decryptedTokenData = decryptData(tokenData);
+        if (typeof encryptedKey === 'string') {
+          decryptedKey = decryptData(encryptedKey);
         } else {
           // If it's not a string, it might be legacy plain object data
-          decryptedTokenData = JSON.stringify(tokenData);
+          decryptedKey = JSON.stringify(encryptedKey);
         }
 
-        const tokens: AuthTokens | null = !decryptedTokenData || decryptedTokenData === 'null'
+        const userKey: string | null = !decryptedKey || decryptedKey === 'null'
           ? null
-          : JSON.parse(decryptedTokenData);
+          : JSON.parse(decryptedKey);
 
         console.log(`Cloud: ${cloudType}, Account ID: ${accountId} - tokens loaded securely`);
         
@@ -118,7 +153,7 @@ export async function loadStoredAccounts(): Promise<void> {
             cloudStorageInstance = new GoogleDriveStorage();
             break;
           case CloudType.OneDrive:
-            cloudStorageInstance = new OneDriveStorage();
+            // cloudStorageInstance = new OneDriveStorage();
             break;
           case CloudType.Dropbox:
             cloudStorageInstance = new DropboxStorage();
@@ -128,8 +163,7 @@ export async function loadStoredAccounts(): Promise<void> {
             continue;
         }
         if (cloudStorageInstance) {
-          cloudStorageInstance.AuthToken = tokens;
-          cloudStorageInstance.accountId = accountId;
+          await cloudStorageInstance.initAccount(accountId, userKey);
           if (!StoredAccounts.has(cloudType)) {
             StoredAccounts.set(cloudType, []);
           }
@@ -187,20 +221,20 @@ export async function connectNewCloudAccount(cloudType: CloudType) : Promise<str
       throw new Error('Failed to create cloud storage instance');
     }
 
-    const authPromise = cloudStorageInstance.connect().then(async () => {
+    const userKey = getUserKey(); // Get the user key from local storage
+    const authPromise = cloudStorageInstance.connect(userKey).then(async () => {
       if (authCancelled) {
         throw new Error('Authentication cancelled');
       }
       
       console.log('Connected to cloud account:', cloudType);
 
-      const authTokens = cloudStorageInstance!.getAuthToken();
       const accountId = cloudStorageInstance!.getAccountId();
 
-      // TODO allow null authTokens?
+      // TODO allow null accountId?
       if (accountId) {
         // Save the account to local storage
-        await saveCloudAccountLocaStorage(cloudType, accountId, authTokens);
+        await saveCloudAccountLocaStorage(cloudType, accountId);
         // Add the account to StoredAccounts
         if (!StoredAccounts.has(cloudType)) {
           StoredAccounts.set(cloudType, []);
@@ -399,10 +433,11 @@ export async function postFile(CloudType: CloudType, accountId: string, fileName
 }
 
 // Store cloud account tokens using safeStorage
-export async function saveCloudAccountLocaStorage(cloudType: CloudType, accountId: string, tokens: AuthTokens | null): Promise<void> {
+export async function saveCloudAccountLocaStorage(cloudType: CloudType, accountId: string): Promise<void> {
   try {
-    // token is null on onedrive
-    const serializedTokens = JSON.stringify(tokens);
+    // userKey is useless here, but for now I just put it in the store.... TODO: remove it later
+    const userKey = getUserKey();
+    const serializedTokens = JSON.stringify(userKey);
     
     // Encrypt data
     const encryptedTokens = encryptData(serializedTokens);

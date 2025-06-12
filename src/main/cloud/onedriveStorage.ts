@@ -1,4 +1,4 @@
-import { CloudStorage,AuthTokens, isValidToken } from './cloudStorage';
+import { CloudStorage } from './cloudStorage';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
@@ -20,22 +20,24 @@ const MSAL_CONFIG = {
 };
 
 /*
-
   Before calling api, need to check if client is authenticated. Pull the client from the cache with the accountId
-
 */
 export class OneDriveStorage implements CloudStorage {
   accountId?: string | undefined;
-  AuthToken?: AuthTokens | null | undefined;
+  accessToken?: string | undefined;
 
   client?: typeof PublicClientApplication | null = null; // MSAL client that manage multiple accounts
   graphClient?: any; // Graph client for OneDrive / Need for file operations
 
   account: any; // an account for this storage
-  authCancelled: boolean = false; // Flag to track if authentication was cancelled
+  userKey?: string | undefined;
 
   constructor() {
     this.initClient();
+  }
+
+  getAccessToken(): string | null {
+    return this.accessToken || null;
   }
 
   // load public client application which can access all stored accounts with persistence
@@ -114,24 +116,19 @@ export class OneDriveStorage implements CloudStorage {
       console.error('Account ID is not set for the storage');
     }
 
-    await this.connect(); // try with interactive login if account is not found
+    await this.connect(this.userKey); // try with interactive login if account is not found
     return this.account;
   }
 
-  async connect(): Promise<void | any> {
-    this.authCancelled = false; 
-    
+  async connect(userKey: string | undefined): Promise<void | any> {
+    this.userKey = userKey; // store the user key for later use
     if (!this.client) {
       await this.initClient();
     }
 
     if (!this.client) {
       console.error('MSAL client is not initialized');
-      throw new Error('OneDrive client initialization failed');
-    }
-    
-    if (this.authCancelled) {
-      throw new Error('Authentication cancelled');
+      return;
     }
     
     const tokenRequest = {
@@ -155,17 +152,10 @@ export class OneDriveStorage implements CloudStorage {
           successTemplate: '<h1>Successfully signed in!</h1> <p>You can close this window now.</p>',
           errorTemplate: '<h1>Oops! Something went wrong</h1> <p>Check the console for more information.</p>',
       });
-      
       console.log('authResponse: ', authResponse);
-      
-  
-      if (this.authCancelled) {
-        throw new Error('Authentication cancelled');
-      }
-      
-      if (authResponse && authResponse.account) {
+      if (authResponse) {
         this.accountId = authResponse.account?.username || '';
-        this.AuthToken = null; // AuthToken is not set here since MSAL handles it internally. This should be allowed to be null
+        this.accessToken = undefined; // AuthToken is not set here since MSAL handles it internally. This should be allowed to be null
         this.account = authResponse.account;
         this.graphClient = Client.init({
           authProvider: (done) => {
@@ -174,26 +164,11 @@ export class OneDriveStorage implements CloudStorage {
         });
         console.log('OneDrive account connected:', this.accountId);
       } else {
-        throw new Error('Authentication failed - no account information received');
+        console.error('Failed to authenticate with OneDrive');
       }
-    } catch (error: any) {
-        console.error('OneDrive authentication error:', error);
-        if (error.errorCode === 'user_cancelled' || error.message?.includes('cancelled') || error.message?.includes('aborted')) {
-            throw new Error('Authentication cancelled');
-        } else if (error.errorCode === 'network_error' || error.message?.includes('network') || error.message?.includes('timeout')) {
-            throw new Error('Network connection failed');
-        } else if (error.errorCode === 'invalid_grant' || error.message?.includes('invalid')) {
-            throw new Error('Authentication failed');
-        } else {
-            throw new Error('Authentication failed. Please try again.');
-        }
+    } catch (error) {
+        throw error;
     }
-  }
-
-  // Cancel authentication process
-  cancelAuthentication(): void {
-    console.log('Cancelling OneDrive authentication...');
-    this.authCancelled = true;
   }
 
   async readDir(dir: string): Promise<FileSystemItem[]> {
@@ -262,7 +237,7 @@ export class OneDriveStorage implements CloudStorage {
       // If we get an access denied error, try to refresh the token
       if (error instanceof InteractionRequiredAuthError) {
         console.log('Access denied, attempting to refresh token...');
-        await this.connect();
+        await this.connect(this.userKey);
         return this.readDir(dir); // Retry reading the directory after re-authentication
       }
       
@@ -273,10 +248,6 @@ export class OneDriveStorage implements CloudStorage {
   getAccountId(): string {
     return this.accountId || '';
   }
-  getAuthToken(): AuthTokens | null {
-    return this.AuthToken || null;
-  }
-
   async getFile(filePath: string): Promise<FileContent> {
     if (!this.graphClient) {
       await this.initAccount();

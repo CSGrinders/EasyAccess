@@ -2,6 +2,9 @@ import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { a } from 'framer-motion/dist/types.d-CtuPurYT';
 import { authenticateWithGoogle } from './googleAuth';
+import { google } from 'googleapis';
+import { authenticateDropbox } from './dropboxAuth';
+import { Dropbox } from 'dropbox';
 
 export enum CloudType {
     GoogleDrive = 'GoogleDrive',
@@ -51,18 +54,24 @@ app.post('/connect-new-account', async (req, res) => {
     case CloudType.GoogleDrive:
       console.log('Google cloud type selected, returning refresh token');
       // send the refresh token to the Google API to get an auth token
-      const response = await authenticateWithGoogle(authorizationCode);
-      accountId = response.accountId;
-      refreshToken = response.refreshToken;
-      accessToken = response.accessToken;
+      const responseG = await authenticateWithGoogle(authorizationCode);
+      accountId = responseG.accountId;
+      refreshToken = responseG.refreshToken;
+      accessToken = responseG.accessToken;
       break;
     case CloudType.Dropbox:
       console.log('Dropbox cloud type selected, returning refresh token');
-      // {accountId, refreshToken} = await authenticateDropbox(authorizationCode);
+      const responseD = await authenticateDropbox(authorizationCode);
+      accountId = responseD.accountId;
+      refreshToken = responseD.refreshToken;
+      accessToken = responseD.accessToken;
       break;
     case CloudType.OneDrive:
       console.log('OneDrive cloud type selected, returning refresh token');
-      // {accountId, refreshToken} = await authenticateOneDrive(authorizationCode);
+      // const responseO = await authenticateOneDrive(authorizationCode);
+      // accountId = responseO.accountId;
+      // refreshToken = responseO.refreshToken;
+      // accessToken = responseO.accessToken;
       break;
     default:
       console.error('Unsupported cloud type:', cloudType);
@@ -82,8 +91,8 @@ app.post('/connect-new-account', async (req, res) => {
     return res.status(500).json({ error: 'Failed to insert refresh token' });
   }
 
-  return res.json({ accountId: accountId,
-    refreshToken: refreshToken,
+  return res.json({ 
+    accountId: accountId,
     accessToken: accessToken,
     message: 'New account connected successfully'
   });
@@ -101,6 +110,7 @@ app.post('/get-new-token', async (req, res) => {
   console.log('Cloud Type:', cloudType);
   console.log('User Key:', userKey);
 
+  // get the refresh token from the database based on the accountId, cloudType, and userKey
   const { data, error } = await supabase.rpc('read_secret', {
     secret_name: `${accountId}_${cloudType}_${userKey}`
   });
@@ -118,22 +128,58 @@ app.post('/get-new-token', async (req, res) => {
 
   const refreshToken = data;
 
-  let authToken = null;
+  let accessToken = null;
 
   // TODO : Implement the logic to exchange the refresh token for an auth token based on the cloud type
   switch (cloudType) {
-    case 'google':
+    case CloudType.GoogleDrive:
       console.log('Google cloud type selected, returning refresh token');
       // send the refresh token to the Google API to get an auth token
-      authToken = refreshToken; // Placeholder for actual token retrieval logic
+      // TODO : Implement the logic to get the auth token from Google API with the refresh token
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET,
+        process.env.GOOGLE_REDIRECT_URI
+      );
+
+      // Set the refresh token gained from supabase
+      oauth2Client.setCredentials({
+        refresh_token: refreshToken
+      });
+
+      // Automatically refreshes access token
+      const { token } = await oauth2Client.getAccessToken();
+      console.log("New access token:", token);
+      accessToken = token;
       break;
-    case 'dropbox':
+    case CloudType.Dropbox:
       console.log('Dropbox cloud type selected, returning refresh token');
-      authToken = refreshToken; // Placeholder for actual token retrieval logic
+      
+      const response = await fetch('https://api.dropboxapi.com/oauth2/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: process.env.DROPBOX_KEY || '',
+          client_secret: process.env.DROPBOX_SECRET || '',
+        }),
+      });
+
+      const tokenData = await response.json();
+      console.log('Refreshed token data:', tokenData);
+      if (!tokenData.access_token) {
+        console.error('Failed to retrieve access token from Dropbox');
+        return res.status(400).json({ error: 'Failed to retrieve access token' });
+      }
+      accessToken = tokenData.access_token;
+
       break;
-    case 'onedrive':
+    case CloudType.OneDrive:
       console.log('OneDrive cloud type selected, returning refresh token');
-      authToken = refreshToken; // Placeholder for actual token retrieval logic
+      accessToken = refreshToken; // Placeholder for actual token retrieval logic
       break;
     default:
       console.error('Unsupported cloud type:', cloudType);
@@ -141,7 +187,7 @@ app.post('/get-new-token', async (req, res) => {
   } 
 
   // Send the fetched data as the response
-  return res.json({ authToken: authToken });
+  return res.json({ accessToken: accessToken });
 });
 
 app.listen(port, () => {

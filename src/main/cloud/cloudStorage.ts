@@ -7,32 +7,20 @@ Each provider has its own authentication method and file retrieval process.
 
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 
-export type AuthTokens = {
-    access_token: string;
-    refresh_token: string;
-    expiry_date: number;
-};
-  
-export type StoredTokens = {
-    [accountId: string]: AuthTokens;
-};
-
 // load tokens from the store or from the cloud
 export interface CloudStorage {
     accountId?: string;
-    AuthToken?: AuthTokens | null;
+    accessToken?: string;
+    userKey?: string;
 
-    connect(): Promise<void | any>;
+    connect(userKey: string): Promise<void | any>;
     readDir(dir: string): Promise<FileSystemItem[]>; //TODO
     // readFile(filePath: string): Promise<string>
     getFile(filePath: string): Promise<FileContent>; //TODO
     postFile(fileName: string, folderPath: string, type: string, data: Buffer): Promise<void>; //TODO
     getAccountId(): string;
-    getAuthToken(): AuthTokens | null;
+    getAccessToken(): string | null;
     deleteFile(filePath: string): Promise<void>; //TODO
+    initAccount(accountId: string | null, userKey?: string | null): Promise<void>;  // initialize the account with the accountId and userKey (request access token from the server)
 }
 
-
-export function isValidToken(tokens: AuthTokens): boolean {
-    return !!tokens.access_token && tokens.expiry_date > Date.now();
-}
