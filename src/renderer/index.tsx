@@ -1,9 +1,7 @@
-import React from 'react';
 import ReactDOM from 'react-dom/client';
-import HomePage from '@Pages/HomePage';
-import {FileExplorer} from "@Components/FileExplorer";
+import Dashboard from '@/pages/Dashboard';
 import "./global.css";
-import Titlebar from "@Components/Titlebar";
+import Titlebar from "@/components/app/Titlebar";
 import { Toaster } from "@Components/ui/sonner";
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
@@ -11,7 +9,7 @@ const root = ReactDOM.createRoot(document.getElementById('root')!);
 root.render(
     <div className="w-screen h-screen overflow-hidden">
         <Titlebar />
-        <HomePage />
+        <Dashboard />
         <Toaster />
     </div>
 );

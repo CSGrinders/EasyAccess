@@ -71,7 +71,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { showAreYouSure } from "@/pages/HomePage"
+import { showAreYouSure } from "@/pages/Dashboard"
 import { toast } from "sonner"
 
 interface FileExplorerProps {

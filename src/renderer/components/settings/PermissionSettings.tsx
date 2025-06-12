@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PermissionState, MCPStatus } from '@Types/permissions';
 import { Button } from '@Components/ui/button';
 import { Card } from '@Components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '../ui/dialog';
 import { Shield, CheckCircle, XCircle, Settings, AlertTriangle, Zap, RefreshCw, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 

@@ -17,7 +17,7 @@ import {
     DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
 import {StorageBoxProps, WINDOW_SIZES, MIN_BOX_HEIGHT, MIN_BOX_WIDTH} from "@Types/box";
-import {FileExplorer} from "@Components/FileExplorer";
+import {FileExplorer} from "@/components/boxes/FileExplorer";
 import {useBoxDrag} from "@/contexts/BoxDragContext";
 
 /**

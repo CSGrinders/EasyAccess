@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { CloudItem } from "./ui/cloudItem";
+import { CloudItem } from "../ui/cloudItem";
 import { FaDropbox, FaGoogleDrive} from "react-icons/fa";
 import { TbBrandOnedrive } from "react-icons/tb";
 import { SiIcloud } from "react-icons/si";
 import {StorageWideWindowProps} from "@Types/box";
-import { CloudType } from "../../types/cloudType";
+import { CloudType } from "../../../types/cloudType";
 import { PopupAccounts } from "./PopupAccounts";
 import { HardDrive, Cloud as CloudIcon, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
