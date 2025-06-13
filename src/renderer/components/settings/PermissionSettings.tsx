@@ -1,8 +1,19 @@
+/**
+ * PermissionSettings Component 
+ * 
+ * Dialog for managing file system permissions and MCP integration
+ * 
+ * The dialog shows a color-coded status system:
+ * - Green: All critical permissions granted (excellent)
+ * - Blue: Most permissions granted (good)
+ * - Yellow: Some permissions granted (limited)
+ * - Red: No permissions granted (restricted)
+ */
+
 import React, { useState, useEffect } from 'react';
 import { PermissionState, MCPStatus } from '@Types/permissions';
 import { Button } from '@Components/ui/button';
-import { Card } from '@Components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '../ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@Components/ui/dialog';
 import { Shield, CheckCircle, XCircle, Settings, AlertTriangle, Zap, RefreshCw, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -10,13 +21,27 @@ interface PermissionSettingsProps {
     children: React.ReactNode;
 }
 
-export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children }) => {
+export const PermissionSettings = ({ children }: PermissionSettingsProps) => {
+
+    /** Current permission status from the system */
     const [permissions, setPermissions] = useState<PermissionState | null>(null);
+
+    /** Dialog state */
     const [isOpen, setIsOpen] = useState(false);
+
+    /** Processing a permision request */
     const [isLoading, setIsLoading] = useState(false);
+
+    /** MCP status and info */
     const [mcpStatus, setMcpStatus] = useState<string>('');
     const [mcpInfo, setMcpInfo] = useState<MCPStatus | null>(null);
 
+
+
+    /**
+     * Load current permission status from the system
+     * This gets the actual permission state from the electron API storage
+     */
     const loadPermissions = async () => {
         try {
             const perms = await window.permissionApi.getPermissions();
@@ -26,6 +51,10 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
         }
     };
 
+     /**
+     * Load current MCP status
+     * MCP is what allows AI agents to securely access the file system
+     */
     const loadMCPStatus = async () => {
         try {
             const status = await window.mcpApi.getStatus();
@@ -35,9 +64,15 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
         }
     };
 
+    /**
+     * Reinitialize MCP with current permissions
+     * This is needed when permissions change to update MCP's allowed directories
+     */
     const reinitializeMCP = async () => {
         try {
             setMcpStatus('Reinitializing MCP...');
+
+            // Ask the system to restart MCP with new permissions
             const result = await window.mcpApi.reinitialize();
             if (result.success) {
                 setMcpStatus('MCP reinitialized successfully');
@@ -54,6 +89,11 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
         }
     };
 
+    
+    /**
+     * Load fresh data when dialog opens
+     * We only fetch data when needed to avoid unnecessary API calls
+     */
     useEffect(() => {
         if (isOpen) {
             loadPermissions();
@@ -76,6 +116,11 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
         }
     };
 
+
+    /**
+     * Request new permissions from the operating system
+     * This will show system permission dialogs to the user
+     */
     const handleResetPermissions = async () => {
         setIsLoading(true);
         try {
@@ -91,14 +136,11 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
         }
     };
 
-    const handleShowSystemPreferences = async () => {
-        try {
-            await window.permissionApi.showSystemPreferences();
-        } catch (error) {
-            console.error('Error showing system preferences:', error);
-        }
-    };
 
+    /**
+     * Create a visual status indicator for individual permissions
+     * Shows green checkmark for granted, red X for denied
+     */
     const getPermissionStatus = (hasPermission: boolean) => {
         return hasPermission ? 
             <div className="flex items-center gap-2">
@@ -111,18 +153,25 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
             </div>;
     };
 
+    /**
+     * Determine overall permission status and color scheme
+     * This creates the main status card that summarizes everything
+     */
     const getOverallStatus = () => {
         if (!permissions) return { status: 'unknown', color: 'gray', message: 'Loading...' };
         
+        // Check the most important permissions for file access
         const criticalPermissions = [
-            permissions.filesystemAccess,
-            permissions.documentsAccess,
-            permissions.downloadsAccess,
-            permissions.desktopAccess
+            permissions.filesystemAccess,   // General file system access
+            permissions.documentsAccess,    // Access to ~/Documents
+            permissions.downloadsAccess,    // Access to ~/Downloads
+            permissions.desktopAccess       // Access to ~/Desktop
         ];
         
+        // Count how many critical permissions are granted
         const grantedCount = criticalPermissions.filter(Boolean).length;
 
+        // Determine status based on granted permissions
         if (grantedCount >= 3) {
             return {
                 status: 'excellent',
@@ -151,6 +200,7 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
     };
     
 
+    /** Choose the right icon based on permission status */
     const renderStatusIcon = (color: string) => {
         switch (color) {
             case 'green':
@@ -171,6 +221,8 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
             <DialogTrigger asChild>
                 {children}
             </DialogTrigger>
+
+            {/* Main dialog content */}
             <DialogContent className="max-w-4xl w-[95vw] sm:max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl max-h-[85vh] overflow-y-auto">
                 <DialogHeader className="space-y-4">
                     <div className="flex items-center gap-4">
@@ -188,6 +240,7 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
                     </div>
                 </DialogHeader>
                 
+                {/* Main content area */}
                 <div className="space-y-6 pt-2">
                     {permissions && (
                         <>
@@ -226,11 +279,13 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
                                     </div>
                                 </div>
                             </div>
+
                             <div className="space-y-4">
                                 <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700 pb-2">
                                     Permission Details
                                 </h3>
                                 
+                                {/* General File Access Permission */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                                         <Shield className="h-5 w-5 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
@@ -243,6 +298,7 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
                                         </div>
                                     </div>
 
+                                    {/* Documents Folder Permission */}
                                     <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                                         <Settings className="h-5 w-5 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
                                         <div className="flex-1 min-w-0">
@@ -254,6 +310,7 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
                                         </div>
                                     </div>
 
+                                    {/* Downloads Folder Permission */}    
                                     <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                                         <Settings className="h-5 w-5 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
                                         <div className="flex-1 min-w-0">
@@ -265,7 +322,7 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
                                         </div>
                                     </div>
 
-    
+                                    {/* Desktop Folder Permission */}
                                     <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                                         <Settings className="h-5 w-5 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
                                         <div className="flex-1 min-w-0">
@@ -277,7 +334,7 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
                                         </div>
                                     </div>
                         
-
+                                    {/* Remember Choice Setting */}
                                     <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                                         <Settings className="h-5 w-5 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
                                         <div className="flex-1 min-w-0">
@@ -298,11 +355,14 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
                                 </div>
                             </div>
 
+                            {/* MCP Integration Section */}
                             <div className="mt-6">
                                 <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
                                     <Zap className="h-5 w-5 text-blue-500" />
                                     Model Context Protocol (MCP) Integration 
                                 </h3>
+
+                                {/* Show temporary status messages */}
                                 <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
                                     <div className="flex items-start gap-3">
                                         <div className="flex-1">
@@ -331,6 +391,8 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
                                                 </div>
                                             </div>
                                         </div>
+
+                                        {/* Button to reinitialize MCP */}
                                         <Button
                                             onClick={reinitializeMCP}
                                             size="sm"
@@ -346,8 +408,11 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
                         </>
                     )}
 
+                    {/* Main user actions for permissions */}
                     <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
                         <div className="flex flex-col sm:flex-row gap-3">
+
+                            {/* Request Permissions Button */}
                             <Button 
                                 onClick={handleRequestPermissions} 
                                 disabled={isLoading || (permissions ? getOverallStatus().color === 'green' : false)}
@@ -360,7 +425,7 @@ export const PermissionSettings: React.FC<PermissionSettingsProps> = ({ children
                                 </div>
                             </Button>
                             
-                            
+                             {/* Reset Permissions Button */}
                             <Button 
                                 onClick={handleResetPermissions} 
                                 disabled={isLoading}
