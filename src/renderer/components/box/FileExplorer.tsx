@@ -1150,7 +1150,7 @@ export const FileExplorer = memo(function FileExplorer ({
             throttleTimeoutRef.current = null
         }
 
-        // Process file move if there's a valid drop target (TODO FIX, MULTIPLE CALLS TO TEMPPOSTFILE?)
+        // Process file move if there's a valid drop target (TODO: FIX, MULTIPLE CALLS TO TEMPPOSTFILE?)
         if (localIsDraggingRef.current && localTargetRef.current) {
             const targetItem = sortedItems.find((item) => item.id === String(localTargetRef.current?.targetId));
             if (targetItem && targetItem.isDirectory) {
