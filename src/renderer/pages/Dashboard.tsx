@@ -3,24 +3,18 @@ import {HardDrive } from "lucide-react"
 import CanvaSettings from "@/components/canvas/CanvaSettings";
 import ActionBar from "@/components/app/ActionBar";
 import { CanvasContainer } from "@/components/canvas/CanvasContainer";
-import { StorageBox } from "@/components/boxes/StorageBox";
+import { StorageBox } from "@/components/box/StorageBox";
 import { type StorageBoxData } from "@Types/box";
-import StorageSideWindow from '@/components/boxes/StorageSideWindow';
+import StorageSideWindow from '@/components/box/StorageSideWindow';
 import { CloudType } from '@Types/cloudType';
 import { FileContent } from '@Types/fileSystem';
 import { BoxDragProvider } from "@/contexts/BoxDragContext";
-import { BoxDragPreview } from '@/components/boxes/BoxDragPreview';
+import { BoxDragPreview } from '@/components/box/BoxDragPreview';
 import SettingsPanel from '@/pages/SettingsPanel';
 import AgentWindow from '../components/app/AgentWindow';
 import { MovingItemStatus } from '@/components/transactions/MovingItemStatus';
 import { UploadConfirmationDialog } from '@/components/transactions/UploadConfirmationDialog';
 
-
-export async function showAreYouSure(): Promise<{ confirmed: boolean; keepOriginal: boolean }> {
-    return new Promise<{ confirmed: boolean; keepOriginal: boolean }>((resolve) => {
-        resolve({ confirmed: false, keepOriginal: false });
-    });
-};
 
 const Dashboard = () => {
     const [zoomLevel, setZoomLevel] = useState(1);

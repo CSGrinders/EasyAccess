@@ -1,7 +1,9 @@
-/*
-TODO
-Fix id (BoxDrag.target?.boxId) number vs string with item.id 
-*/
+/**
+ * FileExplorer Component
+ * 
+ * This is a file manager that shows files and folders like Windows Explorer or Mac Finder.
+ * It can work with both files on your computer (local) and files in the cloud (Google Drive, Dropbox, etc.).
+ */
 
 import React, {useEffect, useState, useRef, useCallback, memo} from "react"
 import {
@@ -43,7 +45,6 @@ import {
     Mail,
     Calendar,
     Layers,
-    Box,
     Info,
     HardDrive,
     Clock,
@@ -55,9 +56,7 @@ import {Input} from "@/components/ui/input"
 import {Button} from "@/components/ui/button"
 import {cn} from "@/lib/utils"
 import {CLOUD_HOME, CloudType} from "@Types/cloudType"
-import { Progress } from "./ui/progress"
 import {useBoxDrag} from "@/contexts/BoxDragContext";
-import { postFile } from "src/main/cloud/cloudManager"
 import {
     Dialog,
     DialogContent,
@@ -71,25 +70,36 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { showAreYouSure } from "@/pages/Dashboard"
 import { toast } from "sonner"
 
+/**
+ * Props interface for the FileExplorer component
+ */
 interface FileExplorerProps {
-    cloudType?: CloudType
-    accountId?: string
-    zoomLevel: number
-    tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void
-    tempGetFile?: (filePaths: string[], cloudType?: CloudType, accountId?: string) => void
-    boxId: number
-    isBoxToBoxTransfer?: boolean
-    refreshToggle?: boolean // to refresh the state of the file explorer
-    onCurrentPathChange?: (currentPath: string) => void
+    cloudType?: CloudType                                                                   // Cloud storage provider type 
+                                                                                            // (e.g., 'dropbox', 'google', 'onedrive')
+    accountId?: string                                                                      // Unique identifier for the cloud account 
+    zoomLevel: number                                                                       // Zoom level for the file explorer
+    tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void  // Function to post a file to the cloud
+    tempGetFile?: (filePaths: string[], cloudType?: CloudType, accountId?: string) => void  // Function to get a file from the cloud
+    boxId: number                                                                           // Unique identifier for the box 
+    isBoxToBoxTransfer?: boolean                                                            // Whether the transfer is between boxes
+    refreshToggle?: boolean                                                                 // Toggle to refresh the file explorer  
+    onCurrentPathChange?: (currentPath: string) => void                                     // Callback when the current path changes
 }
 
 
+/**
+ * Picks the right icon for a file or folder based on its name
+ * 
+ * For folders: looks at folder name to pick special icons
+ * For files: looks at file extension (.jpg, .pdf, .mp3, etc.) to pick the right icon
+ */
 const getFileIcon = (fileName: string, isDirectory: boolean = false) => {
     if (isDirectory) {
         const folderName = fileName.toLowerCase();
+
+        // Check for special folder names and return icons
         if (folderName.includes('download')) return Download;
         if (folderName.includes('desktop')) return Monitor;
         if (folderName.includes('document')) return BookOpen;
@@ -102,35 +112,74 @@ const getFileIcon = (fileName: string, isDirectory: boolean = false) => {
         if (folderName.includes('src') || folderName.includes('source')) return Code;
         if (folderName.includes('bin') || folderName.includes('executable')) return Zap;
         if (folderName.includes('lib') || folderName.includes('library')) return Layers;
+
+        // Default folder icon
         return FolderIcon;
     }
 
+    // Handle files - get the file extension (part after the last dot)
     const ext = fileName.toLowerCase().split('.').pop() || '';
 
+    // Programming and code files
     if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'c', 'cs', 'php', 'rb', 'go', 'rs', 'swift', 'kt'].includes(ext)) return Code;
+
+    // Web files (HTML, CSS)
     if (['html', 'htm', 'css', 'scss', 'sass', 'less'].includes(ext)) return Globe;
+
+    // Image files
     if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico', 'tiff', 'raw'].includes(ext)) return FileImage;
+
+    // Video files
     if (['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'm4v', '3gp'].includes(ext)) return FileVideo;
+
+    // Audio files
     if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a', 'opus'].includes(ext)) return FileAudio;
+
+    // Document files
     if (['pdf', 'doc', 'docx', 'rtf', 'odt', 'pages'].includes(ext)) return BookOpen;
+
+    // Text files
     if (['txt', 'md', 'markdown', 'readme', 'log', 'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg'].includes(ext)) return FileText;
+
+    // Spreadsheet files
     if (['xls', 'xlsx', 'csv', 'ods', 'numbers'].includes(ext)) return FileSpreadsheet;
+
+    // Archive/compressed files
     if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'deb', 'rpm', 'dmg', 'iso'].includes(ext)) return Archive;
+
+    // Executable files
     if (['exe', 'msi', 'app', 'deb', 'rpm', 'dmg', 'pkg', 'run', 'bin'].includes(ext)) return Zap;
+
+    // Database files
     if (['db', 'sqlite', 'sql', 'mdb', 'accdb'].includes(ext)) return Database;
+
+    // Design files
     if (['psd', 'ai', 'sketch', 'fig', 'xd', 'indd'].includes(ext)) return Palette;
+
+    // System files
     if (['dll', 'sys', 'so', 'dylib'].includes(ext)) return Cpu;
+
+    // Email files
     if (['eml', 'msg', 'pst'].includes(ext)) return Mail;
+
+    // Calendar files
     if (['ics', 'ical'].includes(ext)) return Calendar;
+
+    // Encrypted/security files
     if (['enc', 'gpg', 'p7s', 'p12', 'pfx', 'key', 'pem', 'crt'].includes(ext)) return Lock;
 
-    return FileIcon;
+    return FileIcon; // Default file icon if no specific type is found
 };
 
+/**
+ * Returns appropriate color class for file/directory icons
+ */
 const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected: boolean = false, isDropTarget: boolean = false) => {
-    if (isDropTarget) return "text-green-500";
+    // Special colors that override everything else
+    if (isDropTarget) return "text-green-500"; //FIX
     if (isSelected) return "text-blue-500";
 
+    // Colors for folders
     if (isDirectory) {
         const folderName = fileName.toLowerCase();
         if (folderName.includes('download')) return "text-green-400";
@@ -142,11 +191,13 @@ const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected
         if (folderName.includes('favorite') || folderName.includes('bookmark')) return "text-yellow-400";
         if (folderName === 'node_modules' || folderName === '.git') return "text-gray-500";
         if (folderName.includes('src') || folderName.includes('source')) return "text-emerald-400";
-        return "text-blue-400";
+        return "text-blue-400"; // Default folder color
     }
 
+    // Colors for files based on their extension
     const ext = fileName.toLowerCase().split('.').pop() || '';
 
+    // Programming languages get specific colors
     if (['js', 'ts', 'jsx', 'tsx'].includes(ext)) return "text-yellow-400";
     if (['py'].includes(ext)) return "text-green-400";
     if (['java'].includes(ext)) return "text-orange-400";
@@ -158,98 +209,154 @@ const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected
     if (['rs'].includes(ext)) return "text-orange-500";
     if (['swift'].includes(ext)) return "text-orange-400";
     if (['kt'].includes(ext)) return "text-purple-500";
+
+    // Web technologies
     if (['html', 'htm'].includes(ext)) return "text-orange-400";
     if (['css', 'scss', 'sass', 'less'].includes(ext)) return "text-blue-400";
+
+    // Media files
     if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico'].includes(ext)) return "text-pink-400";
     if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) return "text-red-400";
     if (['mp3', 'wav', 'flac', 'aac'].includes(ext)) return "text-orange-400";
+
+    // Document files
     if (['pdf'].includes(ext)) return "text-red-500";
     if (['doc', 'docx'].includes(ext)) return "text-blue-500";
     if (['xls', 'xlsx'].includes(ext)) return "text-green-500";
+
+    // Archive files
     if (['zip', 'rar', '7z', 'tar'].includes(ext)) return "text-yellow-500";
+
+    // Executable files
     if (['exe', 'msi', 'app'].includes(ext)) return "text-red-500";
 
+    // Default color for any other file types
     return "text-gray-400";
 };
 
 
-export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, accountId, tempPostFile, tempGetFile, boxId, isBoxToBoxTransfer = false, refreshToggle, onCurrentPathChange}: FileExplorerProps) {
+export const FileExplorer = memo(function FileExplorer ({
+                                                            zoomLevel,                  // How zoomed in the view is
+                                                            cloudType,                  // Cloud storage type (e.g., 'dropbox', 'google', 'onedrive')
+                                                            accountId,                  // Unique identifier for the cloud account
+                                                            tempPostFile,               // Function to post a file to the cloud
+                                                            tempGetFile,                // Function to get a file from the cloud
+                                                            boxId,                      // Unique identifier for the box
+                                                            isBoxToBoxTransfer = false, // Whether the transfer is between boxes
+                                                            refreshToggle,              // Toggle to refresh the file explorer
+                                                            onCurrentPathChange         // Callback when the current path changes
+                                                        }: FileExplorerProps) {
+   
+    /** List of all files and folders in the current directory */                                               
     const [items, setItems] = useState<FileSystemItem[]>([])
+
+    /** Current working directory - the folder we're currently looking at */
     const [cwd, setCwd] = useState<string>("")
-    const [history, setHistory] = useState<string[]>([])
-    const [historyIndex, setHistoryIndex] = useState(-1)
-    const [searchQuery, setSearchQuery] = useState("")
-    const [isLoading, setIsLoading] = useState(true)
+
+    /** The current folder path split into parts (for breadcrumb navigation) */
     const [currentPath, setCurrentPath] = useState<string[]>([])
+
+    /** History of folders we've visited (for back/forward navigation) */
+    const [history, setHistory] = useState<string[]>([])
+
+    /** Where we are in the history (for back/forward buttons) */
+    const [historyIndex, setHistoryIndex] = useState(-1)
+
+    /** What the user is searching for */
+    const [searchQuery, setSearchQuery] = useState("")
+
+    /** True when we're loading files from disk/cloud */
+    const [isLoading, setIsLoading] = useState(true)
+
+    /** Whether to show hidden files (files that start with a dot) */
     const [showHidden, setShowHidden] = useState(false)
-    // const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
-    const selectedItemsRef = useRef<Set<string>>(new Set())
-    // const [lastSelectedItem, setLastSelectedItem] = useState<string | null>(null)
-    const lastSelectedItemRef = useRef<string | null>(null)
-    // const [isSelecting, setIsSelecting] = useState(false)
-    const isSelectingRef = useRef(false)
-    const selectionStartRef = useRef({x: 0, y: 0})
-    const selectionStartViewRef = useRef({scrollTop: 0});
-    const selectionBoxRef = useRef<HTMLDivElement | null>(null);
-    // const [isAdditiveDrag, setIsAdditiveDrag] = useState(false);
-    const isAdditiveDragRef = useRef(false);
-    const [isOpeningBrowser, setIsOpeningBrowser] = useState(false);
+    
+    /** Selection State (which files are selected) */
 
-    const selectionSnapshotRef = useRef<Set<string>>(new Set());
-    const [containerWidth, setContainerWidth] = useState(0);
+    const selectedItemsRef = useRef<Set<string>>(new Set()) // Set of selected file IDs
+    const lastSelectedItemRef = useRef<string | null>(null) // ID of the last selected file
+    
+    /** Drag selection state (selecting with mouse drag) */
+    const isSelectingRef = useRef(false) // Whether we're currently selecting files with a drag box
+    const selectionStartRef = useRef({x: 0, y: 0}) // Starting position of the selection box
+    const selectionStartViewRef = useRef({scrollTop: 0}); // Starting scroll position of the container when selection started
+    const selectionBoxRef = useRef<HTMLDivElement | null>(null); // Reference to the selection box element
+    const isAdditiveDragRef = useRef(false); // Whether the current drag is additive (Ctrl/Cmd key pressed)
+    const selectionSnapshotRef = useRef<Set<string>>(new Set()); // Snapshot of selected items at the start of a drag operation
 
-    const containerRef = useRef<HTMLDivElement>(null)
-    const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-    const dragStartPosRef = useRef({x: 0, y: 0})
-    const mouseOffsetRef = useRef({x: 0, y: 0})
-    const draggedItemsRef = useRef<string[]>([])
+    /** Drag and drop state */
+    const dragStartPosRef = useRef({x: 0, y: 0}) // Position where the drag started
+    const mouseOffsetRef = useRef({x: 0, y: 0}) // Offset of the mouse from the top-left corner of the dragged item
+    const draggedItemsRef = useRef<string[]>([]) // IDs of items currently being dragged
+    const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null) // Timeout for throttling drag events
+    const boxDragTimeoutRef = useRef<NodeJS.Timeout | null>(null) // Timeout for box drag operations
+    const localDragStartedRef = useRef<boolean>(false) // Whether a local drag operation has started
+    const localIsDraggingRef = useRef<boolean>(false) // Whether we're currently dragging items locally
+    const localTargetRef = useRef<{ boxId: number; targetPath: string, targetId?: string } | null>(null) // Target box and path for local drag operations
 
+    /** Connect to the system that handles dragging files between boxes from @Context/BoxDragContext */
     const BoxDrag = useBoxDrag();
+    
+    /** UI State */
+    const [isOpeningBrowser, setIsOpeningBrowser] = useState(false); // Whether we're currently opening a file in the browser
+    const [containerWidth, setContainerWidth] = useState(0); // Width of the file explorer container for responsive design
 
-    const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-    const boxDragTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-    const localDragStartedRef = useRef<boolean>(false)
-    const localIsDraggingRef = useRef<boolean>(false)
-    const localTargetRef = useRef<{ boxId: number; targetPath: string, targetId?: string } | null>(null)
+    /* DOM references */
+    const containerRef = useRef<HTMLDivElement>(null) // Reference to the main container element
+    const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map()) // Map of file IDs to their DOM elements for quick access
+    
 
+    /** File Stats dialog state */
+    const [showStatsDialog, setShowStatsDialog] = useState(false); // Whether to show the file stats dialog
+    const [selectedFileForStats, setSelectedFileForStats] = useState<FileSystemItem | null>(null); // File for which we want to show stats
+    const [isCalculatingSize, setIsCalculatingSize] = useState(false); // Whether we're currently calculating the size of a folder
+    const [folderSize, setFolderSize] = useState<number | null>(null); // Size of the folder for which we're showing stats
+    const [selectedCount, setSelectedCount] = useState(0); // Number of currently selected files
+
+    /** Current zom level */
+    const zoomLevelRef = useRef(zoomLevel);
+
+    /** 
+     * Files filtered by search query and hidden file setting 
+     * This creates a new list every time searchQuery, items, or showHidden changes
+     */
     const filteredItems = searchQuery
         ? items.filter(
             (item) =>
-                item.name.toLowerCase().includes(searchQuery.toLowerCase()) && (showHidden || !item.name.startsWith(".")),
+                item.name.toLowerCase().includes(searchQuery.toLowerCase()) 
+                && (showHidden || !item.name.startsWith(".")), // Show hidden files if enabled, or if file is not hidden
         )
-        : items.filter((item) => showHidden || !item.name.startsWith("."))
+        : items.filter((item) => showHidden || !item.name.startsWith(".")) // Just filter hidden files if no search
 
+    /** 
+     * Filtered files sorted alphabetically with folders first
+     * Folders always appear before files, then both are sorted by name
+     */
     const sortedItems = [...filteredItems].sort((a, b) => {
-        if (a.isDirectory && !b.isDirectory) return -1
-        if (!a.isDirectory && b.isDirectory) return 1
+        if (a.isDirectory && !b.isDirectory) return -1 // a is folder, b is file -> a comes first
+        if (!a.isDirectory && b.isDirectory) return 1 // a is file, b is folder -> b comes first
         return a.name.localeCompare(b.name)
     })
 
-    const [showStatsDialog, setShowStatsDialog] = useState(false);
-    const [selectedFileForStats, setSelectedFileForStats] = useState<FileSystemItem | null>(null);
-    const [isCalculatingSize, setIsCalculatingSize] = useState(false);
-    const [folderSize, setFolderSize] = useState<number | null>(null);
 
-    const [selectedCount , setSelectedCount] = useState(0);
-
-
-    const zoomLevelRef = useRef(zoomLevel);
+    /** Updates zoom level reference when zoom changes */
     useEffect(() => {
-        console.log(zoomLevel, "Zoom level changed, updating selection box style");
         zoomLevelRef.current = zoomLevel;
     }, [zoomLevel])
 
+    /**
+     * Loads the home directory when the component first loads
+     * Different home directories for cloud vs local storage
+     */
     useEffect(() => {
         const fetchHome = async () => {
-            // cloud home directory
-            if (cloudType && accountId) {
-                console.log("Fetching home directory from cloud account:", cloudType, accountId);
-                console.log("Current directory:", cwd);
+            if (cloudType && accountId) { 
+                // Cloud storage - use cloud home directory
                 setCwd(CLOUD_HOME)
                 setHistory([CLOUD_HOME])
                 setHistoryIndex(0)
             } else {
-                // local home directory
+                // Local storage - get user's home directory
                 const homePath = await window.fsApi.getHome()
                 setCwd(homePath)
                 setHistory([homePath])
@@ -257,10 +364,12 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             }
         }
 
-        fetchHome().then(r => console.log("Directory fetched"))
+        fetchHome()
     }, [])
 
+    /** Watches for container size changes and updates width */
     useEffect(() => {
+        // Function to update the container width
         const updateWidth = () => {
             if (containerRef.current) {
                 setContainerWidth(containerRef.current.offsetWidth);
@@ -269,17 +378,19 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
 
         updateWidth();
 
+        // Watch for size changes using ResizeObserver
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {
                 setContainerWidth(entry.contentRect.width);
             }
         });
 
+        // Start watching the container
         if (containerRef.current) {
             resizeObserver.observe(containerRef.current);
         }
 
-        // Also listen to window resize as fallback
+        // Also watch for window resize events
         window.addEventListener('resize', updateWidth);
         
         return () => {
@@ -288,56 +399,54 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         };
     }, []);
 
+    /** Loads files when the current directory changes */
     useEffect(() => {
         if (!cwd || cwd === "") 
              return
 
-        console.log("Reading directory:", cwd)
         setIsLoading(true)
-        // Notify parent about current path change for drag box-to-box
+        
         if (onCurrentPathChange) {
             onCurrentPathChange(cwd)
         }
 
         if (cloudType && accountId) {
-            // Fetch files from the cloud account
+            // Load files from cloud storage
             (window as any).cloudFsApi.readDirectory(cloudType, accountId, cwd)
                 .then((files: FileSystemItem[]) => {
-                    setItems(files)
-                    updatePathSegments(cwd)
-                    setIsLoading(false)
-                    // setSelectedItems(new Set())
-                    selectedItemsRef.current = new Set()
-                    lastSelectedItemRef.current = null
-                    setSelectedCount(0)
+                    setItems(files) // Update file list
+                    updatePathSegments(cwd) // Update breadcrumb path
+                    setIsLoading(false) // Hide loading indicator
+                    selectedItemsRef.current = new Set()  // Clear selection
+                    lastSelectedItemRef.current = null // Clear last selected
+                    setSelectedCount(0) // Update selection count
                 })
                 .catch((err: Error) => {
                     console.error(err)
                     setIsLoading(false)
                     
-                    // Show user-visible error for cloud access issues
                     toast.error("Cloud Directory Access Failed", {
                         description: `Failed to load cloud directory: ${err.message || 'Unknown error'}`,
                         duration: 2000,
                     });
                 })
         } else {
-            // Fetch files from the local directory
+            // Load files from local storage
             window.fsApi
-                .readDirectory(cwd)
+                .readDirectory(cwd) 
                 .then((files) => {
-                    setItems(files)
-                    updatePathSegments(cwd)
-                    setIsLoading(false)
-                    // setSelectedItems(new Set())
-                    selectedItemsRef.current = new Set()
-                    lastSelectedItemRef.current = null
-                    setSelectedCount(0)
+                    setItems(files) // Update the file list
+                    updatePathSegments(cwd) // Update breadcrumb path
+                    setIsLoading(false) //  Hide loading indicator
+                    selectedItemsRef.current = new Set() // Clear selection
+                    lastSelectedItemRef.current = null // Clear last selected
+                    setSelectedCount(0) // Update selection count
                 })
                 .catch((err) => {
                     console.error(err)
                     setIsLoading(false)
                     
+                    // Show error toast with error message
                     if (err && typeof err === 'object' && 'message' in err) {
                         const errorMessage = (err as Error).message;
                         if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
@@ -362,19 +471,21 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         updateSelectedItemsColor();
     }, [cwd])
 
+    /**
+     * Refreshes the file list when refresh toggle changes
+     */
     useEffect(() => {
         if (cwd === "") {
-            console.error("Current working directory is empty, cannot refresh")
             return
         }
-        console.log("Refreshing directory due to refreshState prop change");
         
         refreshDirectory();
     }, [refreshToggle])
 
-    // This can be in each file explorer component, 
-    // since it gets the file content and open it, 
-    // instead of saving it for uploading to other window later
+    /**
+     * Opens a file using the system's default application
+     * Handles both local and cloud files
+     */
     const openFile = async (e: React.MouseEvent, item: FileSystemItem) => {
         e.preventDefault();
         setIsOpeningBrowser(true);
@@ -382,16 +493,15 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         try {
             let fileContent: FileContent | null = null;
             if (!cloudType || !accountId) {
-                // For local file system, just pass the current
-                console.log("Opening local file:", item.path);
+                // Get file from local storage
                 fileContent =  await (window as any).fsApi.getFile(item.path);
             } else {
-                console.log("Opening cloud file:", item.path);
+                // Get file from cloud storage
                 fileContent = await (window as any).cloudFsApi.getFile(cloudType, accountId, item.path);
             }
 
+            // Check if we got valid file content
             if (!fileContent) {
-                console.log("No file content to open");
                 toast.error("File Open Failed", {
                     description: "Unable to read file content.",
                     duration: 4000,
@@ -399,41 +509,38 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                 return;
             }
             
-            console.log("Opening file:", fileContent);
             if (fileContent.url) {
+                // File has a URL (common for cloud files) - open in browser/default app
                 const response = await (window as any).electronAPI.openExternalUrl(fileContent.url);
-                if (response && response.success) {
-                    console.log("File URL opened successfully:", fileContent.url);
-                } else {
-                    console.error("Failed to open file URL:", fileContent.url, response?.error);
+                if (!response?.success) {
                     toast.error("File Open Failed", {
                         description: `Failed to open file: ${response?.error || 'Unknown error'}`,
                         duration: 2000,
                     });
                 }
             } else {
-                console.log("File URL is undefined, create blob URL instead");
-                // Create a blob URL for the file content
+                // File has content data - check if empty
                 if (!fileContent.content) {
-                    console.error("File content is undefined, cannot create blob URL");
                     toast.error("File Open Failed", {
                         description: "File content is empty or corrupted.",
                         duration: 4000,
                     });
                     return;
                 }
+
+                // Determine if it's a text file for proper handling
                 const isTextFile = ['.txt', '.csv', '.py', '.json', '.log'].some(ext => item.path.endsWith(ext));
                 const blob = new Blob(
                     [fileContent.content],
                     { type: isTextFile ? 'text/plain' : fileContent.type }
                 );
-                const response = await (window as any).electronAPI.openFile(fileContent);
-                console.log( "File opened successfully:", fileContent.path, response);
+
+                // Open the file
+                await (window as any).electronAPI.openFile(fileContent);
             }
         } catch (error) {
             console.error("Error opening file:", error);
             
-            // Show user-visible error for permission issues
             if (error && typeof error === 'object' && 'message' in error) {
                 const errorMessage = (error as Error).message;
                 if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
@@ -458,17 +565,17 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         }
     }
 
-
+    /** Splits a file path into segments for breadcrumb navigation */
     const updatePathSegments = (path: string) => {
-        // Split path into segments
+        // Split by forward slash or backslash, remove empty segments
         const segments = path.split(/[/\\]/).filter(Boolean)
         setCurrentPath(segments)
-        console.log("Current path segments:", segments)
     }
 
+    /**
+     * Navigates to a specified directory path
+     */
     const navigateTo = (path: string) => {
-        console.log("Navigating to:", path)
-        // Add to history
         const newHistory = history.slice(0, historyIndex + 1)
         newHistory.push(path)
         setHistory(newHistory)
@@ -476,6 +583,9 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         setCwd(path)
     }
 
+    /**
+     * Navigates back in history
+     */
     const navigateBack = () => {
         if (historyIndex > 0) {
             setHistoryIndex(historyIndex - 1)
@@ -483,6 +593,9 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         }
     }
 
+    /**
+     * Navigates forward in history
+     */
     const navigateForward = () => {
         if (historyIndex < history.length - 1) {
             setHistoryIndex(historyIndex + 1)
@@ -490,32 +603,39 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         }
     }
 
+    /**
+     * Navigates to the home directory (local or cloud)
+     */
     const goToHome = async () => {
         if (cloudType && accountId) {
-            console.log("Navigating to home directory of cloud account:", cloudType, accountId);
-            navigateTo(CLOUD_HOME)
+            navigateTo(CLOUD_HOME) // Cloud home
         } else {
-            console.log("Navigating to local home directory");
-            const homePath = window.fsApi.getHome()
+            const homePath = window.fsApi.getHome() // Local home
             navigateTo(homePath)
         }
     }
 
+    /**
+     * Navigates to the parent directory
+     */
     const navigateUp = () => {
+        // Split path and remove last segment, join back together
         const parentPath = cwd.split("/").slice(0, -1).join("/") || "/"
         navigateTo(parentPath)
     }
 
+    /**
+     * Refreshes the current directory contents
+     */
     const refreshDirectory = async () => {
         setIsLoading(true)
         if (cloudType && accountId) {
-            // Fetch files from the cloud account
+            // Refresh cloud directory
             (window as any).cloudFsApi.readDirectory(cloudType, accountId, cwd)
                 .then((files: FileSystemItem[]) => {
                     setItems(files)
                     updatePathSegments(cwd)
                     setIsLoading(false)
-                    // setSelectedItems(new Set())
                     selectedItemsRef.current = new Set()
                     lastSelectedItemRef.current = null
                     setSelectedCount(0)
@@ -524,17 +644,14 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     console.error(err)
                     setIsLoading(false)
                     
-                    // Show user-visible error for cloud access issues
                     toast.error("Cloud Refresh Failed", {
                         description: `Failed to refresh cloud directory: ${err.message || 'Unknown error'}`,
                         duration: 2000,
                     });
                 })
         } else {
-            // Fetch files from the local directory
-            console.log("Refreshing directory:", cwd)
             if (!cwd || cwd === "") {
-                console.error("Current working directory is empty, cannot refresh")
+                // Refresh local directory
                 setIsLoading(false)
                 return
             }
@@ -544,7 +661,6 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     setItems(files)
                     updatePathSegments(cwd)
                     setIsLoading(false)
-                    // setSelectedItems(new Set())
                     selectedItemsRef.current = new Set()
                     lastSelectedItemRef.current = null
                     setSelectedCount(0)
@@ -553,7 +669,6 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     console.error(err)
                     setIsLoading(false)
                     
-                    // Show user-visible error for permission issues
                     if (err && typeof err === 'object' && 'message' in err) {
                         const errorMessage = (err as Error).message;
                         if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
@@ -578,119 +693,132 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         updateSelectedItemsColor();
     }
 
+    /**
+     * Updates visual selection state for all items
+     */
     const updateSelectedItemsColor = () => {
+        // Go through each file element and add/remove the "selected" CSS class
         itemRefs.current.forEach((element, id) => {
             if (!element) return;
+
+            // Add "selected" class if item is selected, remove it if not
             element.classList.toggle("selected", selectedItemsRef.current.has(id));
         });
     };
 
-
+    /**
+     * Handles single and double clicks on file/directory items
+     * Supports multi-selection with Ctrl/Cmd and range selection with Shift
+     */
     const handleItemClick = (e: React.MouseEvent, item: FileSystemItem) => {
-        // Double click to navigate into directory
+        // Handle double-click for navigation/opening
         if (e.detail === 2) {
             if (!item.isDirectory) {
+                // It's a file - open it
                 openFile(e, item)
             } else {
+                // It's a folder - go into it
                 navigateTo(item.path)
             }
             return
         }
 
-
+        // Handle single click for selection
         const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
+        // Range selection with Shift key (TODO: FIX ISSUE WHERE IS NOT WORKING AS EXPECTED)
         if (e.shiftKey && lastSelectedItemRef.current) {
-            const itemsPathList = sortedItems.map((i) => i.id); // TODO item path list to item id list?
-            const currentIndex = itemsPathList.indexOf(item.id); // TODO
+            const itemsPathList = sortedItems.map((i) => i.id);
+            const currentIndex = itemsPathList.indexOf(item.id);
             const lastIndex = itemsPathList.indexOf(lastSelectedItemRef.current);
 
             if (currentIndex !== -1 && lastIndex !== -1) {
+                // Find the range between current and last selected items
                 const start = Math.min(currentIndex, lastIndex);
                 const end = Math.max(currentIndex, lastIndex);
-                const newSelectedItemsUpdate = ctrlOrMeta ? new Set(selectedItemsRef.current) : new Set<string>();
-
-                for (let i = start; i <= end; i++) {
-                    newSelectedItemsUpdate.add(itemsPathList[i]);
-                }
 
                 if (ctrlOrMeta) {
+                    // Add range to existing selection
                     const rangeSelection = new Set<string>();
                     for (let i = start; i <= end; i++) {
                         rangeSelection.add(itemsPathList[i]);
                     }
-                    // setSelectedItems(prev => new Set([...prev, ...rangeSelection]));
                     selectedItemsRef.current = new Set([...selectedItemsRef.current, ...rangeSelection]);
                 } else {
+                    // Replace selection with range
                     const rangeSelection = new Set<string>();
                     for (let i = start; i <= end; i++) {
                         rangeSelection.add(itemsPathList[i]);
                     }
-                    // setSelectedItems(rangeSelection);
                     selectedItemsRef.current = rangeSelection;
                 }
-
             }
-        } else if (ctrlOrMeta) {
+        } 
+        // Multi-selection with Ctrl/Cmd key
+        else if (ctrlOrMeta) {
             const newSelectedItemsUpdate = new Set(selectedItemsRef.current);
             if (newSelectedItemsUpdate.has(item.id)) {
+                // Item is selected - unselect it
                 newSelectedItemsUpdate.delete(item.id);
             } else {
+                // Item is not selected - select it
                 newSelectedItemsUpdate.add(item.id);
             }
-            // setSelectedItems(newSelectedItemsUpdate);
             selectedItemsRef.current = newSelectedItemsUpdate;
             lastSelectedItemRef.current = item.id;
-        } else {
-            // setSelectedItems(new Set([item.id]));
+        } 
+        // Single selection
+        else {
             selectedItemsRef.current = new Set([item.id]);
             lastSelectedItemRef.current = item.id;
         }
 
         updateSelectedItemsColor();
         setSelectedCount(selectedItemsRef.current.size);
-
     }
 
 
+    /**
+     * Initiates drag selection when clicking on empty space
+     * This lets users draw a rectangle to select multiple files
+     */
     const handleMouseDown = useCallback((e: React.MouseEvent) => {
+        // Don't start selection if clicking on a file or using right mouse button
         if ((e.target as HTMLElement).closest(".file-item") || e.button !== 0) {
             return;
         }
-        console.log("Mouse down on container, starting selection box");
-        isSelectingRef.current = true;
-        selectionBoxRef.current!.style.display = "block";
 
+        // Start selection mode
+        isSelectingRef.current = true;
+        selectionBoxRef.current!.style.display = "block"; //Show the selection box
+
+        // Determine if this is an additive drag (Ctrl/Cmd key pressed)
         const additive = e.ctrlKey || e.metaKey;
         isAdditiveDragRef.current = additive;
 
         if (!additive) {
-            // setSelectedItems(new Set());
+            // Clear existing selection
             selectedItemsRef.current = new Set();
             selectionSnapshotRef.current = new Set();
             setSelectedCount(0);
         } else {
+            // Keep existing selection as backup
             selectionSnapshotRef.current = new Set(selectedItemsRef.current);
-
         }
 
+        // Calculate starting position relative to container
         const container = containerRef.current;
         if (!container) return;
 
-        //The x and y values calculated here are in pixels and are relative to the top-left corner of rect (i.e., the container).
         const rect = container.getBoundingClientRect();
         const x = Math.max(0, Math.min(rect.width - 1, e.clientX - rect.left));
         const y = Math.max(0, Math.min(rect.height - 1, e.clientY - rect.top));
 
-        selectionStartRef.current = {
-            x: x,
-            y: y
-        };
-        selectionStartViewRef.current = {
-            scrollTop: container.scrollTop
-        };
+        selectionStartRef.current = { x, y };
+        selectionStartViewRef.current = { scrollTop: container.scrollTop };
         updateSelectedItemsColor();
 
+        // Set up global mouse event listeners for dragging
         const globalMouseMove = (e: MouseEvent) => {
             if (isSelectingRef.current && containerRef.current) {
                 const event = e as unknown as React.MouseEvent;
@@ -715,6 +843,9 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         };
     }, [containerRef.current, isSelectingRef.current, isAdditiveDragRef.current]);
 
+    /**
+     * Determines which items intersect with the current selection box
+     */
     const updateSelectedItemsFromBox = useCallback((box: {
         left: number;
         top: number;
@@ -726,6 +857,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         const itemsCurrentlyInBox = new Set<string>();
         const containerRect = containerRef.current.getBoundingClientRect();
 
+        // Define the selection rectangle
         const selectionBox = {
             left: box.left,
             top: box.top,
@@ -733,13 +865,14 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             bottom: box.top + box.height,
         };
 
+        // Check each item to see if it intersects with the selection box
         itemRefs.current.forEach((element, id) => {
             if (!element) return;
             if (!containerRef.current) return;
 
             const itemRect = element.getBoundingClientRect();
 
-            // Convert item rect to container-relative coordinates
+            // Convert item position to container-relative coordinates
             const relativeItemRect = {
                 left: itemRect.left - containerRect.left,
                 top: itemRect.top - containerRect.top + containerRef.current.scrollTop,
@@ -747,6 +880,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                 bottom: itemRect.bottom - containerRect.top + containerRef.current.scrollTop,
             };
 
+            // Check if selection box and item rectangle overlap
             const isIntersecting = !(
                 relativeItemRect.right < selectionBox.left ||
                 relativeItemRect.left > selectionBox.right ||
@@ -759,23 +893,19 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             }
         });
 
-        // setSelectedItems(isAdditiveDrag
-        //     ? new Set([...selectionSnapshotRef.current, ...itemsCurrentlyInBox])
-        //     : itemsCurrentlyInBox
-        // );
+        // Update selection based on mode (additive or replace)
         selectedItemsRef.current = isAdditiveDragRef.current
-            ? new Set([...selectionSnapshotRef.current, ...itemsCurrentlyInBox])
-            : itemsCurrentlyInBox;
+            ? new Set([...selectionSnapshotRef.current, ...itemsCurrentlyInBox]) // Add to existing selection
+            : itemsCurrentlyInBox; // Replace selection with new items
         
         updateSelectedItemsColor();
     }, [isSelectingRef.current, isAdditiveDragRef.current]);
 
+    /** Updates the visual selection box during drag selection */
     const updateSelectionBox = useCallback((currentX: number, currentY: number) => {
-        console.log("zoom level:", zoomLevelRef.current);
         if (!containerRef.current) return;
 
-        const containerRect = containerRef.current.getBoundingClientRect();
-        // Account for zoom level in calculations
+        // Calculate rectangle coordinates accounting for zoom level
         const zoomAdjustedBox = {
             left: (Math.min(selectionStartRef.current.x, currentX)) / zoomLevelRef.current,
             top: (Math.min(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop * zoomLevelRef.current, currentY + containerRef.current.scrollTop * zoomLevelRef.current)) / zoomLevelRef.current,
@@ -783,11 +913,13 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             height: Math.abs(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop * zoomLevelRef.current - (currentY + containerRef.current.scrollTop * zoomLevelRef.current)) / zoomLevelRef.current
         };
 
+        // Update visual selection box
         selectionBoxRef.current!.style.left = `${zoomAdjustedBox.left}px`;
         selectionBoxRef.current!.style.top = `${zoomAdjustedBox.top}px`;
         selectionBoxRef.current!.style.width = `${zoomAdjustedBox.width}px`;
         selectionBoxRef.current!.style.height = `${zoomAdjustedBox.height}px`;
 
+        // Calculate detection box (for finding intersecting files)
         const detectSelectionBox = {
             left: (Math.min(selectionStartRef.current.x, currentX)),
             top: (Math.min(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop , currentY + containerRef.current.scrollTop )),
@@ -798,27 +930,29 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         updateSelectedItemsFromBox(detectSelectionBox);
     }, [updateSelectedItemsFromBox, zoomLevelRef.current]);
 
+    /** Handles mouse movement during drag selection */
     const handleMouseMove = useCallback((e: React.MouseEvent | MouseEvent) => {
         if (!isSelectingRef.current || !containerRef.current) return;
 
+        // Calculate current mouse position relative to container
         const rect = containerRef.current.getBoundingClientRect();
-        // The x and y of mouse position values calculated here are in pixels and are relative to the top-left corner of rect (i.e., the container).
         const currentX = Math.max(0, Math.min(rect.width - 1, e.clientX - rect.left));
         const currentY = Math.max(0, Math.min(rect.height - 1, e.clientY - rect.top));
 
+        // Auto-scroll when near edges
         const scrollThreshold = 50;
         const scrollAmount = 5;
         if (e.clientY < rect.top + scrollThreshold) {
-            containerRef.current.scrollTop -= scrollAmount;
+            containerRef.current.scrollTop -= scrollAmount; // Scroll up
         } else if (e.clientY > rect.bottom - scrollThreshold) {
-            containerRef.current.scrollTop += scrollAmount;
+            containerRef.current.scrollTop += scrollAmount; // Scroll down
         }
+        
         updateSelectionBox(currentX, currentY);
-
     }, [isSelectingRef.current, updateSelectedItemsFromBox, selectionStartRef.current.x, selectionStartRef.current.y]);
 
+    /** Hides and resets the selection box */
     const removeSelectionBox = useCallback(() => {
-        // just hide it on the top left corner... it works
         if (selectionBoxRef.current) {
             selectionBoxRef.current.style.display = "none";
             selectionBoxRef.current.style.left = "0px";
@@ -828,21 +962,23 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         }
     }, [selectionBoxRef.current]);
 
+    /** Ends drag selection */
     const handleMouseUp = () => {
         if (isSelectingRef.current) {
             isSelectingRef.current = false;
-            console.log("Mouse up, ending selection box");
             setSelectedCount(selectedItemsRef.current.size);
             removeSelectionBox();
         }
     }
 
+    /** Starts dragging files when mouse is pressed on a file */
     const handleItemMouseDown = (e: React.MouseEvent, item: FileSystemItem) => {
-        if (e.button !== 0) return;
+        if (e.button !== 0) return; // Only handle left mouse button
 
-
+        // Remember where the drag started
         dragStartPosRef.current = {x: e.clientX, y: e.clientY}
 
+        // Calculate mouse offset from top-left of item
         const itemElement = itemRefs.current.get(item.id)
         if (itemElement) {
             const rect = itemElement.getBoundingClientRect()
@@ -852,10 +988,13 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             }
         }
 
+        // Determine which files to drag
         let itemsToDrag: string[]
         if (selectedItemsRef.current.has(item.id)) {
+            // Item is selected - drag all selected items
             itemsToDrag = Array.from(selectedItemsRef.current)
         } else {
+            // Item is not selected - just drag this item and select it
             itemsToDrag = [item.id]
             selectedItemsRef.current = new Set([item.id])
             lastSelectedItemRef.current = item.id
@@ -863,30 +1002,32 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
 
         draggedItemsRef.current = itemsToDrag
 
+        // Set up global mouse event listeners for dragging
         document.addEventListener("mousemove", handleItemMouseMove)
         document.addEventListener("mouseup", handleItemMouseUp)
     }
 
+    /** Resets drag target when mouse leaves valid drop areas */
     const resetTarget = () => {
-        console.log("Mouse is outside container, no drop target")
         BoxDrag.setTarget({ boxId: -1, targetPath: "" });
         localTargetRef.current = null;
     }
 
+    /** Handles mouse movement during item drag operations */
     const handleItemMouseMove = async (e: MouseEvent) => {
+        // Check if we should start dragging
         if (!localDragStartedRef.current && !localIsDraggingRef.current) {
-            console.log("Not dragging, checking for drag start")
             const dx = e.clientX - dragStartPosRef.current.x
             const dy = e.clientY - dragStartPosRef.current.y
             const distance = Math.sqrt(dx * dx + dy * dy)
+            
+            // Start dragging if mouse moved more than 5 pixels
             if (distance > 5) {
-                console.log("Drag started, setting isDragging to true")
                 BoxDrag.setIsDragging(true);
                 localIsDraggingRef.current = true;
                 localDragStartedRef.current = true;
-                // TODO maybe implement saving the dragged items to a ref and load the contents of them here?
 
-                // Start box drag with the dragged items
+                // Prepare dragged items for box-to-box transfer
                 const draggedFileItems = sortedItems.filter(item =>
                     draggedItemsRef.current.includes(item.id)
                 );
@@ -896,12 +1037,13 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     cloudType,
                     accountId
                 );
-                console.log("Box drag started with items:", draggedFileItems.map(item => item.path));
+                
+                // Load file contents for transfer (TODO FIX, MULTIPLE CALLS TO TEMPGETFILE)
                 try {
                     await tempGetFile?.(draggedFileItems.map(item => item.path), cloudType, accountId);
                 } catch (error) {
                     console.error("Error loading files for drag operation:", error);
-                    // Reset drag state if file loading fails
+                    // Reset drag state on error
                     BoxDrag.setDragItems([], null);
                     BoxDrag.setIsDragging(false);
                     localIsDraggingRef.current = false;
@@ -913,9 +1055,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     });
                     return;
                 }
-                // tempGetFile?.(draggedFileItems.map(item => item.path).join(","), cloudType, accountId);
             } else {
-                console.log("Distance TOoooooooooooooooooooo short:", distance)
                 return
             }
         }
@@ -927,33 +1067,40 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         throttleTimeoutRef.current = setTimeout(() => {
             if (!containerRef.current || !localIsDraggingRef.current) return
 
+            // Calculate mouse position relative to container
             const containerRect = containerRef.current.getBoundingClientRect()
             const relativeX = e.clientX - containerRect.left
             const relativeY = e.clientY - containerRect.top + containerRef.current.scrollTop
 
+            // Check if mouse is still inside the container
             const isWithinContainer = e.clientX >= containerRect.left &&
                 e.clientX <= containerRect.right &&
                 e.clientY >= containerRect.top &&
                 e.clientY <= containerRect.bottom;
 
             if (isWithinContainer) {
-                console.log("Mouse is within container, checking for drop target")
                 let foundDropTarget = false
+                
+                // Check each file/folder to see if mouse is over it
                 for (const item of sortedItems) {
+                    // Skip files that are being dragged
                     if (draggedItemsRef.current.includes(item.id)) continue
 
                     const itemElement = itemRefs.current.get(item.id)
                     if (!itemElement) continue
 
+                    // Calculate item position relative to container
                     const itemRect = itemElement.getBoundingClientRect()
                     const itemLeft = itemRect.left - containerRect.left
                     const itemTop = itemRect.top - containerRect.top + containerRef.current.scrollTop
                     const itemRight = itemLeft + itemRect.width
                     const itemBottom = itemTop + itemRect.height
 
+                    // Check if mouse is over this item
                     if (relativeX >= itemLeft && relativeX <= itemRight &&
                         relativeY >= itemTop && relativeY <= itemBottom) {
-                        console.log("Mouse is over item:", item.name)
+                        
+                        // Set this item as the drop target
                         BoxDrag.setTarget({
                             boxId: boxId,
                             targetPath: item.path,
@@ -967,14 +1114,16 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                         foundDropTarget = true
                         break
                     }
-                    if (!foundDropTarget) {
-                        resetTarget();
-                    }
+                }
+                
+                if (!foundDropTarget) {
+                    resetTarget(); // No valid drop target found
                 }
             } else {
-                resetTarget();
+                resetTarget(); // Mouse is outside container
             }
 
+            // Auto-scroll when dragging near container edges
             const scrollThreshold = 60
             const scrollAmount = 10
 
@@ -987,8 +1136,12 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
     }
 
 
+    /**
+     * Handles the end of a file drag operation
+     * Processes file moves and cleans up drag state
+     */
     const handleItemMouseUp = async () => {
-        // TODO maybe implement removing the ref for dragged items?
+        // Clean up event listeners
         document.removeEventListener("mousemove", handleItemMouseMove)
         document.removeEventListener("mouseup", handleItemMouseUp)
 
@@ -997,38 +1150,17 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             throttleTimeoutRef.current = null
         }
 
-        const currentBoxDragState = {
-            isDragging: BoxDrag.isDragging,
-            target: BoxDrag.target,
-            dragItems: BoxDrag.dragItems
-        };
-
-        console.log("Box drag state on mouse up:", currentBoxDragState);
-
-        // Temporal variable to store the drag state before resetting it
-        // const wasDragStarted = BoxDrag.dragStarted;
-
-        // Check if this was actually a drag that should trigger a move
-        if (localIsDraggingRef.current &&
-            localTargetRef.current) {
-
-            const itemsToMove = draggedItemsRef.current
-
-            console.log(`Moving ${itemsToMove.length} items to ${localTargetRef.current.targetPath || "unknown target"}`)
-            console.log("Items to move:", itemsToMove)
-
+        // Process file move if there's a valid drop target (TODO FIX, MULTIPLE CALLS TO TEMPPOSTFILE?)
+        if (localIsDraggingRef.current && localTargetRef.current) {
             const targetItem = sortedItems.find((item) => item.id === String(localTargetRef.current?.targetId));
             if (targetItem && targetItem.isDirectory) {
-                console.log(`Target directory detected: ${targetItem.path}`)
-                // implement the actual move TODO
+                // Move files to target folder
                 try {
                     await tempPostFile?.(targetItem.path, cloudType, accountId);
-                    refreshDirectory(); // Refresh the directory after moving files
-                    // TODO Clear the fileCache in the HomePage?
+                    refreshDirectory(); // TODO: FIX SOMETIMES IT IS BUGGY AND DOES NOT REFRESH
                 } catch (error) {
                     console.error("Error moving files:", error);
                     
-                    // Show user-visible error for permission issues
                     if (error && typeof error === 'object' && 'message' in error) {
                         const errorMessage = (error as Error).message;
                         if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
@@ -1050,7 +1182,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     }
                 }
             } else if (targetItem && !targetItem.isDirectory) {
-                console.log(`Target file detected: ${targetItem.name}`)
+                // Handle file-to-file operation
                 try {
                     tempPostFile?.(targetItem.path, cloudType, accountId);
                 } catch (error) {
@@ -1060,52 +1192,23 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                         duration: 4000,
                     });
                 }
-                // implement the actual creating of folder and move both files?
             }
-        } else {
-            console.log("No inner drag operation")
         }
 
-        // Reset all drag states for inner drag
-        // setIsDragging(false)
-        // setDraggedItem(null)
-        // setDraggedItems([])
-        // setDropTarget(null)
-        // dragStateRef.current = {
-        //     isDragging: false,
-        //     dragStarted: false,
-        //     dropTarget: null,
-        //     lastDropTarget: null
-        // }
-
-        //Box to box cleanup
+        // Clean up drag state for box-to-box transfers
         if (localIsDraggingRef.current) {
-
-            // Check if this was a drop (if we have a valid drop target)
+            // Determine if this was a successful drop operation
             const hasValidDropTarget = BoxDrag.target !== null;
 
             if (hasValidDropTarget) {
+                // Delay cleanup to allow drop handling
                 boxDragTimeoutRef.current = setTimeout(() => {
-                    if (BoxDrag.isDragging) {
-                        // BoxDrag.endBoxDrag();
-                        // BoxDrag.setDragItems([], null);
-                        // BoxDrag.setIsDragging(false);
-                    }
                     boxDragTimeoutRef.current = null;
                 }, 100);
-            } else {
-                // BoxDrag.endBoxDrag();
-                // BoxDrag.setDragItems([], null);
-                // BoxDrag.setIsDragging(false);
             }
-        } else if (BoxDrag.isDragging) {
-            // BoxDrag.endBoxDrag();
-            // BoxDrag.setDragItems([], null);
-            // BoxDrag.setIsDragging(false);
-        } else {
-            console.log("No box drag operation to end, resetting state");
-            return;
         }
+
+        // Reset all drag-related states
         BoxDrag.setDragItems([], null);
         BoxDrag.setIsDragging(false);
         localDragStartedRef.current = false;
@@ -1113,6 +1216,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         localTargetRef.current = null;
     }
 
+    /** Cleanup function for selection mode */
     const handleSelectionEnd = () => {
         isSelectingRef.current = false;
         removeSelectionBox();
@@ -1121,12 +1225,15 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         document.removeEventListener("mouseup", handleSelectionEnd);
     }
 
+    /** Cleanup effect for event listeners and timeouts */
     useEffect(() => {
         return () => {
             document.removeEventListener("mousemove", handleItemMouseMove);
             document.removeEventListener("mouseup", handleItemMouseUp);
             document.removeEventListener("mousemove", handleMouseMove);
             document.removeEventListener("mouseup", handleSelectionEnd)
+            
+            // Clear any pending timers
             if (throttleTimeoutRef.current) {
                 clearTimeout(throttleTimeoutRef.current)
             }
@@ -1134,91 +1241,81 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                 clearTimeout(boxDragTimeoutRef.current)
             }
             if (BoxDrag.isDragging) {
-                // BoxDrag.endBoxDrag();
                 BoxDrag.setDragItems([], null);
                 BoxDrag.setIsDragging(false);
             }
         }
     }, [])
 
+    /** Keyboard shortcuts handler */
     useEffect(() => {
         const handleKeyDown = async (e: KeyboardEvent) => {
-            // Ctrl+A or Cmd+A:
+
+            // Select all files (Ctrl+A or Cmd+A)
             if ((e.ctrlKey || e.metaKey) && e.key === "a") {
                 e.preventDefault()
                 const allItems = new Set(sortedItems.map((item) => item.id))
-                // setSelectedItems(allItems)
                 selectedItemsRef.current = allItems;
                 setSelectedCount(allItems.size);
                 updateSelectedItemsColor();
             }
 
+            // Clear selection and cancel operations (Escape)
             if (e.key === "Escape") {
-                // setSelectedItems(new Set())
                 selectedItemsRef.current = new Set();
                 lastSelectedItemRef.current = null;
                 setSelectedCount(0);
                 updateSelectedItemsColor();
+                
+                // Cancel any active drag operations
                 if (BoxDrag.isDragging) {
-                    // setIsDragging(false)
-                    // setDraggedItem(null)
-                    // setDraggedItems([])
-                    // setDropTarget(null)
-
-
                     if (boxDragTimeoutRef.current) {
                         clearTimeout(boxDragTimeoutRef.current)
                         boxDragTimeoutRef.current = null
                     }
 
-
-                    if (BoxDrag.isDragging) {
-                        // BoxDrag.endBoxDrag();
-                        BoxDrag.setDragItems([], null);
-                        BoxDrag.setIsDragging(false);
-                    }
+                    BoxDrag.setDragItems([], null);
+                    BoxDrag.setIsDragging(false);
                 }
+                
+                // Cancel selection mode
                 if (isSelectingRef.current) {
                     isSelectingRef.current = false;
                     removeSelectionBox();
                 }
             }
 
-            // Delete
+            // Delete selected items (Delete key)
             if (e.key === "Delete" && selectedItemsRef.current.size > 0) {
-                console.log("Delete selected items:", Array.from(selectedItemsRef.current));
+                await handleDelete();
             }
         }
 
+        // Add keyboard event listener
         window.addEventListener("keydown", handleKeyDown)
         return () => window.removeEventListener("keydown", handleKeyDown)
     }, [BoxDrag.isDragging, sortedItems])
 
 
+    /**
+     * Deletes selected files and folders
+     * Handles both local and cloud file systems
+     */
     async function handleDelete() {
         if (selectedItemsRef.current.size === 0) return;
 
         try {
-            await showAreYouSure()
-        } catch (error) {
-            console.log("User cancelled the delete operation");
-            return;
-        }
-
-        console.log("Delete selected items:", Array.from(selectedItemsRef.current));
-
-        try {
-            // Wait for all delete operations to complete
+            // Process all delete operations in parallel (TODO: ADD CONFIRMATION DIALOG)
             await Promise.all(
                 Array.from(selectedItemsRef.current).map(async (itemId) => {
                     const item = sortedItems.find((i) => i.id === itemId);
                     if (!item) return;
                     
-                    console.log("Deleting item:", item.path);
                     if (!cloudType || !accountId) {
-                        // For local file system
+                        // Local file system deletion
                         await (window as any).fsApi.deleteFile(item.path);
                     } else {
+                        // Cloud file system deletion
                         await (window as any).cloudFsApi.deleteFile(
                             cloudType, 
                             accountId, 
@@ -1228,16 +1325,13 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                 })
             );
     
-            // Only refresh after all deletions are complete
+            // Refresh directory and clear selection after successful deletion
             await refreshDirectory();
-            
-            // Clear selection after successful deletion
             selectedItemsRef.current = new Set();
             setSelectedCount(0);
         } catch (error) {
             console.error("Error deleting items:", error);
             
-            // Show user-visible error message with permission guidance
             if (error && typeof error === 'object' && 'message' in error) {
                 const errorMessage = (error as Error).message;
                 if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
@@ -1261,13 +1355,20 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
     }
 
 
+    /**
+     * Recursively calculates the total size of a folder and its contents
+     * Handles both local and cloud file systems with batch processing for performance
+     * 
+     * TODO: FIX FOR MULTIPLE FILES, AND I SUSPECT IT IS NOT WORKING PROPERLY FOR SINGLE
+     */
     const calculateFolderSize = async (folderPath: string): Promise<number> => {
         try {
             if (cloudType && accountId) {
+                // Cloud file system processing
                 const files = await (window as any).cloudFsApi.readDirectory(cloudType, accountId, folderPath);
                 let totalSize = 0;
                 
-                // Process files in batches
+                // Process files in batces
                 const batchSize = 10;
                 for (let i = 0; i < files.length; i += batchSize) {
                     const batch = files.slice(i, i + batchSize);
@@ -1281,6 +1382,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                         })
                     );
                     
+                    // Sum up size calculations
                     batchSizes.forEach((result) => {
                         if (result.status === 'fulfilled') {
                             totalSize += result.value;
@@ -1289,6 +1391,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                 }
                 return totalSize;
             } else {
+                // Local file system processing
                 const files = await window.fsApi.readDirectory(folderPath);
                 let totalSize = 0;
                 
@@ -1305,6 +1408,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     }
                 });
                 
+                // Handle all size calculations and sum results
                 const sizes = await Promise.allSettled(sizeTasks);
                 sizes.forEach((result) => {
                     if (result.status === 'fulfilled') {
@@ -1320,6 +1424,9 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         }
     };
 
+    /**
+     * TODO: IMPLEMENT NAVIGATION TO FILES IN THE CASE WHERE MORE THAN ONE FILE IS SELECTED
+     */
     const showFileStats = async () => {
         if (selectedItemsRef.current.size === 0) return;
 
@@ -1331,6 +1438,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         setSelectedFileForStats(selectedFile);
         setShowStatsDialog(true);
         
+        // Calculate folder size asynchronously for directories
         if (selectedFile.isDirectory) {
             setIsCalculatingSize(true);
             try {
@@ -1345,7 +1453,10 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         }
     };
 
-    // File stats dialog component
+    /**
+     * File statistics dialog component
+     * Displays detailed information about selected files and folders
+     */
     const FileStatsDialog = () => {
         if (!selectedFileForStats) {
             return (
@@ -1369,11 +1480,13 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
         const IconComponent = getFileIcon(item.name, item.isDirectory);
         const iconColor = getIconColor(item.name, item.isDirectory);
 
+        /** Extracts file extension from filename */
         const getFileExtension = (fileName: string) => {
             const ext = fileName.split('.').pop();
             return ext && ext !== fileName ? ext.toUpperCase() : 'Unknown';
         };
 
+        /** Formats file size in human-readable format */
         const formatFileSize = (bytes?: number): string => {
             if (!bytes || bytes === 0) return "0 B";
     
@@ -1383,6 +1496,8 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
     
             return `${size.toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`;
         };
+
+        /** Formats timestamp into readable date string */
         const formatDate = (timestamp?: number): string => {
             if (!timestamp) return "Unknown";
     
@@ -1397,16 +1512,18 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
             });
         };
 
+        /**  Gets the size display for files vs folders */
         const getItemSize = () => {
-            if (item.isDirectory) {
+            if (item.isDirectory) { //File is a folder
                 if (isCalculatingSize) {
                     return "Calculating...";
-                }
+                } 
                 return folderSize !== null ? formatFileSize(folderSize) : "Unknown";
             }
             return formatFileSize(item.size);
         };
 
+        /** Converts timestamp to relative time format */
         const getRelativeTime = (timestamp?: number) => {
             if (!timestamp) return "Unknown";
             
@@ -1431,9 +1548,11 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     setIsCalculatingSize(false);
                 }
             }}>
+                {/** Dialog content for file statistics */}
                 <DialogContent className="max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl">
                     <DialogHeader className="space-y-4">
                         <div className="flex items-center gap-4">
+                            {/* Icon and title section */}
                             <div className="p-3 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-800 dark:to-slate-700">
                                 <IconComponent className={cn("h-8 w-8", iconColor)} />
                             </div>
@@ -1456,6 +1575,8 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                                     <div className="p-2 bg-blue-500/20 rounded-lg">
                                         <HardDrive className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                                     </div>
+
+                                    {/* File Size */}
                                     <div>
                                         <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Size</p>
                                         <p className="text-lg font-bold text-blue-800 dark:text-blue-200 flex items-center gap-2">
@@ -1467,7 +1588,8 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                                     </div>
                                 </div>
                             </div>
-                            
+
+                            {/* File Timestamp */}
                             <div className="bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900/30 dark:to-emerald-800/30 rounded-xl p-4 border border-green-200 dark:border-green-700/50">
                                 <div className="flex items-center gap-3">
                                     <div className="p-2 bg-green-500/20 rounded-lg">
@@ -1483,7 +1605,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                             </div>
                         </div>
 
-                        {/* Detailed Information */}
+                        {/* File Information */}
                         <div className="space-y-4">
                             <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700 pb-2">
                                 Details
@@ -1550,6 +1672,8 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
 
     return (
         <div className="flex h-full w-full flex-col text-white rounded-lg overflow-hidden select-none">
+            
+            { /* Breadcrumbs */}
             <div className="pl-4 pt-4 bg-white dark:bg-slate-800">
                 <div className="flex items-center space-x-1 text-sm text-gray-400">
                     {currentPath.map((segment, index) => (
@@ -1569,8 +1693,10 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                 </div>
             </div>
 
-            {/* Toolbar */}
+            {/* Toolbar that contains navigation buttons and search bar */}
             <div className="flex items-center gap-1 p-4 bg-white dark:bg-slate-800">
+                
+                {/* Home button - goes to user's home directory */}
                 <Button
                     onClick={goToHome}
                     className="p-2 rounded-md hover:bg-slate-100 text-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
@@ -1578,6 +1704,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     <Home className="h-5 w-5"/>
                 </Button>
 
+                {/* Up button - goes to parent folder */}
                 <Button
                     onClick={navigateUp}
                     className="p-2 rounded-md hover:bg-slate-100 text-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
@@ -1585,6 +1712,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     <ArrowUp className="h-5 w-5"/>
                 </Button>
 
+                {/* Navigation buttons for history */}
                 <Button
                     onClick={navigateBack}
                     disabled={historyIndex <= 0}
@@ -1593,6 +1721,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     <ChevronLeft className="h-5 w-5"/>
                 </Button>
 
+                {/* Forward button - goes to next folder in history */}
                 <Button
                     onClick={navigateForward}
                     disabled={historyIndex >= history.length - 1}
@@ -1601,6 +1730,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     <ChevronRight className="h-5 w-5"/>
                 </Button>
 
+                {/* Refresh button - reloads the current directory */}
                 <Button
                     onClick={refreshDirectory}
                     className={`p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 ${isLoading ? "animate-spin" : ""}`}
@@ -1608,6 +1738,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     <RefreshCw className="h-5 w-5"/>
                 </Button>
 
+                {/* Show/Hide hidden files button */}
                 <Button
                     onClick={() => setShowHidden(!showHidden)}
                     className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200"
@@ -1616,6 +1747,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     {showHidden ? <EyeOff className="h-5 w-5"/> : <Eye className="h-5 w-5"/>}
                 </Button>
 
+                {/* Search bar for filtering files */}
                 <div className="relative ml-auto flex-1 max-w-md">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500"/>
                     <Input
@@ -1627,8 +1759,12 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     />
                 </div>
             </div>
-                        {selectedCount > 0 && (
+
+            {/* File Actions Bar (Only shows when files are selected) */}
+            {selectedCount > 0 && (
                 <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 backdrop-blur-sm selected-menu-enter">
+
+                    {/* Selection counter - shows how many files are selected */}
                     <div className="flex items-center gap-2">
                         <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/20 dark:bg-primary/30">
                             <span className="text-xs font-bold font-semibold dark:text-blue-400 text-blue-600">
@@ -1640,9 +1776,11 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                         </span>
                     </div>
                     
+                    {/* Action buttons - positioned on the right side */}
                     <div className="ml-auto flex gap-2">
                         {containerWidth >= 600 ? (
                             <>
+                                {/* Get Info button - shows file details in a dialog */}
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -1652,24 +1790,30 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                                     <Info className="h-3.5 w-3.5"/>
                                     Get Info
                                 </Button>
+                                
+                                {/* Copy button - copies selected files (TODO: Not implemented yet) */}
                                 <Button
                                     variant="outline"
                                     size="sm"
                                     className="flex items-center gap-2 text-xs font-medium border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 transition-all duration-200 action-button"
-                                    // onClick={() => console.log("Copy selected items:", Array.from(selectedItems))}
+                                    onClick={() => {}}
                                 >
                                     <Copy className="h-3.5 w-3.5"/>
                                     Copy
                                 </Button>
+
+                                {/* Move button - moves selected files (TODO: Not implemented yet) */}
                                 <Button
                                     variant="outline"
                                     size="sm"
                                     className="flex items-center gap-2 text-xs font-medium border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 transition-all duration-200 action-button"
-                                    // onClick={() => console.log("Move selected items:", Array.from(selectedItems))}
+                                    onClick={() => {}}
                                 >
                                     <Move className="h-3.5 w-3.5"/>
                                     Move
                                 </Button>
+
+                                {/* Delete button - permanently removes selected files */}
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -1681,7 +1825,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                                 </Button>
                             </>
                         ) : (
-                            /* Enhanced responsive dropdown for smaller screens */
+                            /* Collapse actions into dropdown menu for small screens */
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                     <Button
@@ -1693,6 +1837,8 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                                         Actions
                                     </Button>
                                 </DropdownMenuTrigger>
+                                
+                                {/* Dropdown menu content */}
                                 <DropdownMenuContent 
                                     align="end" 
                                     className="w-56 bg-popover/95 backdrop-blur-sm border border-border/50 shadow-xl dropdown-content"
@@ -1714,7 +1860,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                                         </div>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem 
-                                        onClick={() => console.log("Copy selected items:", Array.from(selectedItemsRef.current))}
+                                        onClick={() => {/* Copy functionality to be implemented */}}
                                         className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors"
                                     >
                                         <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50">
@@ -1726,7 +1872,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                                         </div>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem 
-                                        onClick={() => console.log("Move selected items:", Array.from(selectedItemsRef.current))}
+                                        onClick={() => {/* Move functionality to be implemented */}}
                                         className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors"
                                     >
                                         <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50">
@@ -1756,74 +1902,89 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                 </div>
             )}
 
+            {/* This is where files and folders are displayed in a grid */}
             <div
                 ref={containerRef}
                 className="relative flex-1 bg-white dark:bg-slate-900 pt-2 px-4 pb-4 overflow-y-auto"
                 onMouseDown={handleMouseDown}
             >
+                {/* Selection box for multi-select */}
                 <div
                     ref={selectionBoxRef}
                     className="absolute border-2 border-blue-500 bg-blue-500/20 z-10 pointer-events-none rounded-sm"
                 />
-                {/* {isSelectingRef.current && (
-                    <div
-                        ref={selectionBoxRef}
-                        className="absolute border-2 border-blue-500 bg-blue-500/20 z-10 pointer-events-none rounded-sm"
-                    />
-                )} */}
 
+
+                {/* Display loading indicator when opening browser or loading files */}
                 {isOpeningBrowser ? (
-                    // TODO: change this to something else?
                         <div className="flex justify-center items-center h-full">
                             <RefreshCw className="h-8 w-8 text-blue-400 animate-spin"/>
                         </div>
                 ) : (
                     isLoading ? (
+                        /* Loading spinner when loading folder contents */
                         <div className="flex justify-center items-center h-full">
                             <RefreshCw className="h-8 w-8 text-blue-400 animate-spin"/>
                         </div>
                     ) : sortedItems.length > 0 ? (
-                        <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4">
+
+                        /* Grid of files and folders when there are items to show */
+                        <div className="grid grid-cols-[repeat(auto-fill,minmax(95px,1fr))] gap-2">
+                            
+                            {/* Loop through each file/folder and create a display item */}
                             {sortedItems.map((item) => {
                                 const IconComponent = getFileIcon(item.name, item.isDirectory);
                                 const iconColor = getIconColor(item.name, item.isDirectory, false, BoxDrag.target?.boxId === Number(item.id));
+                                
                                 return (
+                                    /* Individual file/folder item */
                                     <div
                                         key={item.id}
+
+                                        /* Store reference to this element for selection and drag operations */
                                         ref={(el) => {
                                             if (el) itemRefs.current.set(item.id, el)
                                             else itemRefs.current.delete(item.id)
                                         }}
+
+                                        /* Handle clicks (single for selection, double for opening) */
                                         onClick={(e) => handleItemClick(e, item)}
+
+                                        /* Handle drag start when mouse is pressed */
                                         onMouseDown={(e) => handleItemMouseDown(e, item)}
+
                                         className={cn(
-                                            "file-item flex flex-col items-center justify-center p-3 rounded-md cursor-pointer transition-all hover:bg-slate-100 dark:hover:bg-slate-800",
-                                            // selectedItems.has(item.id)
-                                            //     ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700"
-                                                !isBoxToBoxTransfer
+                                            // Base styles for all file items
+                                            "file-item flex flex-col items-center justify-center w-25 h-25 rounded-md cursor-pointer transition-all hover:bg-slate-100 dark:hover:bg-slate-800 ",
+                                            
+                                            // Basic hover styles when not in box-to-box transfer mode
+                                            !isBoxToBoxTransfer
                                                     ? "hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent"
                                                     : "border border-transparent",
                                             // Add hover effect when dragging
                                             BoxDrag.isDragging && !draggedItemsRef.current.includes(item.id) && BoxDrag.sourceBoxId == boxId &&
                                                 "hover:ring-2 hover:ring-green-500 hover:bg-green-100 dark:hover:bg-green-900/30",
+                                            
                                             // Dragged items opacity
                                             draggedItemsRef.current.includes(item.id) && BoxDrag.isDragging && "opacity-50",
                                         )}
                                     >
-                                        <div className="w-16 h-16 flex items-center justify-center mb-2">
+                                        {/* Icon container */}
+                                        <div className="w-12 h-12 flex items-center justify-center mb-2">
                                             <IconComponent
-                                                className={cn("h-14 w-14", iconColor)}
+                                                className={cn("h-10 w-10", iconColor)}
                                             />
                                         </div>
+
+                                        {/* File/folder name */}
                                         <span
                                             className={cn(
-                                                "block w-full px-1 text-sm leading-tight text-center",
+                                                "block w-full px-1 text-xs leading-tight text-center",
                                                 "break-all line-clamp-2 min-h-[2.5rem]",
                                                 "text-slate-800 dark:text-slate-200",
-                                                // selectedItems.has(item.id)
-                                                //     ? "text-blue-700 dark:text-blue-300 font-medium"
-                                                //     : "text-slate-800 dark:text-slate-200",
-                                                    BoxDrag.target?.boxId === Number(item.id) && "text-green-700 dark:text-green-300",
+
+                                                // Highlight text when this item is a drop target
+                                                BoxDrag.target?.boxId === Number(item.id) && "text-green-700 dark:text-green-300",
                                             )}
                                             title={item.name}
                                         >{item.name}</span>
@@ -1832,6 +1993,7 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                             })}
                         </div>
                     ) : (
+                        /* Empty folder message when no files are found */
                         <div
                             className="flex flex-col items-center justify-center h-full text-slate-800 dark:text-slate-200">
                             <FolderIcon className="w-16 h-16 mb-4 opacity-30"/>
@@ -1840,6 +2002,8 @@ export const FileExplorer = memo(function FileExplorer ({zoomLevel, cloudType, a
                     )
                 )}
             </div>
+
+                    {/* File statistics dialog - shows detailed info about selected files */}
             <FileStatsDialog />
         </div>
     )
