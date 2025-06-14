@@ -1,28 +1,38 @@
+/**
+ * StorageSideWindow Component
+ * 
+ * This is a slide-out panel that shows on the left side of the screen.
+ */
+
 import { useEffect, useState } from "react";
-import { CloudItem } from "./ui/cloudItem";
 import { FaDropbox, FaGoogleDrive} from "react-icons/fa";
 import { TbBrandOnedrive } from "react-icons/tb";
-import { SiIcloud } from "react-icons/si";
 import {StorageWideWindowProps} from "@Types/box";
-import { CloudType } from "../../types/cloudType";
+import { CloudType } from "@Types/cloudType";
 import { PopupAccounts } from "./PopupAccounts";
 import { HardDrive, Cloud as CloudIcon, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/** Props interface for individual storage provider cards */
 interface StorageCardProps {
-    icon: React.ReactNode;
-    label: string;
-    description: string;
-    onClick: () => void;
-    onCancel?: () => void;
-    gradient: string;
-    iconColor: string;
-    isLoading?: boolean;
-    disabled?: boolean;
-    type?: string;
-    error?: string | null;
+    icon: React.ReactNode;           // The icon to show (like Google Drive logo)
+    label: string;                   // The name to display (like "Google Drive")
+    description: string;             // What it does (like "Connect to your Google Drive")
+    onClick: () => void;             // What happens when you click it
+    onCancel?: () => void;           // What happens when you click cancel (optional)
+    gradient: string;                // The background color theme
+    iconColor: string;               // What color the icon should be
+    isLoading?: boolean;             // Is it currently connecting? (optional)
+    disabled?: boolean;              // Is it clickable right now? (optional)
+    type?: string;                   // What type of storage (local or cloud)
+    error?: string | null;           // Any error message to show (optional)
 }
 
+/**
+ * StorageCard Component
+ * 
+ * This creates one clickable card for each storage type.
+ */
 function StorageCard({ icon, label, description, onClick, onCancel, gradient, iconColor, isLoading = false, disabled = false, type, error }: StorageCardProps) {
     return (
         <div 
@@ -54,6 +64,8 @@ function StorageCard({ icon, label, description, onClick, onCancel, gradient, ic
                     <div className="absolute bottom-8 left-8 w-1.5 h-1.5 bg-blue-300/20 rounded-full animate-pulse" style={{ animationDelay: '1s' }} />
                 </div>
             )}
+            
+            {/* Cancel button for loading states */}
             {isLoading && onCancel && (
                 <button
                     onClick={(e) => {
@@ -69,6 +81,7 @@ function StorageCard({ icon, label, description, onClick, onCancel, gradient, ic
             
             <div className="relative p-5">
                 <div className="flex items-start gap-4">
+                    {/* Icon container */}
                     <div className={cn("p-3 rounded-xl bg-gradient-to-br shadow-lg transition-all duration-500 ease-out group-hover:shadow-2xl group-hover:scale-125 group-hover:rotate-3", error ? "from-red-100 to-red-200 dark:from-red-900/30 dark:to-red-800/30" : gradient)}>
                         <div className={cn("transition-all duration-500 ease-out group-hover:scale-110", error ? "text-red-600 dark:text-red-400" : iconColor)}>
                             {isLoading ? (
@@ -80,6 +93,8 @@ function StorageCard({ icon, label, description, onClick, onCancel, gradient, ic
                             )}
                         </div>
                     </div>
+                    
+                    {/* Content area with title and description */}
                     <div className="flex-1 min-w-0">
                         <h3 className={cn("font-semibold transition-all duration-500 ease-out group-hover:translate-x-1", 
                             error 
@@ -132,37 +147,62 @@ function StorageCard({ icon, label, description, onClick, onCancel, gradient, ic
     );
 }
 
+/** Main StorageWideWindow Component */
+const StorageWideWindow = ({
+    show,             // Whether the window is currently visible
+    addStorage,       // Function to add new storage
+    onAccountDeleted  // Callback when an account is deleted
+}: StorageWideWindowProps) => {
 
-const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWindowProps) => {
+    /** State for showing the account selection popup */
     const [showAccountPopup, setShowAccountPopup] = useState<boolean>(false);
+    
+    /** Which cloud service the user clicked on */
     const [toAddCloudType, setToAddCloudType] = useState<CloudType | null>(null); 
+    
+    /** Which specific account was selected */
     const [toAddAccount, setToAddAccount] = useState<string | null>(null);
+    
+    /** List of accounts available for the selected cloud service */
     const [availableAccounts, setAvailableAccounts] = useState<string[]>([]);
+    
+    /**  
+     * Tracks which services are currently trying to connect
+     * Each service can be true (connecting) or false (not connecting)
+     */
     const [loadingStates, setLoadingStates] = useState<{[key: string]: boolean}>({
         google: false,
         dropbox: false,
         onedrive: false,
         local: false
     });
+    
+    /**  
+    * Stores error messages for each service
+    */
     const [errorStates, setErrorStates] = useState<{[key: string]: string | null}>({
         google: null,
         dropbox: null,
         onedrive: null,
         local: null
     });
+    
+    /** Are we currently in the process of canceling connections? */
     const [isCancellingConnections, setIsCancellingConnections] = useState<boolean>(false);
 
-    // Helper function to check if any cloud service is right now in connecting state
+    /** Check if any cloud service is currently in connecting state */
     const isAnyServiceConnecting = () => {
         return Object.values(loadingStates).some(isLoading => isLoading);
     };
 
-    // when the user selects an account from the popup / or connects a new account, effect will be triggered
+    /** This runs when the user has selected an account or connected a new one */
     useEffect(() => {
         const fetchData = async () => {
+            // Only proceed if an account was actually selected
             if (toAddAccount) {
                 console.log("Selected account changed to:", toAddAccount);
 
+                // Handle different types of cloud services
                 switch (toAddCloudType) {
                     case CloudType.GoogleDrive:
                         console.log("Google Drive account connected:", toAddAccount);
@@ -195,13 +235,13 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
                         ); 
                         break;
                     case null:
-                            console.log("Local account connected:", toAddAccount);
-                            addStorage(
-                                "local",
-                                `Local File Directory`,
-                                <HardDrive className="h-6 w-6" />,
-                            ); 
-                            break;
+                        console.log("Local account connected:", toAddAccount);
+                        addStorage(
+                            "local",
+                            `Local File Directory`,
+                            <HardDrive className="h-6 w-6" />,
+                        ); 
+                        break;
                     default:
                         console.log("No account connected");
                 }
@@ -215,14 +255,18 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         fetchData();
     }, [toAddAccount]);
 
-    // Function to cancel all active connections
+    /**
+     * Cancels all active cloud authentication processes
+     * Called when window is closed or component unmounts during active connections
+     */
     const cancelAllConnections = async () => {
         console.log('Cancelling all active connections...');
         setIsCancellingConnections(true);
         
-        // Cancel cloud authentications
         const cancelPromises = [];
         
+        // Check each service and cancel if it's connecting
+
         if (loadingStates.google) {
             cancelPromises.push(
                 (window as any).cloudFsApi.cancelAuthentication(CloudType.GoogleDrive)
@@ -247,7 +291,10 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         // Wait for all cancellations to complete
         await Promise.all(cancelPromises);
         
-        // Reset all loading states
+        /**  
+         * Reset all states back to normal after cancellation
+         * This makes sure no cards show as loading or have errors
+         */
         setLoadingStates({
             google: false,
             dropbox: false,
@@ -255,7 +302,6 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
             local: false
         });
         
-        // Clear all errors
         setErrorStates({
             google: null,
             dropbox: null,
@@ -266,19 +312,22 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         setIsCancellingConnections(false);
     };
 
+    /** This watches for changes in window visibility and popup state */
     useEffect(() => {
+        // Only act when the account popup is closed or the main panel is closed
         if (!showAccountPopup || !show) {
             if (!show && isAnyServiceConnecting()) {
-                // Cancel all connections when the window is closed
+                // Panel closed while connecting - cancel everything
                 cancelAllConnections();
             } else {
-                // Just reset states if no connections are active
+                // Panel closed normally - just reset loading states
                 setLoadingStates({
                     google: false,
                     dropbox: false,
                     onedrive: false,
                     local: false
                 });
+                // Only clear errors when fully closing the panel
                 if (!show) {
                     setErrorStates({
                         google: null,
@@ -291,12 +340,13 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         }
     }, [showAccountPopup, show]);
 
-    // Cleanup effect to cancel all connections when component unmounts
+    /**
+     * Cleanup effect to cancel all connections when component unmounts
+     */
     useEffect(() => {
         return () => {
             if (isAnyServiceConnecting()) {
                 console.log('Component unmounting, cancelling all connections...');
-                // Cancel all connections without awaiting since this is cleanup
                 cancelAllConnections().catch(error => 
                     console.error('Error during cleanup:', error)
                 );
@@ -304,16 +354,18 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         };
     }, []);
 
-    // Helper to clear the errors for the cards
+    /**
+     * Functions for error and state management
+     */
     const clearError = (service: string) => {
         setErrorStates(prev => ({ ...prev, [service]: null }));
     };
 
-    // Helper to set the errors for the cards
     const setError = (service: string, message: string) => {
         setErrorStates(prev => ({ ...prev, [service]: message }));
     };
 
+    /** Converts error messages to user-friendly descriptions */
     const getUserFriendlyError = (error: any): string => {
         if (typeof error === 'string') {
             if (error.includes('cancelled')) return 'Authentication cancelled';
@@ -332,6 +384,14 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         return 'Connection failed';
     };
 
+    /**
+     * Individual cancel handlers for each service
+     * 
+     * When a user clicks the cancel button on a specific card,
+     * these functions handle canceling just that service
+     */
+
+    // Cancel Google Drive connection
     const handleCancelGoogle = async () => {
         console.log('Cancelling Google Drive connection');
         try {
@@ -343,6 +403,7 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         clearError('google');
     };
 
+    // Cancel Dropbox connection
     const handleCancelDropbox = async () => {
         console.log('Cancelling Dropbox connection');
         try {
@@ -354,6 +415,7 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         clearError('dropbox');
     };
 
+    // Cancel OneDrive connection
     const handleCancelOneDrive = async () => {
         console.log('Cancelling OneDrive connection');
         try {
@@ -371,43 +433,32 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         clearError('local');
     };
 
+    /** Google Drive connection handler */
     const handleGoogleClick = async () => {
         if (isAnyServiceConnecting()) {
             console.log('Another service is already connecting, please wait...');
             return;
         }
 
-        // TODO added for testing
-        // await (window as any).electronAPI.clearAuthTokens(); 
         console.log('google drive clicked')
 
-        // Clear any existing error
         clearError('google');
         setLoadingStates(prev => ({ ...prev, google: true }));
-        
-        // change selected cloud type to google drive
         setToAddCloudType(CloudType.GoogleDrive);
+        
         try {
-            
-            // if not exist in store, load token from google
-            // if exist in store, load token from store
             const accountIds: Array<string> = await (window as any).cloudFsApi.getConnectedCloudAccounts(CloudType.GoogleDrive);
-
             console.log('accountIds: ', accountIds);
 
             if (accountIds && accountIds.length > 0) {
                 console.log('Google Drive account already connected');
-
-                // show connected accounts on POP UP UI
                 setAvailableAccounts(accountIds);
                 setShowAccountPopup(true);
             } else {
                 console.log('Google Drive account not connected, connecting...');
-                // no need to show popup, just connect new account
                 try {
                     await connectNewCloudAccount(CloudType.GoogleDrive);
                 } catch (error) {
-                    // Error is already handled in connectNewCloudAccount
                     console.log('Google Drive connection cancelled or failed');
                 }
             }
@@ -421,45 +472,34 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         }
     }
 
+    /** Dropbox connection handler */
     const handleDropBoxClick = async () => {
         if (isAnyServiceConnecting()) {
             console.log('Another service is already connecting, please wait...');
             return;
         }
 
-        // TODO added for testing
-        // await (window as any).electronAPI.clearAuthTokens(); 
         console.log('dropbox clicked')
         
-        // Clear any existing error
         clearError('dropbox');
         setLoadingStates(prev => ({ ...prev, dropbox: true }));
-        
-        // change selected cloud type to dropbox  
         setToAddCloudType(CloudType.Dropbox);
-        // TODO: implement getConnectedCloudAccounts for dropbox
+        
         try {
             await new Promise(resolve => setTimeout(resolve, 300));
             
-            // if not exist in store, load token from google
-            // if exist in store, load token from store
             const accountIds: Array<string> = await (window as any).cloudFsApi.getConnectedCloudAccounts(CloudType.Dropbox);
-
             console.log('accountIds: ', accountIds);
 
             if (accountIds && accountIds.length > 0) {
                 console.log('DropBox account already connected');
-
-                // show connected accounts on POP UP UI
                 setAvailableAccounts(accountIds);
                 setShowAccountPopup(true);
             } else {
                 console.log('DropBox account not connected, connecting...');
-                // no need to show popup, just connect new account
                 try {
                     await connectNewCloudAccount(CloudType.Dropbox);
                 } catch (error) {
-                    // Error is already handled in connectNewCloudAccount
                     console.log('Dropbox connection cancelled or failed');
                 }
             }
@@ -473,45 +513,34 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         }
     }
 
+    /** OneDrive connection handler */
     const handleOneDriveClick = async () => {
         if (isAnyServiceConnecting()) {
             console.log('Another service is already connecting, please wait...');
             return;
         }
 
-        // TODO added for testing
-        // await (window as any).electronAPI.clearAuthTokens(); 
         console.log('onedrive clicked')
 
-        // Clear any existing error
         clearError('onedrive');
         setLoadingStates(prev => ({ ...prev, onedrive: true }));
-
-        // change selected cloud type to OneDrive
         setToAddCloudType(CloudType.OneDrive);
+        
         try {
-            // Add a small delay for smooth UX
             await new Promise(resolve => setTimeout(resolve, 300));
             
-            // if not exist in store, load token from OneDrive
-            // if exist in store, load token from store
             const accountIds: Array<string> = await (window as any).cloudFsApi.getConnectedCloudAccounts(CloudType.OneDrive);
-
             console.log('accountIds: ', accountIds);
 
             if (accountIds && accountIds.length > 0) {
                 console.log('OneDrive account already connected');
-
-                // show connected accounts on POP UP UI
                 setAvailableAccounts(accountIds);
                 setShowAccountPopup(true);
             } else {
                 console.log('OneDrive account not connected, connecting...');
-                // no need to show popup, just connect new account
                 try {
                     await connectNewCloudAccount(CloudType.OneDrive);
                 } catch (error) {
-                    // Error is already handled in connectNewCloudAccount
                     console.log('OneDrive connection cancelled or failed');
                 }
             }
@@ -525,25 +554,21 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         }
     }
 
+    /** Local directory handler */
     const handleLocalClicked = async () => {
         if (isAnyServiceConnecting()) {
             console.log('Another service is already connecting, please wait...');
             return;
         }
 
-        // TODO added for testing
-        // await (window as any).electronAPI.clearAuthTokens(); 
         console.log('local clicked')
 
-        // Clear any existing error
         clearError('local');
         setLoadingStates(prev => ({ ...prev, local: true }));
-
-        // change selected cloud type to google drive
         setToAddCloudType(null);
+        
         try {
             await new Promise(resolve => setTimeout(resolve, 300));
-            
             setToAddAccount("local");
         } catch (error: any) {
             console.error('Local error:', error);
@@ -555,13 +580,17 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         }
     }
 
+    /**
+     * Initiates new cloud account connection process
+     * Handles the OAuth flow and account registration
+     */
     const connectNewCloudAccount = async (cloudType: CloudType) => {
         try {
+            // This opens a browser window for the user to log in
             const accountId = await (window as any).cloudFsApi.connectNewCloudAccount(cloudType);
             setToAddAccount(accountId);
         } catch (error: any) {
             console.error(`${cloudType} authentication error:`, error);
-            // Don't set an error if user cancelled authentication
             if (!error.message?.includes('cancelled') && !error.message?.includes('aborted')) {
                 const serviceName = cloudType.toLowerCase();
                 setError(serviceName, getUserFriendlyError(error));
@@ -570,6 +599,7 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
         }
     }
 
+    /** Handles account deletion from the popup interface */
     const handleAccountDeleted = async (cloudType: CloudType, accountId: string) => {
         console.log(`Account ${accountId} deleted for ${cloudType}, refreshing available accounts...`)
         setAvailableAccounts(prev => prev.filter(account => account !== accountId))
@@ -588,23 +618,30 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
             <div className={`h-full flex flex-col transition-all duration-300 ease-out ${
                 show ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4"
             }`}>
+                {/* Header section with title and description */}
                 <div className="p-6 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-blue-900/10 dark:to-indigo-900/10">
                     <div className="flex items-center gap-3 mb-2">
                         <div className="p-3 rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 shadow-lg hover:shadow-xl transition-all duration-500 hover:scale-110 hover:rotate-6">
                             <CloudIcon className="h-6 w-6 text-blue-600 dark:text-blue-400 transition-all duration-500 hover:scale-110" />
                         </div>
+                        {/* Main title */}
                         <div>
                             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 transition-all duration-500 bg-gradient-to-r from-slate-900 to-slate-700 dark:from-slate-100 dark:to-slate-300 bg-clip-text text-transparent">
                                 Add Storage
                             </h2>
+                            {/* Subtitle */}
                             <p className="text-sm text-slate-600 dark:text-slate-400 transition-all duration-500 hover:text-slate-700 dark:hover:text-slate-300">
                                 Connect your storage providers
                             </p>
                         </div>
                     </div>
                 </div>
+                
+                {/* Storage provider cards container */}
                 <div className="flex-1 p-6 space-y-4 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600 scrollbar-track-transparent hover:scrollbar-thumb-slate-400 dark:hover:scrollbar-thumb-slate-500 transition-all duration-300">
                     <div className="space-y-4">
+
+                        {/* Local file storage card */}
                         <StorageCard
                             icon={<HardDrive className="h-6 w-6" />}
                             label="Local Drive"
@@ -618,6 +655,8 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
                             error={errorStates.local}
                             onCancel={handleCancelLocal}
                         />
+                        
+                        {/* Google Drive cloud storage card */}
                         <StorageCard
                             icon={<FaGoogleDrive className="h-6 w-6" />}
                             label="Google Drive"
@@ -630,6 +669,8 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
                             error={errorStates.google}
                             onCancel={handleCancelGoogle}
                         />
+                        
+                        {/* Dropbox cloud storage card */}
                         <StorageCard
                             icon={<FaDropbox className="h-6 w-6" />}
                             label="Dropbox"
@@ -642,6 +683,8 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
                             error={errorStates.dropbox}
                             onCancel={handleCancelDropbox}
                         />
+                        
+                        {/* Microsoft OneDrive cloud storage card */}
                         <StorageCard
                             icon={<TbBrandOnedrive className="h-6 w-6" />}
                             label="OneDrive"
@@ -656,6 +699,8 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
                         />
                     </div>
                 </div>
+                
+                {/* Footer section with status indicator */}
                 <div className="select-none p-6 border-t border-slate-200 dark:border-slate-700 bg-gradient-to-r from-slate-50/50 to-gray-50/50 dark:from-slate-800/50 dark:to-slate-700/50">
                     <div className="flex items-center justify-center gap-2 mb-3">
                         <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
@@ -674,6 +719,7 @@ const StorageWideWindow = ({show, addStorage, onAccountDeleted}: StorageWideWind
                 </div>
             </div>
 
+            {/* Account selection popup */}
             <PopupAccounts 
                 open={showAccountPopup} 
                 setOpen={setShowAccountPopup} 

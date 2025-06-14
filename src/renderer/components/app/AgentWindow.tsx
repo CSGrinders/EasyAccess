@@ -1,96 +1,160 @@
+/**
+ * AgentWindow Compoenent 
+ * 
+ * A resizable chat interface for MCP (Model Context Protocol) agent interactions
+ * Features: Real-time status indicator, query processing, error handling, and manual resize functionality
+ */
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
 import { Loader2, ArrowUp } from "lucide-react";
 import { MCPStatus } from "@Types/permissions";
 
 export default function AgentWindow({ show }: { show: boolean }) {
+    
     const [query, setQuery] = useState('');
+
+    /** The agent's response to the user's question */
     const [response, setResponse] = useState('');
+
+    /** Whether we're currently waiting for the agent to respond */
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [mcpInfo, setMcpInfo] = useState<MCPStatus | null>(null);
-    const [size, setSize] = useState({ width: 560, height: 320 }); 
-    const [isResizing, setIsResizing] = useState(false);
-    const resizeStartRef = useRef({ x: 0, y: 0 });
-    const resizeStartSizeRef = useRef({ width: 560, height: 320 });
-    const windowRef = useRef<HTMLDivElement>(null);
 
+    /** Information about whether the MCP agent is on based on permissions */
+    const [mcpInfo, setMcpInfo] = useState<MCPStatus | null>(null);
+    
+    /** Window resize state and refs */
+    const [size, setSize] = useState({ width: 560, height: 320 }); // Current size of the window
+    const [isResizing, setIsResizing] = useState(false); // Whether the user is currently dragging to resize the window
+    const resizeStartRef = useRef({ x: 0, y: 0 }); // Stores where the mouse was when resize started
+    const resizeStartSizeRef = useRef({ width: 560, height: 320 }); // Stores what size the window was when resize started
+    const windowRef = useRef<HTMLDivElement>(null); // Reference to the main window HTML element
+
+    /** Window size constraints and layout constants */
     const MIN_WIDTH = 320;
     const MIN_HEIGHT = 240;
     const ACTION_BAR_WIDTH = 80; 
 
+    /** 
+     * Gets the current status of the MCP agent from the main process
+     * This tells us if the agent is ready to answer questions or if there's a problem
+     */
     const loadMCPStatus = async () => {
         try {
+            // Ask the main process for the agent's status
             const status = await window.mcpApi.getStatus();
             console.log('MCP Status:', status);
+            // Store the status so we can show it to the user
             setMcpInfo(status);
         } catch (error) {
+            // If something goes wrong, log it
             console.error('Error loading MCP status:', error);
         }
     };
 
-
+    /** 
+     * When the window becomes visible, check the agent status
+     * This runs automatically when the 'show' prop changes to true
+     */
     useEffect(() => {
         if (show) {
             loadMCPStatus();
         }
     }, [show]);
 
+    /** 
+     * Handles what happens when the user submits their question
+     * This function manages the entire process of sending a query and getting a response
+     */
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Show loading spinner and clear any previous errors
         setIsLoading(true);
         setError(null);
 
         try {
+            // Send the user's question to the agent and wait for response
             const result = await (window as any).mcpApi.processQuery(query);
+
+            // Show the agent's response and clear the input field
             setResponse(result);
-            setQuery(''); // Clear input after successful submission
+            setQuery('');
         } catch (err) {
+            // If something goes wrong, show an error message to the user
             setError(err instanceof Error ? err.message : 'Failed to process query');
         } finally {
             setIsLoading(false);
         }
     };
 
-    // Resize handlers
+    /** 
+     * Starts the resize operation when user clicks and drags the resize handle
+     * Records where the mouse started and what size the window was
+     */
     const handleResizeStart = useCallback((e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
         
+        // Mark that we're now resizing
         setIsResizing(true);
-        resizeStartRef.current = { x: e.clientX, y: e.clientY };
+
+        // Remember where the mouse was when resize started
+        resizeStartRef.current = { x: e.clientX, y: e.clientY }; 
+
+        // Remember what size the window was when resize started
         resizeStartSizeRef.current = { ...size };
-        document.body.style.userSelect = 'none';
-        document.body.style.cursor = 'nw-resize';
+        
+        // Prevent text selection and change cursor while resizing
+        document.body.style.userSelect = 'none'; // No text selection
+        document.body.style.cursor = 'nw-resize'; // Show resize cursor
     }, [size]);
 
+    /** 
+     * Updates the window size as the user drags the mouse
+     * Calculates new dimensions and enforces size limits
+     */
     const handleMouseMove = useCallback((e: MouseEvent) => {
+        // Only do something if we're actually resizing
         if (!isResizing) return;
 
+        // Calculate how far the mouse has moved since resize started
         const dx = resizeStartRef.current.x - e.clientX; 
         const dy = resizeStartRef.current.y - e.clientY; 
 
-        // Calculate maximum width based on current window position and ActionBar constraint
+
+        // Get the current window position to calculate maximum allowed width, without exceding the action bar
         const windowRect = windowRef.current?.getBoundingClientRect();
         const maxWidth = windowRect ? window.innerWidth - ACTION_BAR_WIDTH : window.innerWidth - ACTION_BAR_WIDTH;
 
+         // Calculate new size, but don't go below minimum or above maximum
         const newWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, resizeStartSizeRef.current.width + dx));
         const newHeight = Math.max(MIN_HEIGHT, resizeStartSizeRef.current.height + dy);
 
         setSize({ width: newWidth, height: newHeight });
     }, [isResizing]);
 
+    /** 
+     * Finishes the resize operation when user releases the mouse button
+     * Restores normal cursor and text selection behavior
+     */
     const handleMouseUp = useCallback(() => {
         if (isResizing) {
+            // Mark that we're no longer resizing
             setIsResizing(false);
+
+            // Restore normal text selection and cursor
             document.body.style.userSelect = '';
             document.body.style.cursor = '';
         }
     }, [isResizing]);
 
-    // Global mouse event listeners for resize
+    /** 
+     * Sets up global mouse event listeners during resize operation
+     * This lets us track mouse movement even when it leaves the window
+     */
     useEffect(() => {
         if (isResizing) {
             document.addEventListener('mousemove', handleMouseMove);
@@ -120,12 +184,19 @@ export default function AgentWindow({ show }: { show: boolean }) {
                 opacity: isResizing ? 0.9 : 1
             }}
         >
+            {/* Main container for the agent window */}
             <div className="h-full flex flex-col max-w-full">
+
+                {/* TOP SECTION: Message display area where agent responses appear */}
                 <div className="flex-1 overflow-hidden">
                     <div className="h-full p-4 pb-2">
                         <div className="h-full bg-white/80 dark:bg-black/30 rounded-lg border border-blue-500/20 dark:border-blue-400/20 p-3 overflow-y-auto backdrop-blur-sm">
+                            
+                            {/* Agent status indicator - shows if agent is working */}
                             <div className="flex items-center gap-2 mb-2">
                                 <div className="w-2 h-2 bg-blue-500 dark:bg-blue-400 rounded-full animate-pulse"></div>
+
+                                {/* Status text that changes based on agent availability */}
                                 {mcpInfo && mcpInfo.isEnabled ? (
                                     <span className="text-green-600 dark:text-green-300 text-sm font-medium">Agent Ready</span>
                                 ) : (
@@ -133,12 +204,14 @@ export default function AgentWindow({ show }: { show: boolean }) {
                                 )}
                             </div>
 
+                            {/* Error message display */}
                             {error && (
                                 <div className="mb-3 text-xs text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-900/20 border border-red-300/50 dark:border-red-500/10 rounded px-3 py-2">
                                     {error}
                                 </div>
                             )}
 
+                            {/* Main content area - shows different things based on agent state */}
                             <div className="text-gray-800 dark:text-gray-100 text-sm font-mono leading-relaxed">
                                 {mcpInfo && mcpInfo.isEnabled ? (
                                 isLoading ? (
@@ -146,12 +219,15 @@ export default function AgentWindow({ show }: { show: boolean }) {
                                         <Loader2 className="animate-spin w-4 h-4" />
                                         <span>Processing query...</span>
                                     </div>
-                                ) : response ? (
+                                ) : response ? ( 
+                                    // Show the agent's response
                                     <pre className="whitespace-pre-wrap break-words">{response}</pre>
                                 ) : (
+                                    // No response yet, show placeholder text
                                     <span className="text-gray-600 dark:text-gray-500 italic">Agent will answer here...</span>
                                 )) : (
                                 <>
+                                    // Agent is disabled, explain why
                                     <span className="text-gray-600 dark:text-gray-500 italic">Agent is disabled due to insufficient permissions.</span>
                                 </>)}
                             </div>
@@ -159,10 +235,12 @@ export default function AgentWindow({ show }: { show: boolean }) {
                     </div>
                 </div>
 
-                {/* Input Area */}
+                {/* BOTTOM SECTION: Input area where user types questions */}
                 <div className="flex-shrink-0 p-4 pt-2">
                     <div className="relative">
                         <div className="flex gap-2 bg-white/70 dark:bg-black/30 rounded-lg border border-blue-500/30 dark:border-blue-400/30 p-2 backdrop-blur-sm">
+                            
+                            {/* Text input where user types their questions */}
                             <Input
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
@@ -177,6 +255,8 @@ export default function AgentWindow({ show }: { show: boolean }) {
                                     }
                                 }}
                             />
+
+                            {/* Submit button */}
                             <Button
                                 onClick={handleSubmit}
                                 disabled={isLoading || !query.trim()}
@@ -193,6 +273,7 @@ export default function AgentWindow({ show }: { show: boolean }) {
                     </div>
                 </div>
 
+                {/* RESIZE HANDLE: Small invisible area in TOP-LEFT corner for resizing */}
                 <div
                     onMouseDown={handleResizeStart}
                     className="absolute left-0 top-0 w-6 h-6 cursor-nw-resize bg-transparent hover:bg-blue-500/10 z-10 rounded-br-lg transition-colors duration-200"
@@ -200,6 +281,7 @@ export default function AgentWindow({ show }: { show: boolean }) {
                         touchAction: 'none',
                     }}
                 >
+                    {/* Visual indicator that appears when hovering over resize handle */}
                     <div className="absolute inset-1 opacity-0 hover:opacity-100 transition-opacity duration-200">
                         <div className="w-full h-full border-l-2 border-t-2 border-blue-500/60 rounded-tl-sm"></div>
                     </div>

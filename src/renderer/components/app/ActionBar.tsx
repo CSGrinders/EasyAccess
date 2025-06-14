@@ -1,25 +1,35 @@
+/**
+ * ActionBar component 
+ *
+ * Vertical sidebar for primary navigation and actions
+ * Provides access to dashboard, settings, and AI agent features
+ */
+
 import React, { useState } from "react";
 import {Button} from "@Components/ui/button";
-import {CloudIcon, Download, Home, LayoutDashboard, Plus, SettingsIcon, Brain} from "lucide-react";
+import {LayoutDashboard, Plus, SettingsIcon, Brain} from "lucide-react";
 import {NavItem} from "@Components/ui/navItem";
-import { CloudItem } from "./ui/cloudItem";
-import { FaDropbox, FaGoogleDrive } from "react-icons/fa";
-import { SiIcloud } from "react-icons/si";
 
+/**
+ * Props for the ActionBar component
+ */
 interface ActionBarProps {
-    action: string
-    setAction: React.Dispatch<React.SetStateAction<string>>
-    toggleShowSideWindow: () => void
-    toggleShowAgentWindow: () => void
+    action: string                                              // Current active action/page
+    setAction: React.Dispatch<React.SetStateAction<string>>     // Function to change the current action/page
+    toggleShowSideWindow: () => void                            // Function to toggle the storage side window
+    toggleShowAgentWindow: () => void                           // Function to toggle the AI agent window
 }
 
 const ActionBar = ({action, setAction, toggleShowSideWindow, toggleShowAgentWindow}: ActionBarProps) => {
 
     return (
         <>
+            {/* Main sidebar container */}
             <div
                 className="w-20 select-none bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 shadow-sm flex flex-col items-center py-6">
                 <div className="flex flex-col items-center space-y-6">
+                    
+                    {/* Button to add new storage - only works on main page */}
                     <div className={`relative group`}>
                         <Button
                             disabled={action !== "dashboard"}
@@ -30,13 +40,18 @@ const ActionBar = ({action, setAction, toggleShowSideWindow, toggleShowAgentWind
                         >
                             <Plus className="h-6 w-6 text-blue-600 dark:text-blue-400"/>
                         </Button>
+                        {/* Tooltip for add storage button */}
+                        {/* Text that shows when you hover over the button */}
                         <span
                             className="z-1 select-none absolute top-full left-1/2 transform -translate-x-1/2 mt-2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-                Add Storage
-              </span>
+                            Add Storage
+                        </span>
                     </div>
 
+                    {/* Menu items that change based on what page you're on */}
                     <div className="w-full px-2 space-y-4">
+
+                        {/* If you're on the main page */}
                         {action === "dashboard" && (
                             <>
                                 <NavItem icon={<LayoutDashboard className="h-5 w-5"/>} label="Dashboard" active/>
@@ -45,6 +60,8 @@ const ActionBar = ({action, setAction, toggleShowSideWindow, toggleShowAgentWind
                             </>
 
                         )}
+
+                        {/* If you're on settings page */}
                         {action === "settings" && (
                             <>
                                 <NavItem icon={<LayoutDashboard className="h-5 w-5"/>} label="Dashboard"
@@ -53,6 +70,8 @@ const ActionBar = ({action, setAction, toggleShowSideWindow, toggleShowAgentWind
                             </>
                         )}
                     </div>
+
+                        {/* Button to open AI chat, only works on main page */}
                         <Button onClick={() => toggleShowAgentWindow()}
                             variant="outline"
                             disabled={action !== "dashboard"}
@@ -62,9 +81,10 @@ const ActionBar = ({action, setAction, toggleShowSideWindow, toggleShowAgentWind
                             <Brain className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                         </Button>
                 </div>
+
+                {/* App version number at the bottom */}
                 <div className="mt-auto py-5">
-                    <div
-                        className="">
+                    <div className="">
                         <h4 className="text-sm text-gray-600 dark:text-gray-300">v0.1</h4>
                     </div>
                 </div>

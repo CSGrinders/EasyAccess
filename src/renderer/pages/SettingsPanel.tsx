@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Shield, Info, HelpCircle, Settings, Bell, Palette, Database, Github, Trash2 } from 'lucide-react';
 import { Button } from '@Components/ui/button';
 import { Card } from '@Components/ui/card';
-import PermissionSettings from '@Components/PermissionSettings';
+import PermissionSettings from '@/components/settings/PermissionSettings';
 import { toast } from 'sonner';
 
 interface SettingsPanelProps {

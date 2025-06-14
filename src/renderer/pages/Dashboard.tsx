@@ -1,28 +1,22 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {HardDrive } from "lucide-react"
-import CanvaSettings from "@Components/CanvaSettings";
-import ActionBar from "@Components/ActionBar";
-import { CanvasContainer } from "@Components/CanvasContainer";
-import { StorageBox } from "@Components/StorageBox";
+import CanvaSettings from "@/components/canvas/CanvaSettings";
+import ActionBar from "@/components/app/ActionBar";
+import { CanvasContainer } from "@/components/canvas/CanvasContainer";
+import { StorageBox } from "@/components/box/StorageBox";
 import { type StorageBoxData } from "@Types/box";
-import StorageSideWindow from '@/components/StorageSideWindow';
+import StorageSideWindow from '@/components/box/StorageSideWindow';
 import { CloudType } from '@Types/cloudType';
 import { FileContent } from '@Types/fileSystem';
 import { BoxDragProvider } from "@/contexts/BoxDragContext";
-import { BoxDragPreview } from '@/components/BoxDragPreview';
-import SettingsPanel from '@/components/SettingsPanel';
-import AgentWindow from '../components/AgentWindow';
-import { MovingItemStatus } from '@/components/MovingItemStatus';
-import { UploadConfirmationDialog } from '@/components/UploadConfirmationDialog';
+import { BoxDragPreview } from '@/components/box/BoxDragPreview';
+import SettingsPanel from '@/pages/SettingsPanel';
+import AgentWindow from '../components/app/AgentWindow';
+import { MovingItemStatus } from '@/components/transactions/MovingItemStatus';
+import { UploadConfirmationDialog } from '@/components/transactions/UploadConfirmationDialog';
 
 
-export async function showAreYouSure(): Promise<{ confirmed: boolean; keepOriginal: boolean }> {
-    return new Promise<{ confirmed: boolean; keepOriginal: boolean }>((resolve) => {
-        resolve({ confirmed: false, keepOriginal: false });
-    });
-};
-
-const HomePage = () => {
+const Dashboard = () => {
     const [zoomLevel, setZoomLevel] = useState(1);
     const [isPanMode, setIsPanMode] = useState(false);
     const [action, setAction] = useState("dashboard");
@@ -592,4 +586,4 @@ const HomePage = () => {
     );
 };
 
-export default HomePage;
+export default Dashboard;

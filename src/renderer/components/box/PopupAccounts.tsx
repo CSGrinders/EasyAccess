@@ -1,3 +1,10 @@
+/**
+ * Accounts Dialog component 
+ * 
+ * Allows managing cloud storage accounts.
+ * Allows users to view, select, delete, and add new accounts for a specific cloud provider.
+ */
+
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -8,35 +15,44 @@ import {
 } from "@/components/ui/dialog"
 import { CloudType } from "@Types/cloudType"
 import { useState } from "react"
-import { Trash2, User, Plus, AlertTriangle, Loader2, X } from "lucide-react"
+import { Trash2, User, Plus, Loader2, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
+/** Props for the PopupAccounts component */
 type PopupAccountsProps = {
-    open: boolean
-    setOpen: (open: boolean) => void
-    setSelectedAccount: (account: string) => void
-    connectAddNewAccount: (cloudType: CloudType) => void
-    availableAccounts: string[]
-    cloudType: CloudType | null
-    onAccountDeleted?: (cloudType: CloudType, accountId: string) => void
+    open: boolean                                           // Whether the dialog is open or closed
+    setOpen: (open: boolean) => void                        // Function to control dialog visibility
+    setSelectedAccount: (account: string) => void           // Function to set the currently selected account 
+    connectAddNewAccount: (cloudType: CloudType) => void    // Function to initiate adding a new account
+    availableAccounts: string[]                             // List of currently connected accounts for the cloud type 
+    cloudType: CloudType | null                             // The cloud type for which accounts are being managed   
+    onAccountDeleted?:                                      // Callback when an account is deleted
+    (cloudType: CloudType, accountId: string) => void 
 }
 
+
 export function PopupAccounts({
-    open, 
-    setOpen, 
-    setSelectedAccount, 
-    availableAccounts, 
-    connectAddNewAccount,
-    cloudType,
-    onAccountDeleted
+    open,                   // Whether the dialog is open
+    setOpen,                // Function to control dialog visibility
+    setSelectedAccount,     // Function to set the currently selected account
+    availableAccounts,      // List of currently connected accounts
+    connectAddNewAccount,   // Function to initiate adding a new account
+    cloudType,              // The cloud type for which accounts are being managed
+    onAccountDeleted        // Callback when an account is deleted
 }: PopupAccountsProps) {
+
+    /** Track which account is currently being deleted */
     const [deletingAccount, setDeletingAccount] = useState<string | null>(null)
+    
+    /** Track if new account connection is in progress */
     const [isConnecting, setIsConnecting] = useState(false)
 
+    /** This function runs when someone clicks the delete button on an account */
     const handleDeleteAccount = async (accountId: string, e: React.MouseEvent) => {
         e.stopPropagation()
         
+        // Make sure we know which cloud service we're working with
         if (!cloudType) {
             toast.error("Cloud type not specified.")
             return
@@ -45,6 +61,7 @@ export function PopupAccounts({
         setDeletingAccount(accountId)
         
         try {
+            // Actually delete the account from the system
             const success = await (window as any).cloudFsApi.removeAccount(cloudType, accountId)
             
             if (success) {
@@ -61,14 +78,18 @@ export function PopupAccounts({
         }
     }
 
+    /** Initiates new account connection flow with error handling for user cancellation */
     const handleConnectNew = async () => {
+        // Make sure we know which cloud service we're connecting to
         if (!cloudType) {
             toast.error("Cloud type not specified.")
             return
         }
 
+        // Show that we're in the process of connecting
         setIsConnecting(true)
         try {
+            // Start the connection process (this opens a browser tab)
             await connectAddNewAccount(cloudType)
         } catch (error: any) {
             console.error("Error connecting new account:", error)
@@ -81,7 +102,11 @@ export function PopupAccounts({
         }
     }
 
+    /**
+     * Cancels ongoing authentication process
+     */
     const handleCancel = async () => {
+        // Make sure we know which service to cancel
         if (!cloudType) {
             return
         }
@@ -95,6 +120,7 @@ export function PopupAccounts({
         setIsConnecting(false)
     }
 
+    /**  Maps CloudType enum to display names */
     const getCloudTypeName = (type: CloudType | null) => {
         switch (type) {
             case CloudType.GoogleDrive: return "Google Drive"
@@ -106,12 +132,18 @@ export function PopupAccounts({
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
+            {/* The main content box of the popup */}
             <DialogContent className="sm:max-w-[500px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl max-h-[80vh] overflow-hidden">
+                
+                {/* Top section with title and description */}
                 <DialogHeader className="space-y-3 pb-2">
                     <div className="flex items-center gap-3">
+                        {/* User icon */}
                         <div className="p-2 rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30">
                             <User className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                         </div>
+
+                        {/* Title and description */}
                         <div>
                             <DialogTitle className="text-xl font-semibold text-slate-900 dark:text-slate-100">
                                 {getCloudTypeName(cloudType)} Accounts
@@ -123,7 +155,9 @@ export function PopupAccounts({
                     </div>
                 </DialogHeader>
 
+                {/* Scrollable accounts list container */}
                 <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                    {/* Empty state when no accounts are connected */}
                     {availableAccounts.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-8 text-center">
                             <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 mb-4">
@@ -137,6 +171,7 @@ export function PopupAccounts({
                             </p>
                         </div>
                     ) : (
+                        /* Render list of connected accounts with interactive cards */
                         availableAccounts.map((account, index) => (
                             <div
                                 key={account}
@@ -151,7 +186,9 @@ export function PopupAccounts({
                             >
                                 <div className="absolute inset-0 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-blue-900/10 dark:to-indigo-900/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                                 
+                                {/* Account card content */}
                                 <div className="relative flex items-center p-4">
+                                    {/* Main account selection button */}
                                     <Button
                                         variant="ghost"
                                         className={cn(
@@ -164,9 +201,11 @@ export function PopupAccounts({
                                         }}
                                     >
                                         <div className="flex items-center gap-3 w-full">
+                                            {/* Account icon */}
                                             <div className="p-2 rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 group-hover:scale-110 transition-transform duration-300">
                                                 <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                                             </div>
+                                            {/* Account details */}
                                             <div className="flex flex-col items-start">
                                                 <span className="font-medium text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-300">
                                                     {account}
@@ -178,6 +217,7 @@ export function PopupAccounts({
                                         </div>
                                     </Button>
                                     
+                                    {/* Account deletion button */}
                                     <Button
                                         variant="ghost"
                                         size="sm"
@@ -196,14 +236,15 @@ export function PopupAccounts({
                                         )}
                                     </Button>
                                 </div>
-                                
                                 <div className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-blue-400 to-indigo-400 group-hover:w-full transition-all duration-700 ease-out" />
                             </div>
                         ))
                     )}
 
+                    {/* Add new account section */}
                     <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
                         <div className="relative">
+                            {/* Main connect new account button */}
                             <Button
                                 variant="outline"
                                 className={cn(
@@ -228,7 +269,7 @@ export function PopupAccounts({
                                 </div>
                             </Button>
                             
-                            {/* Cancel button for connecting state */}
+                            {/* Cancel button overlay during connection */}
                             {isConnecting && (
                                 <button
                                     onClick={(e) => {
