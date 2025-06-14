@@ -3,6 +3,9 @@ import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
 import { file } from 'googleapis/build/src/apis/file';
+import dotenv from 'dotenv';
+dotenv.config();
+
 const {
   DataProtectionScope,
   Environment,
@@ -12,17 +15,17 @@ const {
 const path = require('path');
 const { PublicClientApplication, InteractionRequiredAuthError, LogLevel } = require('@azure/msal-node');
 const { shell } = require('electron');
+
+
 const MSAL_CONFIG = {
   auth: {
-      clientId: "004dc6b9-b486-4575-a22d-e6ec9b3435b0",
+      clientId: process.env.MICROSOFT_CLIENT_ID,
       authority: "https://login.microsoftonline.com/common",
   },
 };
 
 /*
-
   Before calling api, need to check if client is authenticated. Pull the client from the cache with the accountId
-
 */
 export class OneDriveStorage implements CloudStorage {
   accountId?: string | undefined;
@@ -61,16 +64,19 @@ export class OneDriveStorage implements CloudStorage {
       usePlaintextFileOnLinux: true,
     };
 
-      // Initialize MSAL persistence
+    // Create a persistence plugin for MSAL
     const persistence = await PersistenceCreator.createPersistence(persistenceConfig);
 
-    // TODO: Implement Onedrive authentication
+    // Attach the persistence to MSAL config
     const msalConfig = {
       ...MSAL_CONFIG,
       cache: {
         cachePlugin: new PersistenceCachePlugin(persistence),
       },
     };
+
+    // Initialize the MSAL client with the configuration and persistence plugin
+    // This will allow the PUBLIC client to access the stored accounts and tokens
     this.client = new PublicClientApplication(msalConfig);
   }
 
@@ -82,10 +88,17 @@ export class OneDriveStorage implements CloudStorage {
     }
 
     if (this.accountId) {
+      // get the account from the cache using the accountId
+      // the client should store the accounts in the cache
       const accounts = await this.client.getAllAccounts();
+
+      // find the account with the accountId
       const account = accounts.find((acc: any) => acc.username === this.accountId);
       if (account) {
         this.account = account;
+
+        // aquire token silently with the persistence cache
+        // this will use the cached token if available, otherwise it will try to refresh the token
         const response = await this.client.acquireTokenSilent({
           account: this.account,
           scopes: [
@@ -96,8 +109,13 @@ export class OneDriveStorage implements CloudStorage {
             'offline_access'
           ],
         });
+
+        // check if the response is valid
+        console.log('Response from acquireTokenSilent:', response);
       
         const accessToken = response.accessToken;
+
+        // Initialize the Graph client with the acquired access token
         this.graphClient = Client.init({
           authProvider: (done) => {
             done(null, accessToken);
@@ -121,6 +139,7 @@ export class OneDriveStorage implements CloudStorage {
   async connect(): Promise<void | any> {
     this.authCancelled = false; 
     
+    // Initialize the MSAL client if not already initialized
     if (!this.client) {
       await this.initClient();
     }
@@ -134,6 +153,7 @@ export class OneDriveStorage implements CloudStorage {
       throw new Error('Authentication cancelled');
     }
     
+    // scopes for the OneDrive API
     const tokenRequest = {
       scopes: [
         'User.Read',
@@ -145,10 +165,12 @@ export class OneDriveStorage implements CloudStorage {
     };
 
     try {
+      // open browser function to handle the interactive authentication flow
       const openBrowser = async (url: any) => {
           await shell.openExternal(url);
       };
 
+      // Acquire token interactively
       const authResponse = await this.client.acquireTokenInteractive({
           ...tokenRequest,
           openBrowser,
@@ -158,7 +180,6 @@ export class OneDriveStorage implements CloudStorage {
       
       console.log('authResponse: ', authResponse);
       
-  
       if (this.authCancelled) {
         throw new Error('Authentication cancelled');
       }
@@ -167,9 +188,11 @@ export class OneDriveStorage implements CloudStorage {
         this.accountId = authResponse.account?.username || '';
         this.AuthToken = null; // AuthToken is not set here since MSAL handles it internally. This should be allowed to be null
         this.account = authResponse.account;
+
+        // Initialize the Graph client with the acquired access token
         this.graphClient = Client.init({
           authProvider: (done) => {
-            done(null, authResponse.accessToken);
+            done(null, authResponse.accessToken); 
           },
         });
         console.log('OneDrive account connected:', this.accountId);

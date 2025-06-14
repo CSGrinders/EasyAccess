@@ -22,6 +22,7 @@ export interface CloudStorage {
     accountId?: string;
     AuthToken?: AuthTokens | null;
 
+    // auth token and accountId are set after connect
     connect(): Promise<void | any>;
     readDir(dir: string): Promise<FileSystemItem[]>; //TODO
     // readFile(filePath: string): Promise<string>
@@ -30,6 +31,25 @@ export interface CloudStorage {
     getAccountId(): string;
     getAuthToken(): AuthTokens | null;
     deleteFile(filePath: string): Promise<void>; //TODO
+}
+
+export async function generateCodes(): Promise<{ codeVerifier: string, codeChallenge: string }> {
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    const codeVerifier = btoa(String.fromCharCode(...array))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+
+    const encoder = new TextEncoder();
+    const data = encoder.encode(codeVerifier);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const base64 = btoa(String.fromCharCode(...hashArray));
+    const codeChallenge = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    return { codeVerifier, codeChallenge };
 }
 
 
