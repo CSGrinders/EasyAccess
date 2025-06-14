@@ -1,20 +1,27 @@
+/**
+ * MovingItemStatus Component
+ * 
+ * A floating status card that shows file transfer progress
+ * 
+ * TODO: To be changed to a queue based system
+ *       that can handle multiple transfers and show a list of items being processed.
+ */
 
-
-import React, { useState, useEffect } from 'react';
-import { X, FileText, AlertCircle, Loader2, CheckCircle, Clock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, AlertCircle, Loader2, CheckCircle, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
 interface MovingItemStatusProps {
-  isVisible?: boolean;
-  itemCount?: number;
-  currentItem?: string;
-  progress?: number;
-  error?: string | null;
-  isCompleted?: boolean;
-  onCancel?: () => void;
-  onClose?: () => void;
-  startTime?: number;
+  isVisible?: boolean;      // Should the card be shown?
+  itemCount?: number;       // How many items are being transferred
+  currentItem?: string;     // Name of the file currently being processed
+  progress?: number;        // Transfer progress (0-100)
+  error?: string | null;    // Error message if transfer failed
+  isCompleted?: boolean;    // Has the transfer finished successfully?
+  onCancel?: () => void;    // Function to call when user cancels
+  onClose?: () => void;     // Function to call when user closes the card
+  startTime?: number;       // When the transfer started (for time estimation)
 }
 
 export function MovingItemStatus({
