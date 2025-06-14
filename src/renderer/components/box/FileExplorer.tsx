@@ -250,6 +250,8 @@ export const FileExplorer = memo(function FileExplorer ({
     /** List of all files and folders in the current directory */                                               
     const [items, setItems] = useState<FileSystemItem[]>([])
 
+    console.log("FileExplorer rendered with items:", items.length, "zoom level:", zoomLevel, "cloudType:", cloudType, "accountId:", accountId)
+
     /** Current working directory - the folder we're currently looking at */
     const [cwd, setCwd] = useState<string>("")
 
@@ -316,7 +318,8 @@ export const FileExplorer = memo(function FileExplorer ({
     /** Current zom level */
     const zoomLevelRef = useRef(zoomLevel);
 
-
+    const lastMoveTimeRef = useRef(0);
+    
     const logSelectionChange = (location: string, newSelection: Set<string>) => {
     console.log(`Selection changed at ${location}:`, Array.from(newSelection));
 };
@@ -720,6 +723,8 @@ export const FileExplorer = memo(function FileExplorer ({
      * Supports multi-selection with Ctrl/Cmd and range selection with Shift
      */
     const handleItemClick = (e: React.MouseEvent, item: FileSystemItem) => {
+        e.preventDefault();
+        e.stopPropagation();
         // Handle double-click for navigation/opening
         if (e.detail === 2) {
             if (!item.isDirectory) {
@@ -775,6 +780,10 @@ export const FileExplorer = memo(function FileExplorer ({
         if ((e.target as HTMLElement).closest(".file-item") || e.button !== 0) {
             return;
         }
+
+        if (Date.now() - lastMoveTimeRef.current < 16) return;
+        lastMoveTimeRef.current = Date.now();
+        console.log("Mouse down on container - starting selection");
 
         // Start selection mode
         isSelectingRef.current = true;
@@ -921,6 +930,12 @@ export const FileExplorer = memo(function FileExplorer ({
     /** Handles mouse movement during drag selection */
     const handleMouseMove = useCallback((e: React.MouseEvent | MouseEvent) => {
         if (!isSelectingRef.current || !containerRef.current) return;
+
+        // Throttle mouse move events (PENDING: Check performance with Hojin)
+        if (Date.now() - lastMoveTimeRef.current < 16) {
+            return;
+        }
+        lastMoveTimeRef.current = Date.now();
 
         // Calculate current mouse position relative to container
         const rect = containerRef.current.getBoundingClientRect();
@@ -1972,7 +1987,9 @@ export const FileExplorer = memo(function FileExplorer ({
                                         onClick={(e) => handleItemClick(e, item)}
 
                                         /* Handle drag start when mouse is pressed */
-                                        onMouseDown={(e) => handleItemMouseDown(e, item)}
+                                        onMouseDown={(e) => {
+                                            e.stopPropagation()
+                                            handleItemMouseDown(e, item)}}
 
                                         className={cn(
                                             // Base styles for all file items
