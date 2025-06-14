@@ -460,8 +460,6 @@ const Dashboard = () => {
         // Update all box z-indices
         storageBoxesRef.current.forEach((box) => {
             const boxRef = boxRefs.current.get(box.id);
-            console.log(box.id === id);
-            console.log("Box ref:", boxRef);
             if (boxRef && boxRef.current) {
                 // Set higher z-index for clicked box, lower for others
                 boxRef?.current?.setStyle({

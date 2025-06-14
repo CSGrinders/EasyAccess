@@ -316,6 +316,12 @@ export const FileExplorer = memo(function FileExplorer ({
     /** Current zom level */
     const zoomLevelRef = useRef(zoomLevel);
 
+
+    const logSelectionChange = (location: string, newSelection: Set<string>) => {
+    console.log(`Selection changed at ${location}:`, Array.from(newSelection));
+};
+
+
     /** 
      * Files filtered by search query and hidden file setting 
      * This creates a new list every time searchQuery, items, or showHidden changes
@@ -417,6 +423,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     setItems(files) // Update file list
                     updatePathSegments(cwd) // Update breadcrumb path
                     setIsLoading(false) // Hide loading indicator
+                    logSelectionChange('cwd useEffect', selectedItemsRef.current);
                     selectedItemsRef.current = new Set()  // Clear selection
                     lastSelectedItemRef.current = null // Clear last selected
                     setSelectedCount(0) // Update selection count
@@ -636,6 +643,8 @@ export const FileExplorer = memo(function FileExplorer ({
                     setItems(files)
                     updatePathSegments(cwd)
                     setIsLoading(false)
+                    selectedItemsRef.current = new Set();
+                    logSelectionChange('refreshDirectory', selectedItemsRef.current);
                     selectedItemsRef.current = new Set()
                     lastSelectedItemRef.current = null
                     setSelectedCount(0)
@@ -723,37 +732,16 @@ export const FileExplorer = memo(function FileExplorer ({
             return
         }
 
+
         // Handle single click for selection
         const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
-        // Range selection with Shift key (TODO: FIX ISSUE WHERE IS NOT WORKING AS EXPECTED)
-        if (e.shiftKey && lastSelectedItemRef.current) {
-            const itemsPathList = sortedItems.map((i) => i.id);
-            const currentIndex = itemsPathList.indexOf(item.id);
-            const lastIndex = itemsPathList.indexOf(lastSelectedItemRef.current);
-
-            if (currentIndex !== -1 && lastIndex !== -1) {
-                // Find the range between current and last selected items
-                const start = Math.min(currentIndex, lastIndex);
-                const end = Math.max(currentIndex, lastIndex);
-
-                if (ctrlOrMeta) {
-                    // Add range to existing selection
-                    const rangeSelection = new Set<string>();
-                    for (let i = start; i <= end; i++) {
-                        rangeSelection.add(itemsPathList[i]);
-                    }
-                    selectedItemsRef.current = new Set([...selectedItemsRef.current, ...rangeSelection]);
-                } else {
-                    // Replace selection with range
-                    const rangeSelection = new Set<string>();
-                    for (let i = start; i <= end; i++) {
-                        rangeSelection.add(itemsPathList[i]);
-                    }
-                    selectedItemsRef.current = rangeSelection;
-                }
-            }
+        // Add to selection with Shift key 
+        if (e.shiftKey) {
+            selectedItemsRef.current = new Set([...selectedItemsRef.current, item.id]);
+            lastSelectedItemRef.current = item.id;
         } 
+        
         // Multi-selection with Ctrl/Cmd key
         else if (ctrlOrMeta) {
             const newSelectedItemsUpdate = new Set(selectedItemsRef.current);
@@ -988,6 +976,37 @@ export const FileExplorer = memo(function FileExplorer ({
             }
         }
 
+        // Store the item info but don't start drag operations yet
+        const potentialDragItem = item;
+
+        // Set up mouse move handler that checks for drag threshold
+        const handlePotentialDrag = (moveEvent: MouseEvent) => {
+            const dx = moveEvent.clientX - dragStartPosRef.current.x;
+            const dy = moveEvent.clientY - dragStartPosRef.current.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Only start drag if mouse moved more than 5 pixels
+            if (distance > 5) {
+                document.removeEventListener("mousemove", handlePotentialDrag);
+                document.removeEventListener("mouseup", handlePotentialMouseUp);
+                // Now start the drag operation
+                startDragOperation(potentialDragItem);
+            }
+        };
+
+        const handlePotentialMouseUp = () => {
+            // Mouse released without dragging
+            document.removeEventListener("mousemove", handlePotentialDrag);
+            document.removeEventListener("mouseup", handlePotentialMouseUp);
+        };
+
+        // Set up threshold detection listeners
+        document.addEventListener("mousemove", handlePotentialDrag);
+        document.addEventListener("mouseup", handlePotentialMouseUp);
+    }
+
+    // Separate function to actually start the drag operation
+    const startDragOperation = (item: FileSystemItem) => {
         // Determine which files to drag
         let itemsToDrag: string[]
         if (selectedItemsRef.current.has(item.id)) {
@@ -996,13 +1015,15 @@ export const FileExplorer = memo(function FileExplorer ({
         } else {
             // Item is not selected - just drag this item and select it
             itemsToDrag = [item.id]
-            selectedItemsRef.current = new Set([item.id])
+            selectedItemsRef.current = new Set([...Array.from(selectedItemsRef.current), item.id]);
             lastSelectedItemRef.current = item.id
+            updateSelectedItemsColor();
+            setSelectedCount(selectedItemsRef.current.size);
         }
 
         draggedItemsRef.current = itemsToDrag
 
-        // Set up global mouse event listeners for dragging
+        // Set up global mouse event listeners for actual dragging
         document.addEventListener("mousemove", handleItemMouseMove)
         document.addEventListener("mouseup", handleItemMouseUp)
     }
