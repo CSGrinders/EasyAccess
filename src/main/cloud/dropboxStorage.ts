@@ -1,13 +1,14 @@
-import { CloudStorage,AuthTokens, isValidToken } from './cloudStorage';
+import { CloudStorage,AuthTokens, isValidToken, generateCodes } from './cloudStorage';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
 import { BrowserWindow } from 'electron';
 import { Dropbox } from 'dropbox';
+
 const mime = require('mime-types');
 
 const DROPBOX_APP_KEY = process.env.DROPBOX_KEY;
-const DROPBOX_APP_SECRET = process.env.DROPBOX_SECRET;
+// const DROPBOX_APP_SECRET = process.env.DROPBOX_SECRET;
 const REDIRECT_URI = 'http://localhost';
 
 export class DropboxStorage implements CloudStorage {
@@ -16,8 +17,12 @@ export class DropboxStorage implements CloudStorage {
 
     client?: Dropbox | null = null;
 
+    // https://dropbox.tech/developers/pkce--what-and-why-
+
+
     async connect(): Promise<void | any> {
-        return new Promise((resolve, reject) => {
+        return new Promise(async (resolve, reject) => {
+            // window for Dropbox authentication
             const authWindow = new BrowserWindow({
                 width: 500,
                 height: 600,
@@ -26,11 +31,15 @@ export class DropboxStorage implements CloudStorage {
             });
 
             let handled = false;
-        
-            const authUrl = `https://www.dropbox.com/oauth2/authorize?response_type=code&client_id=${DROPBOX_APP_KEY}&redirect_uri=${REDIRECT_URI}&token_access_type=offline`;
-        
+
+            // code verifier and code challenge generation for PKCE
+            const { codeVerifier, codeChallenge } = await generateCodes();
+
+            // https://www.dropbox.com/oauth2/authorize?client_id=<APP_KEY>&response_type=code&code_challenge=<CHALLENGE>&code_challenge_method=<METHOD>
+            const authUrl = `https://www.dropbox.com/oauth2/authorize?client_id=${DROPBOX_APP_KEY}&response_type=code&code_challenge=${codeChallenge}&code_challenge_method=S256&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&token_access_type=offline`;
             authWindow.loadURL(authUrl);
         
+            // Handle the redirect to extract the authorization code
             authWindow.webContents.on('will-redirect', async (event, url) => {
                 const matched = url.match(/[?&]code=([^&]+)/);
                 if (matched) {
@@ -40,36 +49,44 @@ export class DropboxStorage implements CloudStorage {
             
                     // Exchange code for access token
                     try {
-                        if (!code || !DROPBOX_APP_KEY || !DROPBOX_APP_SECRET) {
+                        if (!code || !DROPBOX_APP_KEY) {
                         throw new Error('Missing required parameters');
                         }
 
+                        // Exchange the authorization code for an access token
                         const tokenResponse = await fetch('https://api.dropboxapi.com/oauth2/token', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                             body: new URLSearchParams({
-                            code: code,
-                            grant_type: 'authorization_code',
-                            client_id: DROPBOX_APP_KEY,
-                            client_secret: DROPBOX_APP_SECRET,
-                            redirect_uri: REDIRECT_URI
+                                code: code,
+                                grant_type: 'authorization_code',
+                                client_id: DROPBOX_APP_KEY,
+                                redirect_uri: REDIRECT_URI,
+                                code_verifier: codeVerifier, // Include the code verifier
                             }).toString()
                         });
                 
                         const tokenData = await tokenResponse.json();
 
+                        console.log('Token Data:', tokenData);
+
+                        // parse the token data and initialize AuthToken and client
                         this.AuthToken = {
                             access_token: tokenData.access_token,
                             refresh_token: tokenData.refresh_token,
                             expiry_date: Date.now() + tokenData.expires_in * 1000
                         };
                         this.client = new Dropbox({ accessToken: tokenData.access_token, fetch });
-                        console.log('Token data:', tokenData);
+                        console.log('AuthToken Initialized:', this.AuthToken);
+
+                        // Get the current account information
                         const accountInfo = await this.client.usersGetCurrentAccount();
+
                         this.accountId = accountInfo.result.email;
-                        console.log(accountInfo.result.email); 
-                
-                        resolve(accountInfo);
+
+                        console.log(accountInfo.result.email);
+
+                        resolve(this.accountId);
                     } catch (error) {
                         console.error('Error exchanging code for token:', error);
                         reject('Dropbox client is not initialized');
@@ -88,29 +105,26 @@ export class DropboxStorage implements CloudStorage {
 
     // initialize the Dropbox Client
     async initClient(): Promise<void> {
-        if (this.client)
-            return;
-
         if (!this.AuthToken || !this.accountId) {
             console.error('AuthToken or accountId is not set');
             return;
         }
 
+        // if the token is not valid, refresh it and reinitialize the client
         if (this.AuthToken.expiry_date < Date.now()) {
             console.log('AuthToken is expired');
             // TODO: refresh token
             this.AuthToken.refresh_token
-            if (!this.AuthToken.refresh_token || !DROPBOX_APP_KEY || !DROPBOX_APP_SECRET) {
+            if (!this.AuthToken.refresh_token || !DROPBOX_APP_KEY) {
               throw new Error('Missing required parameters');
             }
             const tokenResponse = await fetch('https://api.dropboxapi.com/oauth2/token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({
-                grant_type: 'refresh_token',
-                client_id: DROPBOX_APP_KEY,
-                client_secret: DROPBOX_APP_SECRET,
-                refresh_token: this.AuthToken.refresh_token
+                    grant_type: 'refresh_token',
+                    client_id: DROPBOX_APP_KEY,
+                    refresh_token: this.AuthToken.refresh_token
                 }).toString()
             });
             const tokenData = await tokenResponse.json();
@@ -119,9 +133,18 @@ export class DropboxStorage implements CloudStorage {
                 refresh_token: tokenData.refresh_token,
                 expiry_date: Date.now() + tokenData.expires_in * 1000
             };
+            this.client = new Dropbox({ accessToken: this.AuthToken.access_token, fetch });
+            console.log('AuthToken refreshed:', this.AuthToken);
+            return;
         }
-        this.client = new Dropbox({ accessToken: this.AuthToken.access_token, fetch });
-        console.log('Dropbox client initialized');
+
+        // check if the client is already initialized, otherwise create a new client
+        if (this.client) {
+            console.log('Dropbox client already initialized');
+        } else {
+            this.client = new Dropbox({ accessToken: this.AuthToken.access_token, fetch });
+            console.log('Dropbox client created with access token:', this.AuthToken.access_token);
+        }
     }
 
     async readDir(dir: string): Promise<FileSystemItem[]> {

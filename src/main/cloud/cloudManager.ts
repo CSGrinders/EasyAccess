@@ -135,6 +135,7 @@ export async function loadStoredAccounts(): Promise<void> {
           }
           StoredAccounts.get(cloudType)?.push(cloudStorageInstance);
           console.log(`Loaded ${cloudType} account ${accountId} from local storage`);
+          console.log(`Loaded Tokens for ${cloudType}.${accountId}:`, tokens);
         }
       } catch (err) {
         console.warn(`Invalid token data for ${cloudType}.${accountId}`, err);

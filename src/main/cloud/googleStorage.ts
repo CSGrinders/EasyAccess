@@ -1,17 +1,19 @@
-import ElectronGoogleOAuth2 from '@getstation/electron-google-oauth2';
 import dotenv from 'dotenv';
 
-import { CloudStorage, AuthTokens, isValidToken } from './cloudStorage';
+import { CloudStorage, AuthTokens, generateCodes } from './cloudStorage';
 import { saveCloudAccountLocaStorage } from './cloudManager';
 import { OAuth2Client } from 'google-auth-library';
 import { drive_v3, google } from 'googleapis';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
-const archiver = require('archiver');
-const path = require('path');
-import * as fs from 'fs'
+import { shell } from 'electron';
 const { Readable } = require('stream');
+import * as http from 'http';
+import { URL } from 'url';
+
 dotenv.config();
+
+//https://cloud.google.com/nodejs/docs/reference/google-auth-library/latest
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -19,15 +21,22 @@ const GOOGLE_SCOPE = [
   'https://www.googleapis.com/auth/drive.metadata.readonly',
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/drive.appdata',
-  'https://www.googleapis.com/auth/drive'
-]
-const SUCCESS_REDIRECT_URL = 'https://www.alesgsanudoo.com/en'; // TODO: redirect uri...
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/userinfo.email',
+];
+
+/**
+ * Temporary redirect URL for OAuth2
+ */
+const SUCCESS_REDIRECT_URL = 'http://localhost:53682';
 
 export class GoogleDriveStorage implements CloudStorage {
   accountId?: string | undefined;
   AuthToken?: AuthTokens | null | undefined;
   private authCancelled = false;
   private currentOAuthInstance: any = null; 
+  private currentAuthUrl: string | null = null; // Store the current auth URL to prevent multiple instances
+  private oauth2Client: OAuth2Client | null = null;
 
   async connect(): Promise<void | any> {
     try {
@@ -36,16 +45,25 @@ export class GoogleDriveStorage implements CloudStorage {
         this.AuthToken = null;
         this.accountId = undefined;
         this.currentOAuthInstance = null;
+        this.currentAuthUrl = null; // Reset the current auth URL
         
-        const authTokens = await this.authenticateGoogle();
+        const authTokensAndEmail = await this.authenticateGoogle();
         
         if (this.authCancelled) {
             throw new Error('Authentication cancelled');
         }
-        
-        if (authTokens) {
-            this.AuthToken = authTokens.token;
-            this.accountId = authTokens.email; // TODO
+
+        if (!authTokensAndEmail || !authTokensAndEmail.token || !authTokensAndEmail.email) {
+            throw new Error('Authentication failed: No tokens or email received');
+        }
+
+        console.log('Google Drive authentication successful');
+        console.log('Auth Tokens:', authTokensAndEmail.token);
+        console.log('Email:', authTokensAndEmail.email);
+
+        if (authTokensAndEmail) {
+            this.AuthToken = authTokensAndEmail.token;
+            this.accountId = authTokensAndEmail.email;
             console.log('Google Drive account connected:', this.accountId);
         } else {
             throw new Error('Authentication failed');
@@ -80,9 +98,12 @@ export class GoogleDriveStorage implements CloudStorage {
 
   // convert the directory path to a folder ID that is used in the Google Drive API
   private async getFolderId(dir: string): Promise<string> {
-    const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
-    
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+
     const dirs = dir.split('/');
 
     let currentFolderId = 'root';
@@ -107,9 +128,12 @@ export class GoogleDriveStorage implements CloudStorage {
 
   // convert the directory path to a folder ID that is used in the Google Drive API
   private async getFileId(filePath: string): Promise<string> {
-    const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
-    
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+
     const dirs = filePath.split('/');
 
     let currentFolderId = 'root';
@@ -153,8 +177,11 @@ export class GoogleDriveStorage implements CloudStorage {
 
     const allFiles: FileSystemItem[] = [];
     try {
-      const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
-      const drive = google.drive({ version: 'v3', auth: oauth2Client });
+      await this.refreshOAuthClientIfNeeded();
+      if (!this.oauth2Client) {
+        throw new Error('OAuth2 client is not initialized');
+      }
+      const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
       let nextPageToken: string | undefined = undefined;
   
       do {
@@ -194,8 +221,11 @@ export class GoogleDriveStorage implements CloudStorage {
     // TODO: Implement readFile for Google Drive
     const allFiles: FileSystemItem[] = [];
     try {
-      const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
-      const drive = google.drive({ version: 'v3', auth: oauth2Client });
+      await this.refreshOAuthClientIfNeeded();
+      if (!this.oauth2Client) {
+        throw new Error('OAuth2 client is not initialized');
+      }
+      const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
 
       const res = await drive.files.get(
         {
@@ -230,7 +260,55 @@ export class GoogleDriveStorage implements CloudStorage {
     return this.AuthToken || null;
   }
 
-  private async authenticateGoogle(): Promise<{ token: AuthTokens, email : string } | null> {
+
+  // local server to handle the OAuth redirect
+  // This server listens for the redirect from Google after the user authorizes the app
+  private async startAuthServer(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const server = http.createServer((req, res) => {
+        const reqUrl = new URL(req.url || '', `http://localhost:53682`);
+        const code = reqUrl.searchParams.get('code');
+
+        if (code) {
+          res.end('Authorization successful! You can close this window.');
+          server.close();
+          resolve(code);
+        } else {
+          res.end('Authorization failed. No code received.');
+          server.close();
+          reject(new Error('No authorization code found'));
+        }
+      });
+
+      // redirect URI for OAuth2...
+      server.listen(53682, () => {
+        console.log('Listening for auth redirect on http://localhost:53682');
+      });
+    });
+  }
+
+  // Exchanges the authorization code for access and refresh tokens
+  private async exchangeCodeForToken(code: string, codeVerifier: string) {
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code: code,
+        client_id: GOOGLE_CLIENT_ID || '',
+        redirect_uri: SUCCESS_REDIRECT_URL,
+        client_secret: GOOGLE_CLIENT_SECRET || '',
+        grant_type: 'authorization_code',
+        code_verifier: codeVerifier,
+      }),
+    });
+
+    const tokenData = await response.json();
+    console.log('Tokens:', tokenData);
+
+    return tokenData; // access_token, refresh_token, expires_in, id_token
+  }
+
+  private async authenticateGoogle(): Promise<{ token: AuthTokens, email: string } | null> {
       if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
           throw new Error("Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in environment variables");
       }
@@ -244,100 +322,44 @@ export class GoogleDriveStorage implements CloudStorage {
           // Add a small delay to ensure any previous auth window is properly closed
           await new Promise(resolve => setTimeout(resolve, 100));
           
-          // Clean up any previous OAuth instance
-          this.currentOAuthInstance = null;
-          
-          // Create a fresh OAuth instance for each authentication attempt
-          const myApiOauth = new ElectronGoogleOAuth2(
-              GOOGLE_CLIENT_ID,
-              GOOGLE_CLIENT_SECRET,
-              GOOGLE_SCOPE,
-              { successRedirectURL: SUCCESS_REDIRECT_URL }, // TODO: redirect uri...
-          );
-          
-          this.currentOAuthInstance = myApiOauth;
-          
-          console.log('Starting OAuth flow...');
-          
-          let authToken;
-          try {
-              authToken = await myApiOauth.openAuthWindowAndGetTokens();
-              console.log('OAuth flow completed, received token:', { 
-                  hasAccessToken: !!authToken?.access_token,
-                  hasRefreshToken: !!authToken?.refresh_token,
-                  expiryDate: authToken?.expiry_date
-              });
-          } catch (oauthError: any) {
-              console.error('ElectronGoogleOAuth2 error details:', {
-                  message: oauthError.message,
-                  name: oauthError.name,
-                  code: oauthError.code,
-                  stack: oauthError.stack,
-                  toString: oauthError.toString(),
-                  errorObject: JSON.stringify(oauthError, null, 2)
-              });
-              
+          const { codeVerifier, codeChallenge } = await generateCodes();
 
-              if (oauthError.message && (
-                  oauthError.message.includes('CANCELLED') ||
-                  oauthError.message.includes('User canceled') ||
-                  oauthError.message.includes('User cancelled') ||
-                  oauthError.message.includes('Authorization canceled') ||
-                  oauthError.message.includes('Authorization cancelled') ||
-                  oauthError.message.includes('Window was closed') ||
-                  oauthError.message.includes('Authentication flow was interrupted')
-              )) {
-                  console.log('Detected cancellation from ElectronGoogleOAuth2');
-                  throw new Error('Authentication cancelled');
-              }
-              
-              throw oauthError;
+          this.currentAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${SUCCESS_REDIRECT_URL}&response_type=code&scope=${GOOGLE_SCOPE.join(' ')}&code_challenge=${codeChallenge}&code_challenge_method=S256&access_type=offline&prompt=consent`;
+
+          shell.openExternal(this.currentAuthUrl);
+
+          const code = await this.startAuthServer(); // Get code from redirect
+          console.log('Authorization code received:', code);
+          const tokens = await this.exchangeCodeForToken(code, codeVerifier); // Exchange for tokens
+          console.log('Access token:', tokens.access_token);
+
+          // TODO: Implement actual token and email retrieval after OAuth flow
+          if (!tokens.access_token || !tokens.refresh_token || !tokens.expires_in) {
+              throw new Error('Invalid tokens received from Google OAuth');
           }
-          
-          if (this.authCancelled) {
-              console.log('Authentication was cancelled during process');
-              throw new Error('Authentication cancelled');
-          }
-          
-          // Check if authentication was cancelled
-          if (!authToken || !authToken.access_token) {
-              console.log('Google authentication was cancelled by user - no token received');
-              throw new Error('Authentication cancelled');
-          }
-          
-          const validatedTokens: AuthTokens = {
-              access_token: authToken.access_token || '',
-              refresh_token: authToken.refresh_token || '',
-              expiry_date: authToken.expiry_date || 0,
+          const authTokens: AuthTokens = {
+              access_token: tokens.access_token,
+              refresh_token: tokens.refresh_token,
+              expiry_date: Date.now() + (tokens.expires_in * 1000) // Convert seconds to milliseconds
           };
 
-          // Check if the token is valid
-          if (!isValidToken(validatedTokens)) {
-              console.error('Invalid token received from Google OAuth');
-              throw new Error('Invalid authentication token received');
-          }
-
-          const oauth2Client = new google.auth.OAuth2();
-          oauth2Client.setCredentials({
-              access_token: validatedTokens.access_token,
-              refresh_token: validatedTokens.refresh_token,
-              expiry_date: validatedTokens.expiry_date,
+          // Initialize OAuth2 client and set credentials
+          this.oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SUCCESS_REDIRECT_URL); 
+          this.oauth2Client.setCredentials({
+              access_token: authTokens.access_token,
+              refresh_token: authTokens.refresh_token,
+              expiry_date: authTokens.expiry_date,
           });
 
-          const userinfo = await google.oauth2({version: 'v2', auth: oauth2Client }).userinfo.get();
+          // Use the OAuth2 client to get user info
+          const userinfo = await google.oauth2({version: 'v2', auth: this.oauth2Client }).userinfo.get();
           const email = userinfo.data.email;
           if (!email) {
               console.error('Failed to retrieve email from Google UserInfo API');
               throw new Error('Failed to retrieve user information');
           }
 
-          // Return the validated tokens along with the email
-          const validatedTokensWithEmail = {
-              token: validatedTokens,
-              email: email,
-          };
-
-          return Promise.resolve(validatedTokensWithEmail);
+          return { token: authTokens, email: email }; // Return both token and email
       } catch (error: any) {
           console.error('Google authentication error:', error);
           this.currentOAuthInstance = null;
@@ -365,42 +387,73 @@ export class GoogleDriveStorage implements CloudStorage {
       }
   }
 
-  private async getOAuthClient({
-    access_token,
-    refresh_token,
-    expiry_date
-  }: AuthTokens): Promise<OAuth2Client> {
-    const oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SUCCESS_REDIRECT_URL);
-  
-    oauth2Client.setCredentials({
-      access_token,
-      refresh_token,
-      expiry_date,
-    });
-
-    const { access_token: newAccessToken, refresh_token: newRefreshToken, expiry_date: newExpiryDate } = oauth2Client.credentials;
-    if (!newAccessToken || !newRefreshToken || !newExpiryDate) {
-      console.error('Invalid credentials received from Google OAuth');
-      throw new Error('Invalid credentials');
+  // Refreshes the OAuth client if needed
+  private async refreshOAuthClientIfNeeded(): Promise<void> {
+    if (!this.AuthToken || !this.AuthToken.access_token || !this.AuthToken.refresh_token || !this.AuthToken.expiry_date) {
+      throw new Error('AuthToken is null or undefined');
     }
-    saveCloudAccountLocaStorage(
-      CloudType.GoogleDrive,
-      this.accountId || '',
-      {
-        access_token: newAccessToken,
-        refresh_token: newRefreshToken,
-        expiry_date: newExpiryDate,
-      }
-    );
 
-    console.log('New access token:', newAccessToken);
-  
-    return oauth2Client;
+    if (!this.oauth2Client) {
+      console.log('Initializing OAuth2 client with stored AuthToken');
+      this.oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SUCCESS_REDIRECT_URL);
+      this.oauth2Client.setCredentials({
+        access_token: this.AuthToken.access_token,
+        refresh_token: this.AuthToken.refresh_token,
+        expiry_date: this.AuthToken.expiry_date,
+      });
+      if (!this.oauth2Client.credentials.access_token || !this.oauth2Client.credentials.refresh_token || !this.oauth2Client.credentials.expiry_date) {
+        throw new Error('OAuth2 client credentials are not set properly');
+      }
+      saveCloudAccountLocaStorage(CloudType.GoogleDrive, this.accountId || '', {
+        access_token: this.oauth2Client.credentials.access_token,
+        refresh_token: this.oauth2Client.credentials.refresh_token,
+        expiry_date: this.oauth2Client.credentials.expiry_date,
+      });
+    }
+
+    const now = Date.now();
+    const expiryDate = this.oauth2Client.credentials.expiry_date;
+    if (!expiryDate) {
+      throw new Error('OAuth2 client expiry_date is null or undefined');
+    }
+
+    // 5 minutes to expiration
+    const isNearExpiration = expiryDate - now < 5 * 60 * 1000;
+    if (isNearExpiration) {
+      // Refresh the access token
+      console.log('Access token is near expiration, refreshing...');
+      await this.oauth2Client.getAccessToken();
+      const {
+        access_token: newAccessToken,
+        expiry_date: newExpiryDate,
+        refresh_token: newRefreshToken,
+      } = this.oauth2Client.credentials;
+
+      if (!newAccessToken || !newExpiryDate) {
+        throw new Error('Failed to refresh token properly');
+      }
+
+      const updatedToken: AuthTokens = {
+        access_token: newAccessToken,
+        refresh_token: newRefreshToken || this.AuthToken.refresh_token,
+        expiry_date: newExpiryDate
+      };
+
+      this.AuthToken = updatedToken;
+
+      // Update the stored token in local storage
+      saveCloudAccountLocaStorage(CloudType.GoogleDrive, this.accountId || '', updatedToken);
+
+      console.log('Refreshed Google access token');
+    }
   }
 
   async getFile(filePath: string): Promise<FileContent> {
-    const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
     const fileId = await this.getFileId(filePath);
     try {
       const result = await drive.files.get({
@@ -463,11 +516,14 @@ export class GoogleDriveStorage implements CloudStorage {
   }
 
   async postFile(fileName: string, folderPath: string, type: string, data: Buffer): Promise<void> {
-    const straem = await this.bufferToStream(data);
+    const stream = await this.bufferToStream(data);
     console.log('Posting file to Google Drive:', fileName, folderPath, type);
     console.log("Data", data);
-    const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
     const parentFolderId = await this.getFolderId(folderPath);
     console.log('Parent folder ID:', parentFolderId);
     const res = await drive.files.create({
@@ -478,7 +534,7 @@ export class GoogleDriveStorage implements CloudStorage {
       },
       media: {
         mimeType: type,
-        body: straem, 
+        body: stream,
       },
     });
   
@@ -493,8 +549,11 @@ export class GoogleDriveStorage implements CloudStorage {
   }
 
   async deleteFile(filePath: string): Promise<void> {
-    const oauth2Client = await this.getOAuthClient(this.AuthToken as AuthTokens);
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
     const fileId = await this.getFileId(filePath);
     
     try {
