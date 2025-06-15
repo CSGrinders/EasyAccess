@@ -1,30 +1,45 @@
+/**
+ * BoxDragContext Context
+ * 
+ * Provides a centralized way to manage drag and drop operations across the application.
+ */
+
 import React, { createContext, useContext, useState, useCallback, ReactNode, useRef, useMemo } from 'react';
 import { FileSystemItem } from '@Types/fileSystem';
 
+/** Items being dragged and their source information */
 export interface DragItems {
     items: FileSystemItem[]; // TODO 
     sourceBoxId: number | null;
 }
 
-// TODO implement TargetLocation to work with other elemnents
+/** Target location for drag and drop operations */
 export interface TargetLocation {
-    boxId: number; // assume it can be used to identify cloudType and accountId
-    targetPath: string; // path within the box
-    targetId?: string; // optional ID for the target item, if applicable
+    boxId: number;          // ID of the box where items will be dropped
+    targetPath: string;     // Path within the box where items will be dropped
+    targetId?: string;      // Specific item ID for precise targeting
 }
 
+/** Context interface for managing drag and drop operations */
 export interface BoxDragContextType {
-    isDragging: boolean;
-    sourceBoxId: number | null;
-    dragItems: DragItems;
-    target: TargetLocation | null; // Target location for the drag operation
-    setDragItems: (items: FileSystemItem[], sourceBoxId: number | null, sourceCloudType?: string, sourceAccountId?: string) => void;
-    setIsDragging: (isDragging: boolean) => void;
-    setTarget: (target: TargetLocation) => void; 
+    isDragging: boolean;                            // Whether a drag operation is currently active
+    sourceBoxId: number | null;                     // ID of the box where the drag operation started
+    dragItems: DragItems;                           // Items currently being dragged      
+    target: TargetLocation | null;                  // Target location for the drag operation
+    setDragItems: (                                 // Function to set the items being dragged
+        items: FileSystemItem[], 
+        sourceBoxId: number | null, 
+        sourceCloudType?: string, 
+        sourceAccountId?: string) => void;
+    setIsDragging: (isDragging: boolean) => void;   // Function to set the dragging state
+    setTarget: (target: TargetLocation) => void;    // Function to set the target location for the drag operation
 }
 
+//** Create the context with null as default */
 const BoxDragContext = createContext<BoxDragContextType | null>(null);
 
+
+/** Hook for components to access drag and drop state */
 export const useBoxDrag = () => {
     const context = useContext(BoxDragContext);
     if (!context) {
@@ -34,19 +49,30 @@ export const useBoxDrag = () => {
 };
 
 interface BoxDragProviderProps {
-    children: ReactNode;
+    children: ReactNode; 
 }
 
-export const BoxDragProvider: React.FC<BoxDragProviderProps> = ({ children }) => {
+export const BoxDragProvider = ({ children }: BoxDragProviderProps) => {
+    
+    /**
+     * What files/folders are currently being dragged
+     * Starts empty, gets populated when a drag begins
+     */
     const [dragItems, setDragItemsState] = useState<DragItems>({
         items: [],
         sourceBoxId: null,
     });
-    const [drag, setDrag] = useState<boolean>(false);
-    const targetRef = useRef<TargetLocation>(null);
-    const [sourceBoxId, setSourceBoxId] = useState<number | null>(null); // Store the source box ID
-    // const sourceBoxIdRef = useRef<number | null>(null); // Store the source box ID
 
+    /** Used to show/hide drop zones and change UI */
+    const [drag, setDrag] = useState<boolean>(false);
+
+    /**  Reference to the current drop target */
+    const targetRef = useRef<TargetLocation>(null);
+
+    /** Reference to the source box ID */
+    const [sourceBoxId, setSourceBoxId] = useState<number | null>(null); 
+
+    /** Function to set the items being dragged and their source box ID */
     const setDragItems = useCallback(
         (items: FileSystemItem[], sourceBoxId: number | null) => {
             setDragItemsState({
@@ -54,21 +80,21 @@ export const BoxDragProvider: React.FC<BoxDragProviderProps> = ({ children }) =>
                 sourceBoxId
             });
             setSourceBoxId(sourceBoxId); // Update the source box ID
-            // sourceBoxIdRef.current = sourceBoxId; // Store the source box ID
         },
         []
     );
 
+    /** Function to set the dragging state */
     const setIsDragging = useCallback((isDragging: boolean) => {
-        // This function is not used in the current context, but can be implemented if needed
-        // For example, you could update a state variable to control the dragging state
         setDrag(isDragging);
     }, []);
 
+    /** Function to set the target location for the drag operation */
     const setTarget = useCallback((target: TargetLocation) => {
         targetRef.current = target;
     }, []);
 
+    /** Memoized context value to avoid re-renders */
     const contextValue: BoxDragContextType = useMemo(() => ({
         isDragging: drag,
         sourceBoxId,

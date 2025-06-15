@@ -1,18 +1,15 @@
 export interface PermissionState {
     filesystemAccess: boolean;
-    fullDiskAccess: boolean;
     documentsAccess: boolean;
     downloadsAccess: boolean;
     desktopAccess: boolean;
     rememberChoice: boolean;
-    hasBeenPrompted: boolean;
 }
 
 export interface PermissionAPI {
     getPermissions: () => Promise<PermissionState>;
     requestPermissions: () => Promise<PermissionState>;
     resetPermissions: () => Promise<PermissionState>;
-    showSystemPreferences: () => Promise<void>;
 }
 
 export interface MCPReinitializeResult {

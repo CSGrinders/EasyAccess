@@ -1,5 +1,8 @@
-import React from "react";
-
+/**
+ * Titlebar Component
+ * 
+ * This component creates a custom titlebar for the application window.
+ */
 
 const Titlebar = () => {
     return (
