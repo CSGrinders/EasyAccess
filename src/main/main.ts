@@ -135,8 +135,10 @@ ipcMain.handle('cloud-read-directory', async (_e, cloudType: CloudType, accountI
 ipcMain.handle('cloud-get-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return getFile(cloudType, accountId, filePath);
 });
-ipcMain.handle('cloud-post-file', async (_e, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer) => {
-    return postFile(cloudType, accountId, fileName, folderPath, data);
+ipcMain.handle('cloud-post-file', async (_e, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer | any) => {
+    // Ensure data is a Buffer (handle IPC serialization issues)
+    const bufferData = Buffer.isBuffer(data) ? data : Buffer.from(data.data || data);
+    return postFile(cloudType, accountId, fileName, folderPath, bufferData);
 });
 ipcMain.handle('cloud-delete-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return deleteFile(cloudType, accountId, filePath);
@@ -328,8 +330,12 @@ ipcMain.handle('open-file', async (event, fileContent: FileContent) => {
     }
   });
 
-ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, data: Buffer) => {
+ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, data: Buffer | any) => {
     console.log('Posting file:', fileName, folderPath, data);
+    
+    // Ensure data is a Buffer (handle IPC serialization issues)
+    const bufferData = Buffer.isBuffer(data) ? data : Buffer.from(data.data || data);
+    
     const filePath = path.join(folderPath, fileName);
     
     const permissionManager = PermissionManager.getInstance();
@@ -340,7 +346,7 @@ ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, dat
     }
 
     try {
-        fs.writeFileSync(filePath, data);
+        fs.writeFileSync(filePath, bufferData);
         console.log('File posted successfully:', filePath);
     } catch (error: any) {
         if (error.code === 'EPERM' || error.code === 'EACCES') {
