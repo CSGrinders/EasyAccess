@@ -494,6 +494,7 @@ function StorageBoxInner({
             positionRef.current = { x: newX, y: newY };
             updateBox(); // Move the box visually
         } else if (isResizingRef.current && resizeDirection) {
+            console.log('Resizing in direction:', resizeDirection);
             // Calculate how much the mouse moved since resize started
            const dx = e.clientX - resizeStart.x;
            const dy = e.clientY - resizeStart.y;
@@ -673,16 +674,16 @@ function StorageBoxInner({
     return (
         <div
             ref={boxRef}
-            className={cn(
-                "box-container absolute flex flex-col bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden",
-                isMaximized ? "border-blue-500 dark:border-blue-400" : "rounded-xl",
-                isDropZoneActive && "ring-4 ring-green-400 bg-green-50 dark:bg-green-900/20 border-green-400"
-            )}
-            style={{
-                opacity,
-                transitionProperty: isMaximized ? 'none' : 'opacity',
-            }}
-            onClick={handleWindowClick}
+                className={cn(
+                    "box-container absolute flex flex-col bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden",
+                    isMaximized ? "border-blue-500 dark:border-blue-400" : "rounded-xl",
+                    isDropZoneActive && "ring-4 ring-green-400 bg-green-50 dark:bg-green-900/20 border-green-400"
+                )}
+                style={{
+                    opacity,
+                    transitionProperty: isMaximized ? 'none' : 'opacity',
+                }}
+                onClick={handleWindowClick}
         >
             {/* Green overlay shown when files are being dragged over this box */}
             {isDropZoneActive && (

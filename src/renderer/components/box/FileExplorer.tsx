@@ -5,7 +5,7 @@
  * It can work with both files on your computer (local) and files in the cloud (Google Drive, Dropbox, etc.).
  */
 
-import React, {useEffect, useState, useRef, useCallback, memo} from "react"
+import React, {useEffect, useState, useRef, useCallback, memo, use, useMemo} from "react"
 import {
     ChevronLeft,
     ChevronRight,
@@ -71,6 +71,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { toast } from "sonner"
+import { FileItem } from "../ui/FileItem"
 
 /**
  * Props interface for the FileExplorer component
@@ -299,7 +300,9 @@ export const FileExplorer = memo(function FileExplorer ({
     
     /** UI State */
     const [isOpeningBrowser, setIsOpeningBrowser] = useState(false); // Whether we're currently opening a file in the browser
-    const [containerWidth, setContainerWidth] = useState(0); // Width of the file explorer container for responsive design
+    // const [containerWidth, setContainerWidth] = useState(0); // Width of the file explorer container for responsive design
+    const containerWidthRef = useRef(0); // Reference to the container width for performance optimization
+    const [showFileOperationChoices , setShowFileOperationChoices] = useState(false); // Whether to show the file operation choices menu
 
     /* DOM references */
     const containerRef = useRef<HTMLDivElement>(null) // Reference to the main container element
@@ -320,24 +323,28 @@ export const FileExplorer = memo(function FileExplorer ({
      * Files filtered by search query and hidden file setting 
      * This creates a new list every time searchQuery, items, or showHidden changes
      */
-    const filteredItems = searchQuery
-        ? items.filter(
-            (item) =>
-                item.name.toLowerCase().includes(searchQuery.toLowerCase()) 
-                && (showHidden || !item.name.startsWith(".")), // Show hidden files if enabled, or if file is not hidden
-        )
-        : items.filter((item) => showHidden || !item.name.startsWith(".")) // Just filter hidden files if no search
+    const filteredItems = useMemo(() => {
+        if (searchQuery) {
+            return items.filter(
+                (item) =>
+                    item.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+                    (showHidden || !item.name.startsWith(".")) // Show hidden files if enabled, or if file is not hidden
+            );
+        }
+        return items.filter((item) => showHidden || !item.name.startsWith(".")); // Just filter hidden files if no search
+    }, [items, searchQuery, showHidden]);
 
     /** 
      * Filtered files sorted alphabetically with folders first
      * Folders always appear before files, then both are sorted by name
      */
-    const sortedItems = [...filteredItems].sort((a, b) => {
-        if (a.isDirectory && !b.isDirectory) return -1 // a is folder, b is file -> a comes first
-        if (!a.isDirectory && b.isDirectory) return 1 // a is file, b is folder -> b comes first
-        return a.name.localeCompare(b.name)
-    })
-
+    const sortedItems = useMemo(() => {
+        return [...filteredItems].sort((a, b) => {
+            if (a.isDirectory && !b.isDirectory) return -1;  // a is folder, b is file -> a comes first
+            if (!a.isDirectory && b.isDirectory) return 1;  // a is file, b is folder -> b comes first
+            return a.name.localeCompare(b.name);
+        });
+    }, [filteredItems]);
 
     /** Updates zoom level reference when zoom changes */
     useEffect(() => {
@@ -366,38 +373,6 @@ export const FileExplorer = memo(function FileExplorer ({
 
         fetchHome()
     }, [])
-
-    /** Watches for container size changes and updates width */
-    useEffect(() => {
-        // Function to update the container width
-        const updateWidth = () => {
-            if (containerRef.current) {
-                setContainerWidth(containerRef.current.offsetWidth);
-            }
-        };
-
-        updateWidth();
-
-        // Watch for size changes using ResizeObserver
-        const resizeObserver = new ResizeObserver((entries) => {
-            for (const entry of entries) {
-                setContainerWidth(entry.contentRect.width);
-            }
-        });
-
-        // Start watching the container
-        if (containerRef.current) {
-            resizeObserver.observe(containerRef.current);
-        }
-
-        // Also watch for window resize events
-        window.addEventListener('resize', updateWidth);
-        
-        return () => {
-            resizeObserver.disconnect();
-            window.removeEventListener('resize', updateWidth);
-        };
-    }, []);
 
     /** Loads files when the current directory changes */
     useEffect(() => {
@@ -1762,7 +1737,8 @@ export const FileExplorer = memo(function FileExplorer ({
 
             {/* File Actions Bar (Only shows when files are selected) */}
             {selectedCount > 0 && (
-                <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 backdrop-blur-sm selected-menu-enter">
+                <div
+                    className="file-action-bar flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 backdrop-blur-sm selected-menu-enter">
 
                     {/* Selection counter - shows how many files are selected */}
                     <div className="flex items-center gap-2">
@@ -1775,57 +1751,60 @@ export const FileExplorer = memo(function FileExplorer ({
                             {selectedCount === 1 ? "item selected" : "items selected"}
                         </span>
                     </div>
-                    
-                    {/* Action buttons - positioned on the right side */}
+
+                    {/* Action buttons - positioned on the right side / show when container is wide */}
                     <div className="ml-auto flex gap-2">
-                        {containerWidth >= 600 ? (
-                            <>
-                                {/* Get Info button - shows file details in a dialog */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="flex items-center gap-2 text-xs font-medium text-black dark:text-white transition-all duration-200 action-button"
-                                    onClick={showFileStats}
-                                >
-                                    <Info className="h-3.5 w-3.5"/>
-                                    Get Info
-                                </Button>
-                                
-                                {/* Copy button - copies selected files (TODO: Not implemented yet) */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="flex items-center gap-2 text-xs font-medium border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 transition-all duration-200 action-button"
-                                    onClick={() => {}}
-                                >
-                                    <Copy className="h-3.5 w-3.5"/>
-                                    Copy
-                                </Button>
+                        <div
+                            className="actions-container" // css responsible for showing actions when container is wide enough
+                        >
+                            {/* Get Info button - shows file details in a dialog */}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex items-center gap-2 text-xs font-medium text-black dark:text-white transition-all duration-200 action-button"
+                                onClick={showFileStats}
+                            >
+                                <Info className="h-3.5 w-3.5"/>
+                                Get Info
+                            </Button>
+                            
+                            {/* Copy button - copies selected files (TODO: Not implemented yet) */}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex items-center gap-2 text-xs font-medium border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 transition-all duration-200 action-button"
+                                onClick={() => {}}
+                            >
+                                <Copy className="h-3.5 w-3.5"/>
+                                Copy
+                            </Button>
 
-                                {/* Move button - moves selected files (TODO: Not implemented yet) */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="flex items-center gap-2 text-xs font-medium border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 transition-all duration-200 action-button"
-                                    onClick={() => {}}
-                                >
-                                    <Move className="h-3.5 w-3.5"/>
-                                    Move
-                                </Button>
+                            {/* Move button - moves selected files (TODO: Not implemented yet) */}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex items-center gap-2 text-xs font-medium border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 transition-all duration-200 action-button"
+                                onClick={() => {}}
+                            >
+                                <Move className="h-3.5 w-3.5"/>
+                                Move
+                            </Button>
 
-                                {/* Delete button - permanently removes selected files */}
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="flex items-center gap-2 text-xs font-medium border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/50 hover:bg-red-100 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 transition-all duration-200 action-button"
-                                    onClick={handleDelete}
-                                >
-                                    <Trash className="h-3.5 w-3.5"/>
-                                    Delete
-                                </Button>
-                            </>
-                        ) : (
-                            /* Collapse actions into dropdown menu for small screens */
+                            {/* Delete button - permanently removes selected files */}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex items-center gap-2 text-xs font-medium border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/50 hover:bg-red-100 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 transition-all duration-200 action-button"
+                                onClick={handleDelete}
+                            >
+                                <Trash className="h-3.5 w-3.5"/>
+                                Delete
+                            </Button>
+                        </div>
+                        {/* Collapse actions into dropdown menu for small screens */}
+                        <div
+                            className="dropdown-container" // css responsible for showing dropdown menu when container is narrow
+                        >
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                     <Button
@@ -1897,7 +1876,7 @@ export const FileExplorer = memo(function FileExplorer ({
                                     </DropdownMenuItem>
                                 </DropdownMenuContent>
                             </DropdownMenu>
-                        )}
+                        </div>
                     </div>
                 </div>
             )}
@@ -1932,65 +1911,19 @@ export const FileExplorer = memo(function FileExplorer ({
                         <div className="grid grid-cols-[repeat(auto-fill,minmax(95px,1fr))] gap-2">
                             
                             {/* Loop through each file/folder and create a display item */}
-                            {sortedItems.map((item) => {
-                                const IconComponent = getFileIcon(item.name, item.isDirectory);
-                                const iconColor = getIconColor(item.name, item.isDirectory, false, BoxDrag.target?.boxId === Number(item.id));
-                                
-                                return (
-                                    /* Individual file/folder item */
-                                    <div
-                                        key={item.id}
-
-                                        /* Store reference to this element for selection and drag operations */
-                                        ref={(el) => {
-                                            if (el) itemRefs.current.set(item.id, el)
-                                            else itemRefs.current.delete(item.id)
-                                        }}
-
-                                        /* Handle clicks (single for selection, double for opening) */
-                                        onClick={(e) => handleItemClick(e, item)}
-
-                                        /* Handle drag start when mouse is pressed */
-                                        onMouseDown={(e) => handleItemMouseDown(e, item)}
-
-                                        className={cn(
-                                            // Base styles for all file items
-                                            "file-item flex flex-col items-center justify-center w-25 h-25 rounded-md cursor-pointer transition-all hover:bg-slate-100 dark:hover:bg-slate-800 ",
-                                            
-                                            // Basic hover styles when not in box-to-box transfer mode
-                                            !isBoxToBoxTransfer
-                                                    ? "hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent"
-                                                    : "border border-transparent",
-                                            // Add hover effect when dragging
-                                            BoxDrag.isDragging && !draggedItemsRef.current.includes(item.id) && BoxDrag.sourceBoxId == boxId &&
-                                                "hover:ring-2 hover:ring-green-500 hover:bg-green-100 dark:hover:bg-green-900/30",
-                                            
-                                            // Dragged items opacity
-                                            draggedItemsRef.current.includes(item.id) && BoxDrag.isDragging && "opacity-50",
-                                        )}
-                                    >
-                                        {/* Icon container */}
-                                        <div className="w-12 h-12 flex items-center justify-center mb-2">
-                                            <IconComponent
-                                                className={cn("h-10 w-10", iconColor)}
-                                            />
-                                        </div>
-
-                                        {/* File/folder name */}
-                                        <span
-                                            className={cn(
-                                                "block w-full px-1 text-xs leading-tight text-center",
-                                                "break-all line-clamp-2 min-h-[2.5rem]",
-                                                "text-slate-800 dark:text-slate-200",
-
-                                                // Highlight text when this item is a drop target
-                                                BoxDrag.target?.boxId === Number(item.id) && "text-green-700 dark:text-green-300",
-                                            )}
-                                            title={item.name}
-                                        >{item.name}</span>
-                                    </div>
-                                )
-                            })}
+                            {sortedItems.map((item) => (
+                                <FileItem
+                                    key={item.id}
+                                    item={item}
+                                    isBoxToBoxTransfer={isBoxToBoxTransfer}
+                                    BoxDrag={BoxDrag}
+                                    boxId={boxId}
+                                    draggedItemsRef={draggedItemsRef}
+                                    handleItemClick={handleItemClick}
+                                    handleItemMouseDown={handleItemMouseDown}
+                                    itemRefs={itemRefs}
+                                />
+                            ))}
                         </div>
                     ) : (
                         /* Empty folder message when no files are found */
