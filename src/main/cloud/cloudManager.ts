@@ -61,6 +61,13 @@ const activeAuthentications: Map<CloudType, ActiveAuth> = new Map();
 // Traverse electron local storage to load all stored accounts into StoredAccounts
 export async function clearStore(): Promise<boolean> {
   try {
+    // Clear Onedrive cache for all accounts
+    const oneDriveAccounts = StoredAccounts.get(CloudType.OneDrive) || [];
+
+    for (const account of oneDriveAccounts) {
+      await OneDriveStorage.removeOneDriveCache(account.getAccountId());
+    }
+
     // Clear the in-memory accounts
     StoredAccounts.clear();
     
@@ -488,6 +495,11 @@ export async function removeCloudAccount(cloudType: CloudType, accountId: string
           StoredAccounts.delete(cloudType);
         }
       }
+    }
+
+    // One drive needs to manually remove the cache in the MSAL persistence
+    if (cloudType === CloudType.OneDrive) {
+      await OneDriveStorage.removeOneDriveCache(accountId);
     }
     
     return true;

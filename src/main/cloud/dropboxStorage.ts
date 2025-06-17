@@ -4,6 +4,7 @@ import { Client } from "@microsoft/microsoft-graph-client";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
 import { BrowserWindow } from 'electron';
 import { Dropbox } from 'dropbox';
+import { saveCloudAccountLocaStorage } from './cloudManager';
 
 const mime = require('mime-types');
 
@@ -111,7 +112,7 @@ export class DropboxStorage implements CloudStorage {
         }
 
         // if the token is not valid, refresh it and reinitialize the client
-        if (this.AuthToken.expiry_date < Date.now()) {
+        if (this.AuthToken.expiry_date < Date.now() - 1000 * 60 * 5) { // 5 minutes before expiry
             console.log('AuthToken is expired');
             // TODO: refresh token
             this.AuthToken.refresh_token
@@ -134,7 +135,13 @@ export class DropboxStorage implements CloudStorage {
                 expiry_date: Date.now() + tokenData.expires_in * 1000
             };
             this.client = new Dropbox({ accessToken: this.AuthToken.access_token, fetch });
-            console.log('AuthToken refreshed:', this.AuthToken);
+            // save the new AuthToken to local storage
+            await saveCloudAccountLocaStorage(
+                CloudType.Dropbox,
+                this.accountId || '',
+                this.AuthToken
+            );
+            console.log('AuthToken refreshed and client reinitialized:', this.AuthToken);
             return;
         }
 

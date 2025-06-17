@@ -31,7 +31,7 @@ export class OneDriveStorage implements CloudStorage {
   accountId?: string | undefined;
   AuthToken?: AuthTokens | null | undefined;
 
-  client?: typeof PublicClientApplication | null = null; // MSAL client that manage multiple accounts
+  static client?: typeof PublicClientApplication | null = null; // MSAL client that manage multiple accounts
   graphClient?: any; // Graph client for OneDrive / Need for file operations
 
   account: any; // an account for this storage
@@ -41,11 +41,28 @@ export class OneDriveStorage implements CloudStorage {
     this.initClient();
   }
 
+  static async removeOneDriveCache(accountId: string): Promise<void> {
+    if (!OneDriveStorage.client) {
+      console.error('MSAL client is not initialized');
+      return;
+    }
+
+    // Remove the account from the cache using the accountId
+    await OneDriveStorage.client.getTokenCache().removeAccount({ homeAccountId: accountId });
+    console.log(`Removed OneDrive account with ID: ${accountId} from cache`);
+  }
+
   // load public client application which can access all stored accounts with persistence
   async initClient(): Promise<void> {
     // You can use the helper functions provided through the Environment class to construct your cache path
     // The helper functions provide consistent implementations across Windows, Mac and Linux.
-    
+    if (OneDriveStorage.client) {
+      console.log('MSAL client already initialized');
+      return; // Client already initialized
+    }
+
+    console.log('Initializing MSAL client for OneDrive storage...');
+
     let cachePath;
     if (process.platform === 'win32') {
       cachePath = path.join(process.env.LOCALAPPDATA || '', './msal-cache.json');
@@ -77,21 +94,20 @@ export class OneDriveStorage implements CloudStorage {
 
     // Initialize the MSAL client with the configuration and persistence plugin
     // This will allow the PUBLIC client to access the stored accounts and tokens
-    this.client = new PublicClientApplication(msalConfig);
+    OneDriveStorage.client = new PublicClientApplication(msalConfig);
   }
 
   // initialize the account if the account id is set (loaded from the local storage ==> initialize the client & account for api calls)
   // initialize the graph client with the account access token
   async initAccount(): Promise<any> {
-    if (!this.client) {
+    if (!OneDriveStorage.client) {
       await this.initClient();
     }
 
     if (this.accountId) {
       // get the account from the cache using the accountId
       // the client should store the accounts in the cache
-      const accounts = await this.client.getAllAccounts();
-
+      const accounts = await OneDriveStorage.client.getAllAccounts();
       // find the account with the accountId
       const account = accounts.find((acc: any) => acc.username === this.accountId);
       if (account) {
@@ -99,7 +115,7 @@ export class OneDriveStorage implements CloudStorage {
 
         // aquire token silently with the persistence cache
         // this will use the cached token if available, otherwise it will try to refresh the token
-        const response = await this.client.acquireTokenSilent({
+        const response = await OneDriveStorage.client.acquireTokenSilent({
           account: this.account,
           scopes: [
             'User.Read',
@@ -140,11 +156,11 @@ export class OneDriveStorage implements CloudStorage {
     this.authCancelled = false; 
     
     // Initialize the MSAL client if not already initialized
-    if (!this.client) {
+    if (!OneDriveStorage.client) {
       await this.initClient();
     }
 
-    if (!this.client) {
+    if (!OneDriveStorage.client) {
       console.error('MSAL client is not initialized');
       throw new Error('OneDrive client initialization failed');
     }
@@ -171,7 +187,7 @@ export class OneDriveStorage implements CloudStorage {
       };
 
       // Acquire token interactively
-      const authResponse = await this.client.acquireTokenInteractive({
+      const authResponse = await OneDriveStorage.client.acquireTokenInteractive({
           ...tokenRequest,
           openBrowser,
           successTemplate: '<h1>Successfully signed in!</h1> <p>You can close this window now.</p>',

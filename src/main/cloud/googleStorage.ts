@@ -404,6 +404,8 @@ export class GoogleDriveStorage implements CloudStorage {
       if (!this.oauth2Client.credentials.access_token || !this.oauth2Client.credentials.refresh_token || !this.oauth2Client.credentials.expiry_date) {
         throw new Error('OAuth2 client credentials are not set properly');
       }
+
+      // might have refreshed the token, so save it to local storage
       saveCloudAccountLocaStorage(CloudType.GoogleDrive, this.accountId || '', {
         access_token: this.oauth2Client.credentials.access_token,
         refresh_token: this.oauth2Client.credentials.refresh_token,
