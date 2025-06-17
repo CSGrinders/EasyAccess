@@ -1074,23 +1074,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     accountId
                 );
                 
-                // Load file contents for transfer (TODO FIX, MULTIPLE CALLS TO TEMPGETFILE)
-                try {
-                    await tempGetFile?.(draggedFileItems.map(item => item.path), cloudType, accountId);
-                } catch (error) {
-                    console.error("Error loading files for drag operation:", error);
-                    // Reset drag state on error
-                    BoxDrag.setDragItems([], null);
-                    BoxDrag.setIsDragging(false);
-                    localIsDraggingRef.current = false;
-                    localDragStartedRef.current = false;
-                    
-                    toast.error("File Load Failed", {
-                        description: "Failed to load files for transfer",
-                        duration: 3000,
-                    });
-                    return;
-                }
+                console.log("Drag started with", draggedFileItems.length, "items");
             } else {
                 return
             }
@@ -1192,6 +1176,16 @@ export const FileExplorer = memo(function FileExplorer ({
             if (targetItem && targetItem.isDirectory) {
                 // Move files to target folder
                 try {
+                    // First, load the files that are being dragged
+                    const draggedFileItems = sortedItems.filter(item =>
+                        draggedItemsRef.current.includes(item.id)
+                    );
+                    const filePaths = draggedFileItems.map(item => item.path);
+                    
+                    // Load file contents first
+                    await tempGetFile?.(filePaths, cloudType, accountId);
+                    
+                    // Then upload to target location
                     await tempPostFile?.(targetItem.path, cloudType, accountId);
                     refreshDirectory(); // TODO: FIX SOMETIMES IT IS BUGGY AND DOES NOT REFRESH
                 } catch (error) {

@@ -11,6 +11,8 @@ import { FileSystemItem, FileContent } from '@Types/fileSystem';
 export interface DragItems {
     items: FileSystemItem[];
     sourceBoxId: number | null;
+    sourceCloudType?: string;  // Add cloud type for source
+    sourceAccountId?: string;  // Add account ID for source
     fileContents?: FileContent[]; // Add file contents to the drag items
 }
 
@@ -63,6 +65,8 @@ export const BoxDragProvider = ({ children }: BoxDragProviderProps) => {
     const [dragItems, setDragItemsState] = useState<DragItems>({
         items: [],
         sourceBoxId: null,
+        sourceCloudType: undefined,
+        sourceAccountId: undefined,
         fileContents: undefined
     });
 
@@ -81,6 +85,8 @@ export const BoxDragProvider = ({ children }: BoxDragProviderProps) => {
             setDragItemsState({
                 items,
                 sourceBoxId,
+                sourceCloudType: cloudType,
+                sourceAccountId: accountId,
                 fileContents
             });
             setSourceBoxId(sourceBoxId); // Update the source box ID

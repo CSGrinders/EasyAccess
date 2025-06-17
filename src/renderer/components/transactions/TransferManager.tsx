@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, AlertCircle, Loader2, CheckCircle, Clock, ChevronDown, ChevronUp, Package } from 'lucide-react';
+import { X, AlertCircle, Loader2, CheckCircle, Clock, ChevronDown, ChevronUp, Package, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { TransferItem } from '@Types/transfer';
@@ -14,15 +14,23 @@ interface TransferManagerProps {
   transfers: TransferItem[];
   onCancelTransfer: (transferId: string) => void;
   onCloseTransfer: (transferId: string) => void;
+  onOpenDetailView?: () => void;
+  isHidden?: boolean;
+  isTransferPanelOpen?: boolean; // New prop to prevent auto-removal when panel is open
 }
 
 export function TransferManager({
   transfers,
   onCancelTransfer,
   onCloseTransfer,
+  onOpenDetailView,
+  isHidden = false,
+  isTransferPanelOpen = false,
 }: TransferManagerProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [estimatedTimes, setEstimatedTimes] = useState<{ [key: string]: string }>({});
+  const [autoHideTimer, setAutoHideTimer] = useState<NodeJS.Timeout | null>(null);
+  const [locallyHiddenTransfers, setLocallyHiddenTransfers] = useState<Set<string>>(new Set());
 
   // Memoize the categorized transfers to prevent infinite re-renders
   const categorizedTransfers = useMemo(() => {
@@ -30,7 +38,10 @@ export function TransferManager({
     const completed: TransferItem[] = [];
     const errored: TransferItem[] = [];
 
-    transfers.forEach(transfer => {
+    // Filter out locally hidden transfers
+    const visibleTransfers = transfers.filter(transfer => !locallyHiddenTransfers.has(transfer.id));
+
+    visibleTransfers.forEach(transfer => {
       if (transfer.error) {
         errored.push(transfer);
       } else if (transfer.isCompleted) {
@@ -41,9 +52,23 @@ export function TransferManager({
     });
 
     return { active, completed, errored };
-  }, [transfers]);
+  }, [transfers, locallyHiddenTransfers]);
 
   const { active: activeTransfers, completed: completedTransfers, errored: errorTransfers } = categorizedTransfers;
+
+  // Local handler for closing transfers in the manager (doesn't affect main transfer queue)
+  const handleLocalCloseTransfer = (transferId: string) => {
+    setLocallyHiddenTransfers(prev => new Set([...prev, transferId]));
+  };
+
+  // Clear locally hidden transfers when transfers are actually removed from the main queue
+  useEffect(() => {
+    const currentTransferIds = new Set(transfers.map(t => t.id));
+    setLocallyHiddenTransfers(prev => {
+      const filtered = new Set([...prev].filter(id => currentTransferIds.has(id)));
+      return filtered.size !== prev.size ? filtered : prev;
+    });
+  }, [transfers]);
 
   // Calculate estimated times for active transfers
   useEffect(() => {
@@ -70,6 +95,56 @@ export function TransferManager({
     setEstimatedTimes(newEstimatedTimes);
   }, [activeTransfers]);
 
+  // Auto-hide completed transfers after delay (but not when transfer panel is open)
+  useEffect(() => {
+    // Don't auto-remove transfers if the transfer panel is open - users want to see them there
+    if (isTransferPanelOpen) {
+      // Clear any existing timer since we don't want to auto-remove
+      if (autoHideTimer) {
+        clearTimeout(autoHideTimer);
+        setAutoHideTimer(null);
+      }
+      return;
+    }
+
+    if (activeTransfers.length === 0 && completedTransfers.length > 0 && errorTransfers.length === 0) {
+      // Clear any existing timer
+      if (autoHideTimer) {
+        clearTimeout(autoHideTimer);
+      }
+      
+      // Set new timer to auto-hide completed transfers locally after 10 seconds
+      const timer = setTimeout(() => {
+        // Hide completed transfers locally in the manager instead of removing from main queue
+        const currentCompletedIds = completedTransfers.map(t => t.id);
+        setLocallyHiddenTransfers(prev => {
+          const newHidden = new Set([...prev]);
+          currentCompletedIds.forEach(transferId => {
+            const currentTransfer = transfers.find(t => t.id === transferId);
+            if (currentTransfer && currentTransfer.isCompleted && !currentTransfer.error) {
+              newHidden.add(transferId);
+            }
+          });
+          return newHidden;
+        });
+      }, 10000); // Increased to 10 seconds for better user experience
+      
+      setAutoHideTimer(timer);
+    } else {
+      // Clear timer if there are active transfers or errors
+      if (autoHideTimer) {
+        clearTimeout(autoHideTimer);
+        setAutoHideTimer(null);
+      }
+    }
+    
+    return () => {
+      if (autoHideTimer) {
+        clearTimeout(autoHideTimer);
+      }
+    };
+  }, [activeTransfers.length, completedTransfers.length, errorTransfers.length, transfers, onCloseTransfer, isTransferPanelOpen]);
+
   // Auto-collapse when no active transfers
   useEffect(() => {
     if (activeTransfers.length === 0 && completedTransfers.length === 0 && errorTransfers.length === 0) {
@@ -77,7 +152,9 @@ export function TransferManager({
     }
   }, [activeTransfers.length, completedTransfers.length, errorTransfers.length]);
 
-  if (transfers.length === 0) return null;
+  // Check if there are any visible transfers (after filtering out locally hidden ones)
+  const visibleTransfersCount = activeTransfers.length + completedTransfers.length + errorTransfers.length;
+  if (transfers.length === 0 || isHidden || visibleTransfersCount === 0) return null;
 
   const renderTransferItem = (transfer: TransferItem) => {
     const getStatusIcon = () => {
@@ -91,14 +168,18 @@ export function TransferManager({
       if (transfer.isCompleted) return "Completed";
       if (transfer.isCancelling) return "Cancelling...";
       return `${Math.round(transfer.progress)}%`;
-    };
-
-    const getProgressText = () => {
+    };    const getProgressText = () => {
       if (transfer.error) return transfer.error;
-      if (transfer.isCompleted) return `${transfer.keepOriginal ? 'Copied' : 'Moved'} ${transfer.itemCount} file${transfer.itemCount > 1 ? 's' : ''} successfully`;
+      if (transfer.isCompleted) {
+        const successMsg = `${transfer.keepOriginal ? 'Copied' : 'Moved'} ${transfer.itemCount} file${transfer.itemCount > 1 ? 's' : ''} successfully`;
+        if (transfer.itemCount > 1 && transfer.failedFiles?.length) {
+          return `${successMsg} (${transfer.failedFiles.length} failed)`;
+        }
+        return successMsg;
+      }
       
-      const truncatedName = transfer.currentItem.length > 25 
-        ? `...${transfer.currentItem.slice(-22)}` 
+      const truncatedName = transfer.currentItem && transfer.currentItem.length > 25 
+        ? `...${transfer.currentItem.slice(-22)}`
         : transfer.currentItem;
       return truncatedName || "Preparing...";
     };
@@ -137,10 +218,11 @@ export function TransferManager({
             
             {transfer.error || transfer.isCompleted ? (
               <Button
-                onClick={() => onCloseTransfer(transfer.id)}
+                onClick={() => handleLocalCloseTransfer(transfer.id)}
                 variant="ghost"
                 size="sm"
                 className="h-6 w-6 p-0 hover:bg-slate-100 dark:hover:bg-slate-700"
+                title="Hide from manager"
               >
                 <X className="h-3 w-3" />
               </Button>
@@ -234,19 +316,41 @@ export function TransferManager({
         </div>
         
         <div className="flex items-center gap-2">
+          {/* Expand to detail view button */}
+          {onOpenDetailView && totalTransfers > 0 && (
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenDetailView();
+              }}
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700"
+              title="Open detailed view"
+            >
+              <Maximize2 className="h-3 w-3 mr-1" />
+              Details
+            </Button>
+          )}
+          
           {totalTransfers > 1 && (
             <Button
               onClick={(e) => {
                 e.stopPropagation();
-                transfers.forEach(transfer => {
-                  if (transfer.isCompleted || transfer.error) {
-                    onCloseTransfer(transfer.id);
-                  }
+                // Hide completed and failed transfers locally instead of removing from main queue
+                const transfersToHide = transfers
+                  .filter(transfer => transfer.isCompleted || transfer.error)
+                  .map(transfer => transfer.id);
+                
+                setLocallyHiddenTransfers(prev => {
+                  const newHidden = new Set([...prev, ...transfersToHide]);
+                  return newHidden;
                 });
               }}
               variant="ghost"
               size="sm"
               className="h-6 px-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700"
+              title="Hide completed and failed transfers"
             >
               Clear All
             </Button>

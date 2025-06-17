@@ -19,6 +19,7 @@ import {
 import {StorageBoxProps, WINDOW_SIZES, MIN_BOX_HEIGHT, MIN_BOX_WIDTH} from "@Types/box";
 import {FileExplorer} from "@/components/box/FileExplorer";
 import {useBoxDrag} from "@/contexts/BoxDragContext";
+import {CloudType} from "@Types/cloudType";
 
 /**
  * Memoized StorageBox component with an equality comparison
@@ -84,6 +85,7 @@ function StorageBoxInner({
                              setIsMaximized,    // Function to make box full screen or no
                              tempPostFile,      // Function to upload files
                              tempGetFile,       // Function to download files
+                             tempDragDropTransfer, // Function to handle drag and drop with confirmation first
                          }: StorageBoxProps, 
                          ref: React.Ref<{
                             callDoRefresh: () => void; 
@@ -305,7 +307,36 @@ function StorageBoxInner({
                 if (isDroppedOnBox) {
                     // Actually transfer the files if green highlight was shown
                     if (isDropZoneActive) {
-                        await tempPostFile?.(currentPath, box.cloudType, box.accountId);
+                        // Handle drag and drop operation
+                        const handleDragDropTransfer = async () => {
+                            if (BoxDrag.isDragging && BoxDrag.dragItems.items.length > 0) {
+                                try {
+                                    // Get source cloud information from drag context
+                                    const sourceCloudType = BoxDrag.dragItems.sourceCloudType;
+                                    const sourceAccountId = BoxDrag.dragItems.sourceAccountId;
+                                    const draggedItems = BoxDrag.dragItems.items;
+                                    
+                                    
+                                    const filePaths = draggedItems.map(item => item.path);
+                                    await tempDragDropTransfer?.(
+                                        filePaths, 
+                                        sourceCloudType as any, 
+                                        sourceAccountId,
+                                        currentPath,
+                                        box.cloudType,
+                                        box.accountId
+                                    );
+                                } catch (error) {
+                                    console.error("Drag and drop transfer failed:", error);
+                                    throw error;
+                                }
+                            } else {
+                                // Regular transfer (not drag and drop)
+                                await tempPostFile?.(currentPath, box.cloudType, box.accountId);
+                            }
+                        };
+                        
+                        await handleDragDropTransfer();
                         setRefreshToggle(!refreshToggle); // Refresh file list to show new files
                     }
                     // Clean up the drag operation
