@@ -104,10 +104,28 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
     };
 
     const handleCancelTransfer = (transferId: string) => {
-        const transfer = getTransfer(transferId);
-        if (transfer && !transfer.isCancelling) {
-            updateTransfer(transferId, { isCancelling: true });
-            transfer.abortController.abort();
+        try {
+            const transfer = getTransfer(transferId);
+            if (transfer && !transfer.isCancelling) {
+                updateTransfer(transferId, { isCancelling: true });
+                transfer.abortController.abort();
+                
+                // Update the transfer to show it was cancelled
+                setTimeout(() => {
+                    updateTransfer(transferId, {
+                        error: "Transfer cancelled by user",
+                        isCancelling: false
+                    });
+                }, 100);
+            }
+        } catch (error) {
+            const transfer = getTransfer(transferId);
+            if (transfer) {
+                updateTransfer(transferId, {
+                    error: "Transfer cancelled",
+                    isCancelling: false
+                });
+            }
         }
     };
 
@@ -144,22 +162,19 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
     // Should be called from the successful uploaded file
     const deleteFileFromSource = async (fileContentCache: FileContent, keepOriginal: boolean = false) => {
         if (keepOriginal) {
-            console.log("Keeping original file, skipping deletion:", fileContentCache.path);
-            return;
+            return; // No need to log when keeping original
         }
 
         const fileKey = `${fileContentCache.sourceCloudType || 'local'}:${fileContentCache.sourceAccountId || 'local'}:${fileContentCache.path}`;
         
         // Check if this file is already being deleted
         if (filesBeingTransferred.current.has(fileKey)) {
-            console.log("File already being deleted by another transfer:", fileContentCache.path);
-            return;
+            return; // File already being deleted by another transfer
         }
 
         // Mark file as being deleted
         filesBeingTransferred.current.add(fileKey);
 
-        console.log("Deleting file from source:", fileContentCache);
         try {
             // source from the local file system
             if (!fileContentCache.sourceCloudType || !fileContentCache.sourceAccountId) {
@@ -171,28 +186,23 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
             
             // Only refresh boxes if deletion was successful
             storageBoxesRef.current.forEach((box) => {
-                console.log("Checking box:", box.id, "for file deletion");
-                console.log("Box sourceAccountId:", box.accountId, "Box cloudType:", box.cloudType);
-                console.log("File sourceAccountId:", fileContentCache.sourceAccountId, "File cloudType:", fileContentCache.sourceCloudType);
                 if (box.accountId === fileContentCache.sourceAccountId && box.cloudType === fileContentCache.sourceCloudType ||
                     (!box.accountId && !fileContentCache.sourceAccountId && !box.cloudType && !fileContentCache.sourceCloudType) // Local file system
                 ) {
                     // If the box is open, we can call a method on the box to update its content
-                    console.log("Refresh for updated box content for box:", box.id);
                     const ref = boxRefs.current.get(box.id);
-                    ref.current?.callDoRefresh?.();
+                    ref.current?.callDoRefresh?.(true); // Pass true for silent refresh
                 }
             });
         } catch (error: any) {
             // Handle deletion conflicts file might already be deleted by another transfer
             if (error.message?.includes('not found') || error.message?.includes('does not exist') || error.message?.includes('ENOENT')) {
-                console.log("File already deleted by another transfer:", fileContentCache.path);
-                // Still refresh the UI since the file is gone
+                // File already deleted by another transfer - still refresh the UI since the file is gone
                 storageBoxesRef.current.forEach((box) => {
                     if (box.accountId === fileContentCache.sourceAccountId && box.cloudType === fileContentCache.sourceCloudType ||
                         (!box.accountId && !fileContentCache.sourceAccountId && !box.cloudType && !fileContentCache.sourceCloudType)) {
                         const ref = boxRefs.current.get(box.id);
-                        ref.current?.callDoRefresh?.();
+                        ref.current?.callDoRefresh?.(true); // Pass true for silent refresh
                     }
                 });
             } else {
@@ -205,6 +215,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
     }
 
     const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
+        let transfer: TransferItem | null = null;
+        
         try {
             // Wait for download to complete if still in progress
             while (isContentLoading.current) {
@@ -221,7 +233,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
             // Wait for user confirmation with the new dialog
             const confirmation = await showUploadConfirmation();
             if (!confirmation.confirmed) {
-                throw new Error("User cancelled the operation");
+                return; // User cancelled - don't create transfer or throw error
             }
 
             // Create descriptions for the transfer
@@ -233,7 +245,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                 : "Local Storage";
 
             // Create new transfer
-            const transfer = createTransfer(
+            transfer = createTransfer(
                 sourceDescription,
                 targetDescription,
                 confirmation.keepOriginal,
@@ -279,7 +291,6 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             try {
                                 await deleteFileFromSource(fileContent, confirmation.keepOriginal);
                             } catch (deleteError: any) {
-                                console.warn(`File deletion failed for ${fileContent.name}, but upload succeeded:`, deleteError.message);
                                 // Continue with the transfer - the file was uploaded successfully
                             }
                             
@@ -330,7 +341,6 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             try {
                                 await deleteFileFromSource(fileContent, confirmation.keepOriginal);
                             } catch (deleteError: any) {
-                                console.warn(`File deletion failed for ${fileContent.name}, but upload succeeded:`, deleteError.message);
                                 // Continue with the transfer - the file was uploaded successfully
                             }
                             
@@ -356,10 +366,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     endTime: Date.now()
                 });
 
-                // Note: Not auto-removing upload transfers so users can see them in Transfer Manager
-
             } catch (error) {
-                console.log("File upload failed:", error);
                 const errorMessage = error instanceof Error ? error.message : "Upload failed";
                 
                 const displayError = errorMessage.includes("cancelled") 
@@ -370,22 +377,38 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     error: displayError,
                     isCancelling: false
                 });
+                // Don't throw the error - just update the transfer state
             }
 
         } catch (error) {
             // This catches errors before transfer creation (like user cancellation)
-            console.log("Transfer preparation failed:", error);
+            if (error instanceof Error && !error.message.includes("cancelled")) {
+                // For unexpected errors before transfer creation, create a failed transfer
+                if (!transfer) {
+                    const errorTransfer = createTransfer(
+                        "Unknown Source",
+                        "Unknown Target", 
+                        false,
+                        0,
+                        []
+                    );
+                    updateTransfer(errorTransfer.id, {
+                        error: error.message || "Transfer preparation failed",
+                        isCancelling: false
+                    });
+                }
+            }
         }
     }
 
     const tempGetFile = async (filePaths: string[], cloudType?: CloudType, accountId?: string, showProgress: boolean = false) => {
+        let transfer: TransferItem | null = null;
+        
         try {
             isContentLoading.current = true; 
             
             // Reset file cache
             fileContentsCacheRef.current = [];
-            
-            let transfer: TransferItem | null = null;
             
             // Show progress if requested
             if (showProgress) {
@@ -411,7 +434,6 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
             
             if (!cloudType || !accountId) {
                 // local file system
-                console.log("local file system, call getFile from local file system:", filePaths);
                 for (const filePath of filePaths) {
                     try {
                         const fileName = filePath.split('/').pop() || filePath;
@@ -424,7 +446,6 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         }
                         
                         const fileContent: FileContent = await (window as any).fsApi.getFile(filePath);
-                        console.log("File content:", fileContent);
                         fileContentsCacheRef.current.push(fileContent); // Update the ref with the new file content
                         
                         downloadedFiles++;
@@ -437,17 +458,14 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     } catch (err: any) {
                         if (transfer) {
                             updateTransfer(transfer.id, {
-                                error: `Failed to read ${filePath}: ${err.message}`,
+                                error: `Failed to read ${filePath}: ${err.message || 'Unknown error'}`,
                                 isCancelling: false
                             });
                         }
-                        console.error(err);
-                        throw new Error(`Failed to read ${filePath}: ${err.message}`);
+                        throw new Error(`Failed to read ${filePath}: ${err.message || 'Unknown error'}`);
                     }
                 }
             } else {
-                console.log("Fetching file content from cloud account:", cloudType, accountId, filePaths);
-
                 for (const filePath of filePaths) {
                     try {
                         const fileName = filePath.split('/').pop() || filePath;
@@ -460,7 +478,6 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         }
                         
                         const fileContent: FileContent = await (window as any).cloudFsApi.getFile(cloudType, accountId, filePath);
-                        console.log("File content:", fileContent);
                         fileContentsCacheRef.current.push(fileContent); // Update the ref with the new file content
                         
                         downloadedFiles++;
@@ -473,12 +490,11 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     } catch (err: any) {
                         if (transfer) {
                             updateTransfer(transfer.id, {
-                                error: `Failed to download ${filePath}: ${err.message}`,
+                                error: `Failed to download ${filePath}: ${err.message || 'Unknown error'}`,
                                 isCancelling: false
                             });
                         }
-                        console.error(err);
-                        throw new Error(`Failed to download ${filePath}: ${err.message}`);
+                        throw new Error(`Failed to download ${filePath}: ${err.message || 'Unknown error'}`);
                     }
                 }
             }
@@ -493,11 +509,10 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                 
                 // Auto-remove download transfer after 2 seconds
                 setTimeout(() => {
-                    handleCloseTransfer(transfer.id);
+                    handleCloseTransfer(transfer!.id);
                 }, 2000);
             }
             
-            console.log("File content fetch completed");
         } catch (error: any) {
             throw error;
         } finally {
@@ -507,11 +522,13 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
 
     // New function for drag and drop workflow with confirmation first
     const tempDragDropTransfer = async (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => {
+        let transfer: TransferItem | null = null;
+        
         try {
             // Get user confirmation first (before downloading)
             const confirmation = await showUploadConfirmation();
             if (!confirmation.confirmed) {
-                throw new Error("User cancelled the operation");
+                return; // User cancelled - don't create transfer or throw error
             }
 
             // Create descriptions for the transfer - show source and destination
@@ -523,7 +540,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                 : "Local Storage";
 
             // Create single transfer that shows the complete operation
-            const transfer = createTransfer(
+            transfer = createTransfer(
                 sourceDescription,
                 targetDescription,
                 confirmation.keepOriginal,
@@ -589,7 +606,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             try {
                                 await deleteFileFromSource(fileContent, confirmation.keepOriginal);
                             } catch (deleteError: any) {
-                                console.warn(`File deletion failed for ${fileContent.name}, but upload succeeded:`, deleteError.message);
+                                // Continue with the transfer - the file was uploaded successfully
+                                // The error will be handled silently in deleteFileFromSource
                             }
                         }
 
@@ -618,10 +636,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     endTime: Date.now()
                 });
 
-                // Note: Not auto-removing drag-and-drop transfers so users can see them in Transfer Manager
-
             } catch (error) {
-                console.log("Drag and drop transfer failed:", error);
                 const errorMessage = error instanceof Error ? error.message : "Transfer failed";
                 
                 const displayError = errorMessage.includes("cancelled") 
@@ -632,15 +647,30 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     error: displayError,
                     isCancelling: false
                 });
-                throw error;
+                // Don't throw the error - just update the transfer state
             }
         } catch (error) {
-            console.error("Drag and drop transfer failed:", error);
-            throw error;
+            // This catches errors before transfer creation (like user cancellation)
+            if (error instanceof Error && !error.message.includes("cancelled")) {
+                // For unexpected errors before transfer creation, create a failed transfer
+                if (!transfer) {
+                    const errorTransfer = createTransfer(
+                        "Unknown Source",
+                        "Unknown Target", 
+                        false,
+                        0,
+                        []
+                    );
+                    updateTransfer(errorTransfer.id, {
+                        error: error.message || "Transfer preparation failed",
+                        isCancelling: false
+                    });
+                }
+            }
         }
     }
 
-    const handleRetryTransfer = useCallback((transferId: string) => {
+    const handleRetryTransfer = useCallback(async (transferId: string) => {
         const transfer = transferQueue.transfers.find(t => t.id === transferId);
         if (!transfer) return;
 
@@ -655,25 +685,24 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         progress: 0, 
                         isCompleted: false,
                         isCancelling: false,
-                        currentItem: "Preparing transfer...",
+                        currentItem: "Preparing retry...",
                         completedFiles: [],
                         failedFiles: [],
-                        endTime: undefined
+                        endTime: undefined,
+                        abortController: new AbortController() // Create new abort controller for retry
                     }
                     : t
             )
         }));
 
-        // Restart the transfer based on its type
-        if (transfer.sourceDescription.includes('Cloud') && transfer.targetDescription.includes('Cloud')) {
-            // Cloud to cloud transfer - would need specific implementation
-            console.log('Retrying cloud to cloud transfer:', transferId);
-        } else if (transfer.sourceDescription.includes('Cloud')) {
-            // Download from cloud - would need to restart download
-            console.log('Retrying download:', transferId);
-        } else if (transfer.targetDescription.includes('Cloud')) {
-            // Upload to cloud - would need to restart upload
-            console.log('Retrying upload:', transferId);
+        try {
+            //TODO: Implement retry logic based on transfer type
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Retry failed";
+            updateTransfer(transferId, {
+                error: `Retry failed: ${errorMessage}`,
+                isCancelling: false
+            });
         }
     }, [transferQueue.transfers]);
 

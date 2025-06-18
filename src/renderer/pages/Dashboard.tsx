@@ -226,6 +226,7 @@ const Dashboard = () => {
                     transfers={transferQueue.transfers}
                     onCancelTransfer={handleCancelTransfer}
                     onCloseTransfer={handleCloseTransfer}
+                    onRetryTransfer={handleRetryTransfer}
                     isHidden={action === "transfers"}
                     isTransferPanelOpen={action === "transfers"}
                 />

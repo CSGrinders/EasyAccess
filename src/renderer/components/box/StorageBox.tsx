@@ -88,7 +88,7 @@ function StorageBoxInner({
                              tempDragDropTransfer, // Function to handle drag and drop with confirmation first
                          }: StorageBoxProps, 
                          ref: React.Ref<{
-                            callDoRefresh: () => void; 
+                            callDoRefresh: (silent?: boolean) => void; 
                                 }>
                         ) {
 
@@ -137,13 +137,19 @@ function StorageBoxInner({
      * When this changes, the FileExplorer component will reload its files
      */
     const [refreshToggle, setRefreshToggle] = useState(false);
+    
+    /** 
+     * Ref to track if the next refresh should be silent
+     */
+    const nextRefreshSilentRef = useRef(false);
 
 
     /** 
      * Function to refresh the file list
      * Parent components can call this through the ref
      */
-    const doRefresh = () => {
+    const doRefresh = (silent: boolean = false) => {
+        nextRefreshSilentRef.current = silent;
         setRefreshToggle(!refreshToggle);
     };
 
@@ -155,7 +161,7 @@ function StorageBoxInner({
         /**
          * Let parent refresh the file list
          */
-        callDoRefresh: doRefresh,
+        callDoRefresh: (silent?: boolean) => doRefresh(silent),
         setStyle: (style: Partial<CSSStyleDeclaration>) => {
             if (boxRef.current) {
                 Object.assign(boxRef.current.style, style);
@@ -327,12 +333,13 @@ function StorageBoxInner({
                                         box.accountId
                                     );
                                 } catch (error) {
-                                    console.error("Drag and drop transfer failed:", error);
-                                    throw error;
                                 }
                             } else {
                                 // Regular transfer (not drag and drop)
-                                await tempPostFile?.(currentPath, box.cloudType, box.accountId);
+                                try {
+                                    await tempPostFile?.(currentPath, box.cloudType, box.accountId);
+                                } catch (error) {
+                                }
                             }
                         };
                         
@@ -813,6 +820,7 @@ function StorageBoxInner({
                         boxId={id} 
                         onCurrentPathChange={handleCurrentPathChange} 
                         refreshToggle={refreshToggle}
+                        silentRefresh={nextRefreshSilentRef.current}
                     />
                 ) : (
                     /* Cloud file explorer */
@@ -825,6 +833,7 @@ function StorageBoxInner({
                         boxId={id} 
                         onCurrentPathChange={handleCurrentPathChange} 
                         refreshToggle={refreshToggle} 
+                        silentRefresh={nextRefreshSilentRef.current}
                     />
                 )}
             </div>

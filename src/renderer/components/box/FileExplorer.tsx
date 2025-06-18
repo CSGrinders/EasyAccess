@@ -84,7 +84,8 @@ interface FileExplorerProps {
     tempGetFile?: (filePaths: string[], cloudType?: CloudType, accountId?: string) => void  // Function to get a file from the cloud
     boxId: number                                                                           // Unique identifier for the box 
     isBoxToBoxTransfer?: boolean                                                            // Whether the transfer is between boxes
-    refreshToggle?: boolean                                                                 // Toggle to refresh the file explorer  
+    refreshToggle?: boolean                                                                 // Toggle to refresh the file explorer
+    silentRefresh?: boolean                                                                 // Whether to refresh silently without loading indicator
     onCurrentPathChange?: (currentPath: string) => void                                     // Callback when the current path changes
 }
 
@@ -244,13 +245,12 @@ export const FileExplorer = memo(function FileExplorer ({
                                                             boxId,                      // Unique identifier for the box
                                                             isBoxToBoxTransfer = false, // Whether the transfer is between boxes
                                                             refreshToggle,              // Toggle to refresh the file explorer
+                                                            silentRefresh = false,      // Whether to refresh silently without loading indicator
                                                             onCurrentPathChange         // Callback when the current path changes
                                                         }: FileExplorerProps) {
    
     /** List of all files and folders in the current directory */                                               
     const [items, setItems] = useState<FileSystemItem[]>([])
-
-    console.log("FileExplorer rendered with items:", items.length, "zoom level:", zoomLevel, "cloudType:", cloudType, "accountId:", accountId)
 
     /** Current working directory - the folder we're currently looking at */
     const [cwd, setCwd] = useState<string>("")
@@ -489,7 +489,12 @@ export const FileExplorer = memo(function FileExplorer ({
             return
         }
         
-        refreshDirectory();
+        // Use silent refresh if silentRefresh flag is true, otherwise use normal refresh
+        if (silentRefresh) {
+            refreshDirectorySilent();
+        } else {
+            refreshDirectory();
+        }
     }, [refreshToggle])
 
     /**
@@ -700,6 +705,46 @@ export const FileExplorer = memo(function FileExplorer ({
                             duration: 2000,
                         });
                     }
+                })
+        }
+        updateSelectedItemsColor();
+    }
+
+    /**
+     * Silently refreshes the current directory contents without showing loading indicator
+     */
+    const refreshDirectorySilent = async () => {
+        if (cloudType && accountId) {
+            // Refresh cloud directory silently
+            (window as any).cloudFsApi.readDirectory(cloudType, accountId, cwd)
+                .then((files: FileSystemItem[]) => {
+                    setItems(files)
+                    updatePathSegments(cwd)
+                    selectedItemsRef.current = new Set();
+                    logSelectionChange('refreshDirectorySilent', selectedItemsRef.current);
+                    selectedItemsRef.current = new Set()
+                    lastSelectedItemRef.current = null
+                    setSelectedCount(0)
+                })
+                .catch((err: Error) => {
+                    console.error(err)
+                    // Silent refresh - no toast errors, just log to console
+                })
+        } else {
+            if (!cwd || cwd === "") {
+                return
+            }
+            window.fsApi
+                .readDirectory(cwd)
+                .then((files) => {
+                    setItems(files)
+                    updatePathSegments(cwd)
+                    selectedItemsRef.current = new Set()
+                    lastSelectedItemRef.current = null
+                    setSelectedCount(0)
+                })
+                .catch((err) => {
+                    console.error(err)
                 })
         }
         updateSelectedItemsColor();
@@ -1170,7 +1215,7 @@ export const FileExplorer = memo(function FileExplorer ({
             throttleTimeoutRef.current = null
         }
 
-        // Process file move if there's a valid drop target (TODO: FIX, MULTIPLE CALLS TO TEMPPOSTFILE?)
+        // Process file move if there's a valid drop target
         if (localIsDraggingRef.current && localTargetRef.current) {
             const targetItem = sortedItems.find((item) => item.id === String(localTargetRef.current?.targetId));
             if (targetItem && targetItem.isDirectory) {
@@ -1189,10 +1234,15 @@ export const FileExplorer = memo(function FileExplorer ({
                     await tempPostFile?.(targetItem.path, cloudType, accountId);
                     refreshDirectory(); // TODO: FIX SOMETIMES IT IS BUGGY AND DOES NOT REFRESH
                 } catch (error) {
-                    console.error("Error moving files:", error);
-                    
+                    // The transfer service already handles error display through the transfer manager
+                    // We only show toast for local operation errors that aren't handled by the transfer service
                     if (error && typeof error === 'object' && 'message' in error) {
                         const errorMessage = (error as Error).message;
+                        if (errorMessage.includes('cancelled')) {
+                            // User cancelled - no need to show error
+                            return;
+                        }
+                        
                         if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
                             toast.error("Permission Error", {
                                 description: "Unable to move files.",
@@ -1214,13 +1264,17 @@ export const FileExplorer = memo(function FileExplorer ({
             } else if (targetItem && !targetItem.isDirectory) {
                 // Handle file-to-file operation
                 try {
-                    tempPostFile?.(targetItem.path, cloudType, accountId);
+                    await tempPostFile?.(targetItem.path, cloudType, accountId);
                 } catch (error) {
-                    console.error("Error posting file:", error);
-                    toast.error("File Operation Failed", {
-                        description: "Failed to complete file operation.",
-                        duration: 4000,
-                    });
+                    if (error && typeof error === 'object' && 'message' in error) {
+                        const errorMessage = (error as Error).message;
+                        if (!errorMessage.includes('cancelled')) {
+                            toast.error("File Operation Failed", {
+                                description: "Failed to complete file operation.",
+                                duration: 4000,
+                            });
+                        }
+                    }
                 }
             }
         }

@@ -101,87 +101,94 @@ export function TransferDetailPanel({
   };
 
   return (
-    <div className={`select-none p-6 space-y-6 ${className}`}>
-      {/* Header */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-3">
-          <Package className="h-8 w-8 text-blue-500" />
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Transfer Manager</h1>
-            <p className="text-slate-600 dark:text-slate-400">
-              Monitor and manage your file transfers
-            </p>
+    <div className={`select-none flex flex-col h-full ${className}`}>
+      <div className="flex-shrink-0 p-6 pb-4 space-y-6">
+        {/* Header */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <Package className="h-8 w-8 text-blue-500" />
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Transfer Manager</h1>
+              <p className="text-slate-600 dark:text-slate-400">
+                Monitor and manage your file transfers
+              </p>
+            </div>
           </div>
+        </div>
+
+        {/* Category Tabs */}
+        <div className="select-none flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1 max-w-md">
+          {[
+            { key: 'all', label: 'All', count: categorizedTransfers.all.length },
+            { key: 'active', label: 'Active', count: categorizedTransfers.active.length },
+            { key: 'completed', label: 'Done', count: categorizedTransfers.completed.length },
+            { key: 'failed', label: 'Failed', count: categorizedTransfers.failed.length },
+          ].map(({ key, label, count }) => (
+            <button
+              key={key}
+              onClick={() => setSelectedCategory(key as any)}
+              className={cn(
+                "flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors",
+                selectedCategory === key
+                  ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+              )}
+            >
+              {label} {count > 0 && `(${count})`}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Category Tabs */}
-      <div className="select-none flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1 max-w-md">
-        {[
-          { key: 'all', label: 'All', count: categorizedTransfers.all.length },
-          { key: 'active', label: 'Active', count: categorizedTransfers.active.length },
-          { key: 'completed', label: 'Done', count: categorizedTransfers.completed.length },
-          { key: 'failed', label: 'Failed', count: categorizedTransfers.failed.length },
-        ].map(({ key, label, count }) => (
-          <button
-            key={key}
-            onClick={() => setSelectedCategory(key as any)}
-            className={cn(
-              "flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors",
-              selectedCategory === key
-                ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
-            )}
-          >
-            {label} {count > 0 && `(${count})`}
-          </button>
-        ))}
-      </div>
-
-      {/* Transfer List */}
-      <div className="select-none space-y-4">
-        {getCurrentTransfers().length === 0 ? (
-          <Card className="p-8 text-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-            <Package className="h-16 w-16 text-slate-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100 mb-2">
-              No {selectedCategory !== 'all' ? selectedCategory : ''} transfers
-            </h3>
-            <p className="text-slate-500 dark:text-slate-400">
-              {selectedCategory === 'all' 
-                ? 'Transfer files between storage locations to see them here.'
-                : `No ${selectedCategory} transfers at the moment.`
-              }
-            </p>
-          </Card>
-        ) : (
-          <div className="select-none grid gap-4">
-            {getCurrentTransfers().map(transfer => renderTransferCard(transfer))}
-          </div>
-        )}
+      {/* Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto px-6">
+        {/* Transfer List */}
+        <div className="select-none space-y-4 pb-4">
+          {getCurrentTransfers().length === 0 ? (
+            <Card className="p-8 text-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <Package className="h-16 w-16 text-slate-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100 mb-2">
+                No {selectedCategory !== 'all' ? selectedCategory : ''} transfers
+              </h3>
+              <p className="text-slate-500 dark:text-slate-400">
+                {selectedCategory === 'all' 
+                  ? 'Transfer files between storage locations to see them here.'
+                  : `No ${selectedCategory} transfers at the moment.`
+                }
+              </p>
+            </Card>
+          ) : (
+            <div className="select-none grid gap-4">
+              {getCurrentTransfers().map(transfer => renderTransferCard(transfer))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Footer Actions */}
       {transfers.length > 0 && (
-        <Card className="select-none p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-slate-600 dark:text-slate-400">
-              {transfers.length} total transfer{transfers.length !== 1 ? 's' : ''}
+        <div className="flex-shrink-0 p-6 pt-4">
+          <Card className="select-none p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-slate-600 dark:text-slate-400">
+                {transfers.length} total transfer{transfers.length !== 1 ? 's' : ''}
+              </div>
+              <Button
+                onClick={() => {
+                  transfers.forEach(transfer => {
+                    if (transfer.isCompleted || transfer.error) {
+                      onCloseTransfer(transfer.id);
+                    }
+                  });
+                }}
+                variant="outline"
+                size="sm"
+              >
+                Clear Completed & Failed
+              </Button>
             </div>
-            <Button
-              onClick={() => {
-                transfers.forEach(transfer => {
-                  if (transfer.isCompleted || transfer.error) {
-                    onCloseTransfer(transfer.id);
-                  }
-                });
-              }}
-              variant="outline"
-              size="sm"
-            >
-              Clear Completed & Failed
-            </Button>
-          </div>
-        </Card>
+          </Card>
+        </div>
       )}
     </div>
   );

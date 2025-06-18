@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, AlertCircle, Loader2, CheckCircle, Clock, ChevronDown, ChevronUp, Package, Maximize2 } from 'lucide-react';
+import { X, AlertCircle, Loader2, CheckCircle, Clock, ChevronDown, ChevronUp, Package, Maximize2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { TransferItem } from '@Types/transfer';
@@ -14,6 +14,7 @@ interface TransferManagerProps {
   transfers: TransferItem[];
   onCancelTransfer: (transferId: string) => void;
   onCloseTransfer: (transferId: string) => void;
+  onRetryTransfer?: (transferId: string) => void;
   onOpenDetailView?: () => void;
   isHidden?: boolean;
   isTransferPanelOpen?: boolean; // New prop to prevent auto-removal when panel is open
@@ -23,6 +24,7 @@ export function TransferManager({
   transfers,
   onCancelTransfer,
   onCloseTransfer,
+  onRetryTransfer,
   onOpenDetailView,
   isHidden = false,
   isTransferPanelOpen = false,
@@ -217,15 +219,28 @@ export function TransferManager({
             </span>
             
             {transfer.error || transfer.isCompleted ? (
-              <Button
-                onClick={() => handleLocalCloseTransfer(transfer.id)}
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 hover:bg-slate-100 dark:hover:bg-slate-700"
-                title="Hide from manager"
-              >
-                <X className="h-3 w-3" />
-              </Button>
+              <div className="flex items-center gap-1">
+                {transfer.error && onRetryTransfer && (
+                  <Button
+                    onClick={() => onRetryTransfer(transfer.id)}
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 hover:bg-slate-100 dark:hover:bg-slate-700"
+                    title="Retry transfer"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                  </Button>
+                )}
+                <Button
+                  onClick={() => handleLocalCloseTransfer(transfer.id)}
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 hover:bg-slate-100 dark:hover:bg-slate-700"
+                  title="Hide from manager"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
             ) : !transfer.isCancelling && (
               <Button
                 onClick={() => onCancelTransfer(transfer.id)}
