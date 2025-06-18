@@ -4,6 +4,7 @@ import { CloudType } from '@Types/cloudType';
 import { FileContent } from '@Types/fileSystem';
 import { TransferItem, TransferQueueState } from '@Types/transfer';
 import { StorageBoxData } from '@Types/box';
+import { useTransferState } from '@/contexts/TransferStateContext';
 
 interface TransferServiceProps {
     boxRefs: React.MutableRefObject<Map<any, any>>;
@@ -40,6 +41,9 @@ interface TransferServiceReturn {
 }
 
 export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferServiceProps): TransferServiceReturn => {
+    // Get access to the transfer state context
+    const { addTransferringFiles, removeTransferringFiles } = useTransferState();
+    
     // Transfer queue state
     const [transferQueue, setTransferQueue] = useState<TransferQueueState>({
         transfers: [],
@@ -52,6 +56,31 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
     const isContentLoading = useRef(false);
     const fileContentsCacheRef = useRef<FileContent[]>([]);
     const filesBeingTransferred = useRef<Set<string>>(new Set()); // Track files currently being transferred
+
+    // Helper function to refresh both source and target storage boxes
+    const refreshSourceAndTargetBoxes = (fileContentsCache: FileContent[], targetCloudType?: CloudType, targetAccountId?: string) => {
+        // Refresh source boxes (where files came from)
+        fileContentsCache.forEach(fileContent => {
+            storageBoxesRef.current.forEach((box) => {
+                if (box.accountId === fileContent.sourceAccountId && box.cloudType === fileContent.sourceCloudType ||
+                    (!box.accountId && !fileContent.sourceAccountId && !box.cloudType && !fileContent.sourceCloudType) // Local file system
+                ) {
+                    const ref = boxRefs.current.get(box.id);
+                    ref.current?.callDoRefresh?.(true); // Pass true for silent refresh
+                }
+            });
+        });
+
+        // Refresh target boxes (where files went to)
+        storageBoxesRef.current.forEach((box) => {
+            if (box.accountId === targetAccountId && box.cloudType === targetCloudType ||
+                (!box.accountId && !targetAccountId && !box.cloudType && !targetCloudType) // Local file system
+            ) {
+                const ref = boxRefs.current.get(box.id);
+                ref.current?.callDoRefresh?.(true); // Pass true for silent refresh
+            }
+        });
+    };
 
     // Transfer queue management functions
     const createTransfer = (sourceDescription: string, targetDescription: string, keepOriginal: boolean, itemCount: number, fileList?: string[]): TransferItem => {
@@ -90,9 +119,19 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                 transfer.id === transferId ? { ...transfer, ...updates } : transfer
             )
         }));
+
+        // Clean up transfer state when transfer completes or fails
+        if (updates.isCompleted || updates.error) {
+            setTimeout(() => {
+                removeTransferringFiles(transferId);
+            }, 500); // Small delay to ensure UI updates
+        }
     };
 
     const removeTransfer = (transferId: string) => {
+        // Remove from transfer state when transfer is removed
+        removeTransferringFiles(transferId);
+        
         setTransferQueue(prev => ({
             ...prev,
             transfers: prev.transfers.filter(transfer => transfer.id !== transferId)
@@ -184,27 +223,11 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                 await (window as any).cloudFsApi.deleteFile(fileContentCache.sourceCloudType, fileContentCache.sourceAccountId, fileContentCache.path);
             }
             
-            // Only refresh boxes if deletion was successful
-            storageBoxesRef.current.forEach((box) => {
-                if (box.accountId === fileContentCache.sourceAccountId && box.cloudType === fileContentCache.sourceCloudType ||
-                    (!box.accountId && !fileContentCache.sourceAccountId && !box.cloudType && !fileContentCache.sourceCloudType) // Local file system
-                ) {
-                    // If the box is open, we can call a method on the box to update its content
-                    const ref = boxRefs.current.get(box.id);
-                    ref.current?.callDoRefresh?.(true); // Pass true for silent refresh
-                }
-            });
+            // No longer refresh immediately - wait for transfer completion to refresh
         } catch (error: any) {
             // Handle deletion conflicts file might already be deleted by another transfer
             if (error.message?.includes('not found') || error.message?.includes('does not exist') || error.message?.includes('ENOENT')) {
-                // File already deleted by another transfer - still refresh the UI since the file is gone
-                storageBoxesRef.current.forEach((box) => {
-                    if (box.accountId === fileContentCache.sourceAccountId && box.cloudType === fileContentCache.sourceCloudType ||
-                        (!box.accountId && !fileContentCache.sourceAccountId && !box.cloudType && !fileContentCache.sourceCloudType)) {
-                        const ref = boxRefs.current.get(box.id);
-                        ref.current?.callDoRefresh?.(true); // Pass true for silent refresh
-                    }
-                });
+                // File already deleted by another transfer - no need to refresh immediately
             } else {
                 throw error;
             }
@@ -252,6 +275,21 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                 fileContentsCache.length,
                 fileContentsCache.map(fc => fc.name) // Pass file names as the file list
             );
+
+            // Mark files as being transferred in the UI
+            const transferringFiles = fileContentsCache.map(fileContent => ({
+                path: fileContent.path,
+                name: fileContent.name,
+                sourceCloudType: fileContent.sourceCloudType,
+                sourceAccountId: fileContent.sourceAccountId,
+                targetCloudType: cloudType,
+                targetAccountId: accountId,
+                transferId: transfer?.id || '',
+                isMove: !confirmation.keepOriginal
+            }));
+            if (transfer) {
+                addTransferringFiles(transferringFiles);
+            }
 
             const totalFiles = fileContentsCache.length;
             let completedFiles = 0;
@@ -366,6 +404,11 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     endTime: Date.now()
                 });
 
+                // Refresh UI after successful transfer - delay to ensure all files are processed
+                setTimeout(() => {
+                    refreshSourceAndTargetBoxes(fileContentsCache, cloudType, accountId);
+                }, 100);
+
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : "Upload failed";
                 
@@ -377,6 +420,12 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     error: displayError,
                     isCancelling: false
                 });
+                
+                // Also refresh UI on error to remove transferring state
+                setTimeout(() => {
+                    refreshSourceAndTargetBoxes(fileContentsCache, cloudType, accountId);
+                }, 100);
+                
                 // Don't throw the error - just update the transfer state
             }
 
@@ -548,6 +597,21 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                 filePaths.map(path => path.split('/').pop() || path) // Extract file names from paths
             );
 
+            // Mark files as being transferred in the UI
+            const transferringFiles = filePaths.map(filePath => ({
+                path: filePath,
+                name: filePath.split('/').pop() || filePath,
+                sourceCloudType,
+                sourceAccountId,
+                targetCloudType,
+                targetAccountId,
+                transferId: transfer?.id || '',
+                isMove: !confirmation.keepOriginal
+            }));
+            if (transfer) {
+                addTransferringFiles(transferringFiles);
+            }
+
             const totalFiles = filePaths.length;
             let processedFiles = 0;
 
@@ -636,6 +700,17 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     endTime: Date.now()
                 });
 
+                // Refresh UI after successful transfer - delay to ensure all files are processed
+                setTimeout(() => {
+                    // Create fake file content cache for refresh function
+                    const fakeFileContents = filePaths.map(filePath => ({
+                        path: filePath,
+                        sourceCloudType,
+                        sourceAccountId,
+                    })) as FileContent[];
+                    refreshSourceAndTargetBoxes(fakeFileContents, targetCloudType, targetAccountId);
+                }, 100);
+
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : "Transfer failed";
                 
@@ -647,6 +722,17 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     error: displayError,
                     isCancelling: false
                 });
+
+                // Also refresh UI on error to remove transferring state
+                setTimeout(() => {
+                    const fakeFileContents = filePaths.map(filePath => ({
+                        path: filePath,
+                        sourceCloudType,
+                        sourceAccountId,
+                    })) as FileContent[];
+                    refreshSourceAndTargetBoxes(fakeFileContents, targetCloudType, targetAccountId);
+                }, 100);
+                
                 // Don't throw the error - just update the transfer state
             }
         } catch (error) {

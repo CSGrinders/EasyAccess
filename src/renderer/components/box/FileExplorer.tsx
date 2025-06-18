@@ -57,6 +57,7 @@ import {Button} from "@/components/ui/button"
 import {cn} from "@/lib/utils"
 import {CLOUD_HOME, CloudType} from "@Types/cloudType"
 import {useBoxDrag} from "@/contexts/BoxDragContext";
+import {useTransferState} from "@/contexts/TransferStateContext";
 import {
     Dialog,
     DialogContent,
@@ -298,6 +299,9 @@ export const FileExplorer = memo(function FileExplorer ({
 
     /** Connect to the system that handles dragging files between boxes from @Context/BoxDragContext */
     const BoxDrag = useBoxDrag();
+    
+    /** Connect to the system that tracks files being transferred */
+    const { isFileTransferring, getFileTransferInfo } = useTransferState();
     
     /** UI State */
     const [isOpeningBrowser, setIsOpeningBrowser] = useState(false); // Whether we're currently opening a file in the browser
@@ -770,6 +774,13 @@ export const FileExplorer = memo(function FileExplorer ({
     const handleItemClick = (e: React.MouseEvent, item: FileSystemItem) => {
         e.preventDefault();
         e.stopPropagation();
+
+        // Check if this file is being transferred - if so, don't allow any interaction
+        const isTransferring = isFileTransferring(item.path, cloudType, accountId);
+        if (isTransferring) {
+            return; // Exit early if file is being transferred
+        }
+
         // Handle double-click for navigation/opening
         if (e.detail === 2) {
             if (!item.isDirectory) {
@@ -921,6 +932,8 @@ export const FileExplorer = memo(function FileExplorer ({
                 right: itemRect.right - containerRect.left,
                 bottom: itemRect.bottom - containerRect.top + containerRef.current.scrollTop,
             };
+
+        
 
             // Check if selection box and item rectangle overlap
             const isIntersecting = !(
@@ -1338,9 +1351,14 @@ export const FileExplorer = memo(function FileExplorer ({
             // Select all files (Ctrl+A or Cmd+A)
             if ((e.ctrlKey || e.metaKey) && e.key === "a") {
                 e.preventDefault()
-                const allItems = new Set(sortedItems.map((item) => item.id))
-                selectedItemsRef.current = allItems;
-                setSelectedCount(allItems.size);
+                // Only select items that are not currently being transferred
+                const allSelectableItems = new Set(
+                    sortedItems
+                        .filter(item => !isFileTransferring(item.path, cloudType, accountId))
+                        .map((item) => item.id)
+                )
+                selectedItemsRef.current = allSelectableItems;
+                setSelectedCount(allSelectableItems.size);
                 updateSelectedItemsColor();
             }
 
@@ -2020,6 +2038,10 @@ export const FileExplorer = memo(function FileExplorer ({
                                 const IconComponent = getFileIcon(item.name, item.isDirectory);
                                 const iconColor = getIconColor(item.name, item.isDirectory, false, BoxDrag.target?.boxId === Number(item.id));
                                 
+                                // Check if this file is currently being transferred
+                                const isTransferring = isFileTransferring(item.path, cloudType, accountId);
+                                const transferInfo = getFileTransferInfo(item.path, cloudType, accountId);
+                                
                                 return (
                                     /* Individual file/folder item */
                                     <div
@@ -2036,30 +2058,54 @@ export const FileExplorer = memo(function FileExplorer ({
 
                                         /* Handle drag start when mouse is pressed */
                                         onMouseDown={(e) => {
-                                            e.stopPropagation()
-                                            handleItemMouseDown(e, item)}}
+                                            if (!isTransferring) {
+                                                e.stopPropagation()
+                                                handleItemMouseDown(e, item)
+                                            }
+                                        }}
 
                                         className={cn(
                                             // Base styles for all file items
-                                            "file-item flex flex-col items-center justify-center w-25 h-25 rounded-md cursor-pointer transition-all hover:bg-slate-100 dark:hover:bg-slate-800 ",
+                                            "file-item flex flex-col items-center justify-center w-25 h-25 rounded-md transition-all",
                                             
-                                            // Basic hover styles when not in box-to-box transfer mode
-                                            !isBoxToBoxTransfer
+                                            // Transferring state styling - completely disable interaction
+                                            isTransferring ? (
+                                                transferInfo?.isMove 
+                                                    ? "opacity-50 cursor-not-allowed bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 pointer-events-none" // Moving files
+                                                    : "opacity-75 cursor-not-allowed bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 pointer-events-none" // Copying files
+                                            ) : "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800",
+                                            
+                                            // Basic hover styles when not in box-to-box transfer mode and not transferring
+                                            !isBoxToBoxTransfer && !isTransferring
                                                     ? "hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent"
                                                     : "border border-transparent",
-                                            // Add hover effect when dragging
-                                            BoxDrag.isDragging && !draggedItemsRef.current.includes(item.id) && BoxDrag.sourceBoxId == boxId &&
+                                            // Add hover effect when dragging (only if not transferring)
+                                            !isTransferring && BoxDrag.isDragging && !draggedItemsRef.current.includes(item.id) && BoxDrag.sourceBoxId == boxId &&
                                                 "hover:ring-2 hover:ring-green-500 hover:bg-green-100 dark:hover:bg-green-900/30",
                                             
-                                            // Dragged items opacity
-                                            draggedItemsRef.current.includes(item.id) && BoxDrag.isDragging && "opacity-50",
+                                            // Dragged items opacity (only if not transferring)
+                                            !isTransferring && draggedItemsRef.current.includes(item.id) && BoxDrag.isDragging && "opacity-50",
                                         )}
                                     >
-                                        {/* Icon container */}
-                                        <div className="w-12 h-12 flex items-center justify-center mb-2">
+                                        {/* Icon container with transfer status overlay */}
+                                        <div className="w-12 h-12 flex items-center justify-center mb-2 relative">
                                             <IconComponent
-                                                className={cn("h-10 w-10", iconColor)}
+                                                className={cn(
+                                                    "h-10 w-10", 
+                                                    iconColor,
+                                                    isTransferring && "opacity-60"
+                                                )}
                                             />
+                                            {/* Transfer status indicator */}
+                                            {isTransferring && (
+                                                <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold text-white animate-pulse"
+                                                     style={{
+                                                         backgroundColor: transferInfo?.isMove ? '#f59e0b' : '#3b82f6' 
+                                                     }}
+                                                     title={transferInfo?.isMove ? 'Moving file...' : 'Copying file...'}>
+                                                    {transferInfo?.isMove ? 'M' : 'C'}
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* File/folder name */}
@@ -2069,8 +2115,15 @@ export const FileExplorer = memo(function FileExplorer ({
                                                 "break-all line-clamp-2 min-h-[2.5rem]",
                                                 "text-slate-800 dark:text-slate-200",
 
-                                                // Highlight text when this item is a drop target
-                                                BoxDrag.target?.boxId === Number(item.id) && "text-green-700 dark:text-green-300",
+                                                // Prevent text selection when transferring
+                                                isTransferring && "select-none",
+
+                                                // Special styling for transferring files
+                                                isTransferring && transferInfo?.isMove && "text-amber-700 dark:text-amber-300",
+                                                isTransferring && !transferInfo?.isMove && "text-blue-700 dark:text-blue-300",
+
+                                                // Highlight text when this item is a drop target (but not if transferring)
+                                                !isTransferring && BoxDrag.target?.boxId === Number(item.id) && "text-green-700 dark:text-green-300",
                                             )}
                                             title={item.name}
                                         >{item.name}</span>
