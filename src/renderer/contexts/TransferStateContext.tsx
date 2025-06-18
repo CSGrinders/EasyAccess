@@ -1,7 +1,7 @@
 /**
  * TransferStateContext
  * 
- * Provides a centralized way to track files currently being transferred.
+ * Provides a way to track files currently being transferred.
  * This allows the UI to show files in a disabled/transferring state 
  * instead of immediately refreshing file explorers.
  */
