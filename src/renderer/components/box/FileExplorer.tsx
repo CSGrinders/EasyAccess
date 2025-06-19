@@ -324,9 +324,6 @@ export const FileExplorer = memo(function FileExplorer ({
 
     const lastMoveTimeRef = useRef(0);
     
-    const logSelectionChange = (location: string, newSelection: Set<string>) => {
-    console.log(`Selection changed at ${location}:`, Array.from(newSelection));
-};
 
 
     /** 
@@ -430,10 +427,10 @@ export const FileExplorer = memo(function FileExplorer ({
                     setItems(files) // Update file list
                     updatePathSegments(cwd) // Update breadcrumb path
                     setIsLoading(false) // Hide loading indicator
-                    logSelectionChange('cwd useEffect', selectedItemsRef.current);
                     selectedItemsRef.current = new Set()  // Clear selection
                     lastSelectedItemRef.current = null // Clear last selected
                     setSelectedCount(0) // Update selection count
+                    itemRefs.current.clear()
                 })
                 .catch((err: Error) => {
                     console.error(err)
@@ -455,6 +452,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     selectedItemsRef.current = new Set() // Clear selection
                     lastSelectedItemRef.current = null // Clear last selected
                     setSelectedCount(0) // Update selection count
+                    itemRefs.current.clear()
                 })
                 .catch((err) => {
                     console.error(err)
@@ -656,8 +654,6 @@ export const FileExplorer = memo(function FileExplorer ({
                     updatePathSegments(cwd)
                     setIsLoading(false)
                     selectedItemsRef.current = new Set();
-                    logSelectionChange('refreshDirectory', selectedItemsRef.current);
-                    selectedItemsRef.current = new Set()
                     lastSelectedItemRef.current = null
                     setSelectedCount(0)
                 })
@@ -725,8 +721,6 @@ export const FileExplorer = memo(function FileExplorer ({
                     setItems(files)
                     updatePathSegments(cwd)
                     selectedItemsRef.current = new Set();
-                    logSelectionChange('refreshDirectorySilent', selectedItemsRef.current);
-                    selectedItemsRef.current = new Set()
                     lastSelectedItemRef.current = null
                     setSelectedCount(0)
                 })
@@ -839,7 +833,6 @@ export const FileExplorer = memo(function FileExplorer ({
 
         if (Date.now() - lastMoveTimeRef.current < 16) return;
         lastMoveTimeRef.current = Date.now();
-        console.log("Mouse down on container - starting selection");
 
         // Start selection mode
         isSelectingRef.current = true;
@@ -899,7 +892,7 @@ export const FileExplorer = memo(function FileExplorer ({
     /**
      * Determines which items intersect with the current selection box
      */
-    const updateSelectedItemsFromBox = useCallback((box: {
+    const updateSelectedItemsFromBox = useCallback(async (box: {
         left: number;
         top: number;
         width: number;
@@ -922,6 +915,11 @@ export const FileExplorer = memo(function FileExplorer ({
         itemRefs.current.forEach((element, id) => {
             if (!element) return;
             if (!containerRef.current) return;
+            const isTransferring = itemRefs.current.get(id)?.dataset.isTransferring === 'true';
+            if (isTransferring) {
+                console.log(`Skipping item (${id}) - it is being transferred.`);
+                return; // Skip if item is being transferred
+            }
 
             const itemRect = element.getBoundingClientRect();
 
@@ -954,7 +952,7 @@ export const FileExplorer = memo(function FileExplorer ({
             : itemsCurrentlyInBox; // Replace selection with new items
         
         updateSelectedItemsColor();
-    }, [isSelectingRef.current, isAdditiveDragRef.current]);
+    }, [sortedItems]);
 
     /** Updates the visual selection box during drag selection */
     const updateSelectionBox = useCallback((currentX: number, currentY: number) => {
@@ -1132,7 +1130,6 @@ export const FileExplorer = memo(function FileExplorer ({
                     accountId
                 );
                 
-                console.log("Drag started with", draggedFileItems.length, "items");
             } else {
                 return
             }
@@ -2049,7 +2046,11 @@ export const FileExplorer = memo(function FileExplorer ({
 
                                         /* Store reference to this element for selection and drag operations */
                                         ref={(el) => {
-                                            if (el) itemRefs.current.set(item.id, el)
+                                            if (el) {
+                                                itemRefs.current.set(item.id, el)
+                                                el.dataset.itemId = item.id;
+                                                el.dataset.isTransferring = isTransferring.toString();
+                                            }
                                             else itemRefs.current.delete(item.id)
                                         }}
 
@@ -2121,9 +2122,6 @@ export const FileExplorer = memo(function FileExplorer ({
                                                 // Special styling for transferring files
                                                 isTransferring && transferInfo?.isMove && "text-amber-700 dark:text-amber-300",
                                                 isTransferring && !transferInfo?.isMove && "text-blue-700 dark:text-blue-300",
-
-                                                // Highlight text when this item is a drop target (but not if transferring)
-                                                !isTransferring && BoxDrag.target?.boxId === Number(item.id) && "text-green-700 dark:text-green-300",
                                             )}
                                             title={item.name}
                                         >{item.name}</span>

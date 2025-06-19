@@ -19,6 +19,7 @@ import MCPClient from './MCP/mcpClient';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createFileSystemServer } from './MCP/fileSystemMcpServer';
 import { PermissionManager } from './permissions/permissionManager';
+import { v4 as uuidv4 } from 'uuid';
 
 let mcpClient: MCPClient | null = null;
 
@@ -219,7 +220,7 @@ ipcMain.handle('read-directory', async (_e, dirPath: string) => {
     try {
         const items = await fs.promises.readdir(dirPath, { withFileTypes: true })
         return Promise.all(items.map(async item => ({
-            id: item.name, // Using name as a simple ID, could be improved with a unique identifier
+            id: uuidv4(), // Generate unique UUID for each item
             name: item.name,
             isDirectory: item.isDirectory(),
             path: path.join(dirPath, item.name),
