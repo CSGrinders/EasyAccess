@@ -5,6 +5,7 @@ import { CLOUD_HOME, CloudType } from '../../types/cloudType';
 import { file } from 'googleapis/build/src/apis/file';
 import dotenv from 'dotenv';
 import { minimatch } from 'minimatch';
+import { v4 as uuidv4 } from 'uuid';
 dotenv.config();
 
 const {
@@ -265,9 +266,9 @@ export class OneDriveStorage implements CloudStorage {
           modifiedTime = new Date(item.lastModifiedDateTime).getTime();
         }
 
-        const fileItem: FileSystemItem = {
-          // id: item.id, // Use the OneDrive item ID as the unique identifier
-          id: item.id, // Use the OneDrive item ID or the path as the unique identifier (One Drive allows duplicate names)
+
+        const fileItem : FileSystemItem = {
+          id: uuidv4(), // Generate unique UUID for each item
           name: item.name,
           isDirectory: !!item.folder,
           path: CLOUD_HOME + itemPath,

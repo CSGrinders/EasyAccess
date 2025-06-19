@@ -3,13 +3,16 @@ import Dashboard from '@/pages/Dashboard';
 import "./global.css";
 import Titlebar from "@/components/app/Titlebar";
 import { Toaster } from "@Components/ui/sonner";
+import { TransferStateProvider } from '@/contexts/TransferStateContext';
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 
 root.render(
-    <div className="w-screen h-screen overflow-hidden">
-        <Titlebar />
-        <Dashboard />
-        <Toaster />
-    </div>
+    <TransferStateProvider>
+        <div className="w-screen h-screen overflow-hidden">
+            <Titlebar />
+            <Dashboard />
+            <Toaster />
+        </div>
+    </TransferStateProvider>
 );

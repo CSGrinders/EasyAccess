@@ -4,6 +4,7 @@ import { Client } from "@microsoft/microsoft-graph-client";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
 import { BrowserWindow } from 'electron';
 import { Dropbox } from 'dropbox';
+import { v4 as uuidv4 } from 'uuid';
 
 const mime = require('mime-types');
 import { minimatch } from 'minimatch';
@@ -162,7 +163,7 @@ export class DropboxStorage implements CloudStorage {
             const entries = response.result.entries;
         
             const fileSystemItems: FileSystemItem[] = entries.map(entry => ({
-                id: CLOUD_HOME + entry.path_lower, // Use path_lower for unique ID (Dropbox does NOT allow duplicate names)
+                id: uuidv4(), // Generate unique UUID for each item
                 name: entry.name,
                 isDirectory: entry['.tag'] === 'folder',
                 path: CLOUD_HOME + entry.path_lower,

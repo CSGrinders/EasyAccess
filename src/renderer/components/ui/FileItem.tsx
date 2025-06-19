@@ -1,18 +1,7 @@
-import React, { useEffect, useState, useRef, useCallback, memo, use, useMemo } from "react"
+import React, {memo} from "react"
 import {
-    ChevronLeft,
-    ChevronRight,
-    Home,
     FolderIcon,
     FileIcon,
-    ArrowUp,
-    RefreshCw,
-    Search,
-    EyeOff,
-    Eye,
-    Copy,
-    Trash,
-    Move,
     FileText,
     FileImage,
     FileVideo,
@@ -38,13 +27,9 @@ import {
     Mail,
     Calendar,
     Layers,
-    Info,
-    HardDrive,
-    Clock,
-    File,
-    MoreHorizontal
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import type {FileSystemItem} from "@Types/fileSystem"
 
 /**
  * Picks the right icon for a file or folder based on its name
@@ -52,7 +37,7 @@ import { cn } from "@/lib/utils"
  * For folders: looks at folder name to pick special icons
  * For files: looks at file extension (.jpg, .pdf, .mp3, etc.) to pick the right icon
  */
-const getFileIcon = (fileName: string, isDirectory: boolean = false) => {
+export const getFileIcon = (fileName: string, isDirectory: boolean = false) => {
     if (isDirectory) {
         const folderName = fileName.toLowerCase();
 
@@ -131,9 +116,9 @@ const getFileIcon = (fileName: string, isDirectory: boolean = false) => {
 /**
  * Returns appropriate color class for file/directory icons
  */
-const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected: boolean = false, isDropTarget: boolean = false) => {
+export const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected: boolean = false, isDropTarget: boolean = false) => {
     // Special colors that override everything else
-    if (isDropTarget) return "text-green-500"; //FIX
+    if (isDropTarget) return "text-green-500";
     if (isSelected) return "text-blue-500";
 
     // Colors for folders
@@ -191,55 +176,94 @@ const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected
     return "text-gray-400";
 };
 
-type FileItemProps = {
-    item: any;
-    isBoxToBoxTransfer: boolean;
+interface FileItemProps {
+    item: FileSystemItem;
+    isBoxToBoxTransfer?: boolean;
     BoxDrag: any;
     boxId: number;
-    draggedItemsRef: React.MutableRefObject<any>;
-    handleItemClick: (e: React.MouseEvent, item: any) => void;
-    handleItemMouseDown: (e: React.MouseEvent, item: any) => void;
-    itemRefs: React.MutableRefObject<Map<any, HTMLDivElement>>;
-};
+    draggedItemsRef: React.RefObject<string[]>;
+    handleItemClick: (e: React.MouseEvent, item: FileSystemItem) => void;
+    handleItemMouseDown: (e: React.MouseEvent, item: FileSystemItem) => void;
+    itemRefs: React.RefObject<Map<string, HTMLDivElement>>;
+    isTransferring?: boolean;
+    transferInfo?: { isMove: boolean } | null;
+}
 
-export const FileItem: React.FC<FileItemProps> = React.memo(({ item, isBoxToBoxTransfer, BoxDrag, boxId, draggedItemsRef, handleItemClick, handleItemMouseDown, itemRefs }) => {
+export const FileItem = memo<FileItemProps>(function FileItem({ 
+    item, 
+    isBoxToBoxTransfer = false, 
+    BoxDrag, 
+    boxId, 
+    draggedItemsRef, 
+    handleItemClick, 
+    handleItemMouseDown, 
+    itemRefs,
+    isTransferring = false,
+    transferInfo = null
+}) {
     const IconComponent = getFileIcon(item.name, item.isDirectory);
     const iconColor = getIconColor(item.name, item.isDirectory, false, BoxDrag.target?.boxId === Number(item.id));
 
     return (
         <div
-            /* Individual file/folder item */
             key={item.id}
-            /* Store reference to this element for selection and drag operations */
             ref={(el) => {
-                if (el) itemRefs.current.set(item.id, el);
-                else itemRefs.current.delete(item.id);
+                if (el) {
+                    itemRefs.current.set(item.id, el)
+                    el.dataset.itemId = item.id;
+                    el.dataset.isTransferring = isTransferring.toString();
+                }
+                else itemRefs.current.delete(item.id)
             }}
-            /* Handle clicks (single for selection, double for opening) */
             onClick={(e) => handleItemClick(e, item)}
-            /* Handle drag start when mouse is pressed */
-            onMouseDown={(e) => handleItemMouseDown(e, item)}
+            onMouseDown={(e) => {
+                if (!isTransferring) {
+                    e.stopPropagation()
+                    handleItemMouseDown(e, item)
+                }
+            }}
             className={cn(
                 // Base styles for all file items
-                "file-item flex flex-col items-center justify-center w-25 h-25 rounded-md cursor-pointer transition-all hover:bg-slate-100 dark:hover:bg-slate-800 ",
-
-                // Basic hover styles when not in box-to-box transfer mode
-                !isBoxToBoxTransfer
-                    ? "hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent"
-                    : "border border-transparent",
-                // Add hover effect when dragging
-                BoxDrag.isDragging && !draggedItemsRef.current.includes(item.id) && BoxDrag.sourceBoxId == boxId &&
-                "hover:ring-2 hover:ring-green-500 hover:bg-green-100 dark:hover:bg-green-900/30",
-
-                // Dragged items opacity
-                draggedItemsRef.current.includes(item.id) && BoxDrag.isDragging && "opacity-50",
+                "file-item flex flex-col items-center justify-center w-25 h-25 rounded-md transition-all",
+                
+                // Transferring state styling - completely disable interaction
+                isTransferring ? (
+                    transferInfo?.isMove 
+                        ? "opacity-50 cursor-not-allowed bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 pointer-events-none" // Moving files
+                        : "opacity-75 cursor-not-allowed bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 pointer-events-none" // Copying files
+                ) : "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800",
+                
+                // Basic hover styles when not in box-to-box transfer mode and not transferring
+                !isBoxToBoxTransfer && !isTransferring
+                        ? "hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent"
+                        : "border border-transparent",
+                // Add hover effect when dragging (only if not transferring)
+                !isTransferring && BoxDrag.isDragging && !draggedItemsRef.current.includes(item.id) && BoxDrag.sourceBoxId == boxId &&
+                    "hover:ring-2 hover:ring-green-500 hover:bg-green-100 dark:hover:bg-green-900/30",
+                
+                // Dragged items opacity (only if not transferring)
+                !isTransferring && draggedItemsRef.current.includes(item.id) && BoxDrag.isDragging && "opacity-50",
             )}
         >
-            {/* Icon container */}
-            <div className="w-12 h-12 flex items-center justify-center mb-2">
+            {/* Icon container with transfer status overlay */}
+            <div className="w-12 h-12 flex items-center justify-center mb-2 relative">
                 <IconComponent
-                    className={cn("h-10 w-10", iconColor)}
+                    className={cn(
+                        "h-10 w-10", 
+                        iconColor,
+                        isTransferring && "opacity-60"
+                    )}
                 />
+                {/* Transfer status indicator */}
+                {isTransferring && (
+                    <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold text-white animate-pulse"
+                         style={{
+                             backgroundColor: transferInfo?.isMove ? '#f59e0b' : '#3b82f6' 
+                         }}
+                         title={transferInfo?.isMove ? 'Moving file...' : 'Copying file...'}>
+                        {transferInfo?.isMove ? 'M' : 'C'}
+                    </div>
+                )}
             </div>
             {/* File/folder name */}
             <span
@@ -247,12 +271,17 @@ export const FileItem: React.FC<FileItemProps> = React.memo(({ item, isBoxToBoxT
                     "block w-full px-1 text-xs leading-tight text-center",
                     "break-all line-clamp-2 min-h-[2.5rem]",
                     "text-slate-800 dark:text-slate-200",
+                    // Prevent text selection when transferring
+                    isTransferring && "select-none",
 
-                    // Highlight text when this item is a drop target
-                    BoxDrag.target?.boxId === Number(item.id) && "text-green-700 dark:text-green-300",
+                    // Special styling for transferring files
+                    isTransferring && transferInfo?.isMove && "text-amber-700 dark:text-amber-300",
+                    isTransferring && !transferInfo?.isMove && "text-blue-700 dark:text-blue-300",
                 )}
                 title={item.name}
-            >{item.name}</span>
+            >
+                {item.name}
+            </span>
         </div>
     );
 });

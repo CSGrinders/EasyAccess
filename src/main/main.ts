@@ -20,6 +20,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createFileSystemServer } from './MCP/fileSystemMcpServer';
 import { PermissionManager } from './permissions/permissionManager';
 import { createFsServer } from './MCP/globalFsMcpServer';
+import { v4 as uuidv4 } from 'uuid';
 
 let mcpClient: MCPClient | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -139,8 +140,10 @@ ipcMain.handle('cloud-read-directory', async (_e, cloudType: CloudType, accountI
 ipcMain.handle('cloud-get-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return getFile(cloudType, accountId, filePath);
 });
-ipcMain.handle('cloud-post-file', async (_e, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer) => {
-    return postFile(cloudType, accountId, fileName, folderPath, data);
+ipcMain.handle('cloud-post-file', async (_e, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer | any) => {
+    // Ensure data is a Buffer (handle IPC serialization issues)
+    const bufferData = Buffer.isBuffer(data) ? data : Buffer.from(data.data || data);
+    return postFile(cloudType, accountId, fileName, folderPath, bufferData);
 });
 ipcMain.handle('cloud-delete-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return deleteFile(cloudType, accountId, filePath);
@@ -221,7 +224,7 @@ ipcMain.handle('read-directory', async (_e, dirPath: string) => {
     try {
         const items = await fs.promises.readdir(dirPath, { withFileTypes: true })
         return Promise.all(items.map(async item => ({
-            id: item.name, // Using name as a simple ID, could be improved with a unique identifier
+            id: uuidv4(), // Generate unique UUID for each item
             name: item.name,
             isDirectory: item.isDirectory(),
             path: path.join(dirPath, item.name),
