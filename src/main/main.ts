@@ -206,8 +206,6 @@ ipcMain.handle('get-mcp-status', async (_e) => {
 
 /**
  * Recursively calculates the total size of a directory
- * @param dirPath - Path to the directory
- * @returns Total size in bytes
  */
 async function calculateDirectorySize(dirPath: string): Promise<number> {
     let totalSize = 0;
