@@ -7,7 +7,7 @@
 
 import React, { useState } from "react";
 import {Button} from "@Components/ui/button";
-import {LayoutDashboard, Plus, SettingsIcon, Brain} from "lucide-react";
+import {LayoutDashboard, Plus, SettingsIcon, Brain, Package} from "lucide-react";
 import {NavItem} from "@Components/ui/navItem";
 
 /**
@@ -55,10 +55,23 @@ const ActionBar = ({action, setAction, toggleShowSideWindow, toggleShowAgentWind
                         {action === "dashboard" && (
                             <>
                                 <NavItem icon={<LayoutDashboard className="h-5 w-5"/>} label="Dashboard" active/>
+                                <NavItem icon={<Package className="h-5 w-5"/>} label="Transfers"
+                                         onClick={() => setAction("transfers")}/>
                                 <NavItem icon={<SettingsIcon className="h-5 w-5"/>} label="Settings"
                                          onClick={() => setAction("settings")}/>
                             </>
 
+                        )}
+
+                        {/* If you're on transfers page */}
+                        {action === "transfers" && (
+                            <>
+                                <NavItem icon={<LayoutDashboard className="h-5 w-5"/>} label="Dashboard"
+                                         onClick={() => setAction("dashboard")}/>
+                                <NavItem icon={<Package className="h-5 w-5"/>} label="Transfers" active/>
+                                <NavItem icon={<SettingsIcon className="h-5 w-5"/>} label="Settings"
+                                         onClick={() => setAction("settings")}/>
+                            </>
                         )}
 
                         {/* If you're on settings page */}
@@ -66,10 +79,14 @@ const ActionBar = ({action, setAction, toggleShowSideWindow, toggleShowAgentWind
                             <>
                                 <NavItem icon={<LayoutDashboard className="h-5 w-5"/>} label="Dashboard"
                                          onClick={() => setAction("dashboard")}/>
+                                <NavItem icon={<Package className="h-5 w-5"/>} label="Transfers"
+                                         onClick={() => setAction("transfers")}/>
                                 <NavItem icon={<SettingsIcon className="h-5 w-5"/>} label="Settings" active/>
                             </>
                         )}
                     </div>
+
+
 
                         {/* Button to open AI chat, only works on main page */}
                         <Button onClick={() => toggleShowAgentWindow()}

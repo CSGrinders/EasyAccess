@@ -19,6 +19,7 @@ import {
 import {StorageBoxProps, WINDOW_SIZES, MIN_BOX_HEIGHT, MIN_BOX_WIDTH} from "@Types/box";
 import {FileExplorer} from "@/components/box/FileExplorer";
 import {useBoxDrag} from "@/contexts/BoxDragContext";
+import {CloudType} from "@Types/cloudType";
 
 /**
  * Memoized StorageBox component with an equality comparison
@@ -84,9 +85,10 @@ function StorageBoxInner({
                              setIsMaximized,    // Function to make box full screen or no
                              tempPostFile,      // Function to upload files
                              tempGetFile,       // Function to download files
+                             tempDragDropTransfer, // Function to handle drag and drop with confirmation first
                          }: StorageBoxProps, 
                          ref: React.Ref<{
-                            callDoRefresh: () => void; 
+                            callDoRefresh: (silent?: boolean) => void; 
                                 }>
                         ) {
 
@@ -135,13 +137,19 @@ function StorageBoxInner({
      * When this changes, the FileExplorer component will reload its files
      */
     const [refreshToggle, setRefreshToggle] = useState(false);
+    
+    /** 
+     * Ref to track if the next refresh should be silent
+     */
+    const nextRefreshSilentRef = useRef(false);
 
 
     /** 
      * Function to refresh the file list
      * Parent components can call this through the ref
      */
-    const doRefresh = () => {
+    const doRefresh = (silent: boolean = false) => {
+        nextRefreshSilentRef.current = silent;
         setRefreshToggle(!refreshToggle);
     };
 
@@ -153,7 +161,7 @@ function StorageBoxInner({
         /**
          * Let parent refresh the file list
          */
-        callDoRefresh: doRefresh,
+        callDoRefresh: (silent?: boolean) => doRefresh(silent),
         setStyle: (style: Partial<CSSStyleDeclaration>) => {
             if (boxRef.current) {
                 Object.assign(boxRef.current.style, style);
@@ -305,7 +313,37 @@ function StorageBoxInner({
                 if (isDroppedOnBox) {
                     // Actually transfer the files if green highlight was shown
                     if (isDropZoneActive) {
-                        await tempPostFile?.(currentPath, box.cloudType, box.accountId);
+                        // Handle drag and drop operation
+                        const handleDragDropTransfer = async () => {
+                            if (BoxDrag.isDragging && BoxDrag.dragItems.items.length > 0) {
+                                try {
+                                    // Get source cloud information from drag context
+                                    const sourceCloudType = BoxDrag.dragItems.sourceCloudType;
+                                    const sourceAccountId = BoxDrag.dragItems.sourceAccountId;
+                                    const draggedItems = BoxDrag.dragItems.items;
+                                    
+                                    
+                                    const filePaths = draggedItems.map(item => item.path);
+                                    await tempDragDropTransfer?.(
+                                        filePaths, 
+                                        sourceCloudType as any, 
+                                        sourceAccountId,
+                                        currentPath,
+                                        box.cloudType,
+                                        box.accountId
+                                    );
+                                } catch (error) {
+                                }
+                            } else {
+                                // Regular transfer (not drag and drop)
+                                try {
+                                    await tempPostFile?.(currentPath, box.cloudType, box.accountId);
+                                } catch (error) {
+                                }
+                            }
+                        };
+                        
+                        await handleDragDropTransfer();
                         setRefreshToggle(!refreshToggle); // Refresh file list to show new files
                     }
                     // Clean up the drag operation
@@ -783,6 +821,7 @@ function StorageBoxInner({
                         boxId={id} 
                         onCurrentPathChange={handleCurrentPathChange} 
                         refreshToggle={refreshToggle}
+                        silentRefresh={nextRefreshSilentRef.current}
                     />
                 ) : (
                     /* Cloud file explorer */
@@ -795,6 +834,7 @@ function StorageBoxInner({
                         boxId={id} 
                         onCurrentPathChange={handleCurrentPathChange} 
                         refreshToggle={refreshToggle} 
+                        silentRefresh={nextRefreshSilentRef.current}
                     />
                 )}
             </div>

@@ -57,6 +57,7 @@ import {Button} from "@/components/ui/button"
 import {cn} from "@/lib/utils"
 import {CLOUD_HOME, CloudType} from "@Types/cloudType"
 import {useBoxDrag} from "@/contexts/BoxDragContext";
+import {useTransferState} from "@/contexts/TransferStateContext";
 import {
     Dialog,
     DialogContent,
@@ -71,7 +72,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { toast } from "sonner"
-import { FileItem } from "../ui/FileItem"
+import { FileItem, getFileIcon, getIconColor } from "@/components/ui/FileItem"
 
 /**
  * Props interface for the FileExplorer component
@@ -85,155 +86,13 @@ interface FileExplorerProps {
     tempGetFile?: (filePaths: string[], cloudType?: CloudType, accountId?: string) => void  // Function to get a file from the cloud
     boxId: number                                                                           // Unique identifier for the box 
     isBoxToBoxTransfer?: boolean                                                            // Whether the transfer is between boxes
-    refreshToggle?: boolean                                                                 // Toggle to refresh the file explorer  
+    refreshToggle?: boolean                                                                 // Toggle to refresh the file explorer
+    silentRefresh?: boolean                                                                 // Whether to refresh silently without loading indicator
     onCurrentPathChange?: (currentPath: string) => void                                     // Callback when the current path changes
 }
 
 
-/**
- * Picks the right icon for a file or folder based on its name
- * 
- * For folders: looks at folder name to pick special icons
- * For files: looks at file extension (.jpg, .pdf, .mp3, etc.) to pick the right icon
- */
-const getFileIcon = (fileName: string, isDirectory: boolean = false) => {
-    if (isDirectory) {
-        const folderName = fileName.toLowerCase();
 
-        // Check for special folder names and return icons
-        if (folderName.includes('download')) return Download;
-        if (folderName.includes('desktop')) return Monitor;
-        if (folderName.includes('document')) return BookOpen;
-        if (folderName.includes('picture') || folderName.includes('image')) return Image;
-        if (folderName.includes('music') || folderName.includes('audio')) return Music;
-        if (folderName.includes('video') || folderName.includes('movie')) return Video;
-        if (folderName.includes('favorite') || folderName.includes('bookmark')) return Star;
-        if (folderName.includes('config') || folderName.includes('setting')) return Settings;
-        if (folderName === 'node_modules' || folderName === '.git') return Terminal;
-        if (folderName.includes('src') || folderName.includes('source')) return Code;
-        if (folderName.includes('bin') || folderName.includes('executable')) return Zap;
-        if (folderName.includes('lib') || folderName.includes('library')) return Layers;
-
-        // Default folder icon
-        return FolderIcon;
-    }
-
-    // Handle files - get the file extension (part after the last dot)
-    const ext = fileName.toLowerCase().split('.').pop() || '';
-
-    // Programming and code files
-    if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'c', 'cs', 'php', 'rb', 'go', 'rs', 'swift', 'kt'].includes(ext)) return Code;
-
-    // Web files (HTML, CSS)
-    if (['html', 'htm', 'css', 'scss', 'sass', 'less'].includes(ext)) return Globe;
-
-    // Image files
-    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico', 'tiff', 'raw'].includes(ext)) return FileImage;
-
-    // Video files
-    if (['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'm4v', '3gp'].includes(ext)) return FileVideo;
-
-    // Audio files
-    if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a', 'opus'].includes(ext)) return FileAudio;
-
-    // Document files
-    if (['pdf', 'doc', 'docx', 'rtf', 'odt', 'pages'].includes(ext)) return BookOpen;
-
-    // Text files
-    if (['txt', 'md', 'markdown', 'readme', 'log', 'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg'].includes(ext)) return FileText;
-
-    // Spreadsheet files
-    if (['xls', 'xlsx', 'csv', 'ods', 'numbers'].includes(ext)) return FileSpreadsheet;
-
-    // Archive/compressed files
-    if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'deb', 'rpm', 'dmg', 'iso'].includes(ext)) return Archive;
-
-    // Executable files
-    if (['exe', 'msi', 'app', 'deb', 'rpm', 'dmg', 'pkg', 'run', 'bin'].includes(ext)) return Zap;
-
-    // Database files
-    if (['db', 'sqlite', 'sql', 'mdb', 'accdb'].includes(ext)) return Database;
-
-    // Design files
-    if (['psd', 'ai', 'sketch', 'fig', 'xd', 'indd'].includes(ext)) return Palette;
-
-    // System files
-    if (['dll', 'sys', 'so', 'dylib'].includes(ext)) return Cpu;
-
-    // Email files
-    if (['eml', 'msg', 'pst'].includes(ext)) return Mail;
-
-    // Calendar files
-    if (['ics', 'ical'].includes(ext)) return Calendar;
-
-    // Encrypted/security files
-    if (['enc', 'gpg', 'p7s', 'p12', 'pfx', 'key', 'pem', 'crt'].includes(ext)) return Lock;
-
-    return FileIcon; // Default file icon if no specific type is found
-};
-
-/**
- * Returns appropriate color class for file/directory icons
- */
-const getIconColor = (fileName: string, isDirectory: boolean = false, isSelected: boolean = false, isDropTarget: boolean = false) => {
-    // Special colors that override everything else
-    if (isDropTarget) return "text-green-500"; //FIX
-    if (isSelected) return "text-blue-500";
-
-    // Colors for folders
-    if (isDirectory) {
-        const folderName = fileName.toLowerCase();
-        if (folderName.includes('download')) return "text-green-400";
-        if (folderName.includes('desktop')) return "text-purple-400";
-        if (folderName.includes('document')) return "text-blue-400";
-        if (folderName.includes('picture') || folderName.includes('image')) return "text-pink-400";
-        if (folderName.includes('music') || folderName.includes('audio')) return "text-orange-400";
-        if (folderName.includes('video') || folderName.includes('movie')) return "text-red-400";
-        if (folderName.includes('favorite') || folderName.includes('bookmark')) return "text-yellow-400";
-        if (folderName === 'node_modules' || folderName === '.git') return "text-gray-500";
-        if (folderName.includes('src') || folderName.includes('source')) return "text-emerald-400";
-        return "text-blue-400"; // Default folder color
-    }
-
-    // Colors for files based on their extension
-    const ext = fileName.toLowerCase().split('.').pop() || '';
-
-    // Programming languages get specific colors
-    if (['js', 'ts', 'jsx', 'tsx'].includes(ext)) return "text-yellow-400";
-    if (['py'].includes(ext)) return "text-green-400";
-    if (['java'].includes(ext)) return "text-orange-400";
-    if (['cpp', 'c'].includes(ext)) return "text-blue-400";
-    if (['cs'].includes(ext)) return "text-purple-400";
-    if (['php'].includes(ext)) return "text-indigo-400";
-    if (['rb'].includes(ext)) return "text-red-400";
-    if (['go'].includes(ext)) return "text-cyan-400";
-    if (['rs'].includes(ext)) return "text-orange-500";
-    if (['swift'].includes(ext)) return "text-orange-400";
-    if (['kt'].includes(ext)) return "text-purple-500";
-
-    // Web technologies
-    if (['html', 'htm'].includes(ext)) return "text-orange-400";
-    if (['css', 'scss', 'sass', 'less'].includes(ext)) return "text-blue-400";
-
-    // Media files
-    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico'].includes(ext)) return "text-pink-400";
-    if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) return "text-red-400";
-    if (['mp3', 'wav', 'flac', 'aac'].includes(ext)) return "text-orange-400";
-
-    // Document files
-    if (['pdf'].includes(ext)) return "text-red-500";
-    if (['doc', 'docx'].includes(ext)) return "text-blue-500";
-    if (['xls', 'xlsx'].includes(ext)) return "text-green-500";
-
-    // Archive files
-    if (['zip', 'rar', '7z', 'tar'].includes(ext)) return "text-yellow-500";
-
-    // Executable files
-    if (['exe', 'msi', 'app'].includes(ext)) return "text-red-500";
-
-    // Default color for any other file types
-    return "text-gray-400";
-};
 
 
 export const FileExplorer = memo(function FileExplorer ({
@@ -245,6 +104,7 @@ export const FileExplorer = memo(function FileExplorer ({
                                                             boxId,                      // Unique identifier for the box
                                                             isBoxToBoxTransfer = false, // Whether the transfer is between boxes
                                                             refreshToggle,              // Toggle to refresh the file explorer
+                                                            silentRefresh = false,      // Whether to refresh silently without loading indicator
                                                             onCurrentPathChange         // Callback when the current path changes
                                                         }: FileExplorerProps) {
    
@@ -298,6 +158,9 @@ export const FileExplorer = memo(function FileExplorer ({
     /** Connect to the system that handles dragging files between boxes from @Context/BoxDragContext */
     const BoxDrag = useBoxDrag();
     
+    /** Connect to the system that tracks files being transferred */
+    const { isFileTransferring, getFileTransferInfo } = useTransferState();
+    
     /** UI State */
     const [isOpeningBrowser, setIsOpeningBrowser] = useState(false); // Whether we're currently opening a file in the browser
     // const [containerWidth, setContainerWidth] = useState(0); // Width of the file explorer container for responsive design
@@ -318,6 +181,10 @@ export const FileExplorer = memo(function FileExplorer ({
 
     /** Current zom level */
     const zoomLevelRef = useRef(zoomLevel);
+
+    const lastMoveTimeRef = useRef(0);
+    
+
 
     /** 
      * Files filtered by search query and hidden file setting 
@@ -395,6 +262,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     selectedItemsRef.current = new Set()  // Clear selection
                     lastSelectedItemRef.current = null // Clear last selected
                     setSelectedCount(0) // Update selection count
+                    itemRefs.current.clear()
                 })
                 .catch((err: Error) => {
                     console.error(err)
@@ -416,6 +284,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     selectedItemsRef.current = new Set() // Clear selection
                     lastSelectedItemRef.current = null // Clear last selected
                     setSelectedCount(0) // Update selection count
+                    itemRefs.current.clear()
                 })
                 .catch((err) => {
                     console.error(err)
@@ -454,7 +323,12 @@ export const FileExplorer = memo(function FileExplorer ({
             return
         }
         
-        refreshDirectory();
+        // Use silent refresh if silentRefresh flag is true, otherwise use normal refresh
+        if (silentRefresh) {
+            refreshDirectorySilent();
+        } else {
+            refreshDirectory();
+        }
     }, [refreshToggle])
 
     /**
@@ -611,7 +485,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     setItems(files)
                     updatePathSegments(cwd)
                     setIsLoading(false)
-                    selectedItemsRef.current = new Set()
+                    selectedItemsRef.current = new Set();
                     lastSelectedItemRef.current = null
                     setSelectedCount(0)
                 })
@@ -669,6 +543,44 @@ export const FileExplorer = memo(function FileExplorer ({
     }
 
     /**
+     * Silently refreshes the current directory contents without showing loading indicator
+     */
+    const refreshDirectorySilent = async () => {
+        if (cloudType && accountId) {
+            // Refresh cloud directory silently
+            (window as any).cloudFsApi.readDirectory(cloudType, accountId, cwd)
+                .then((files: FileSystemItem[]) => {
+                    setItems(files)
+                    updatePathSegments(cwd)
+                    selectedItemsRef.current = new Set();
+                    lastSelectedItemRef.current = null
+                    setSelectedCount(0)
+                })
+                .catch((err: Error) => {
+                    console.error(err)
+                    // Silent refresh - no toast errors, just log to console
+                })
+        } else {
+            if (!cwd || cwd === "") {
+                return
+            }
+            window.fsApi
+                .readDirectory(cwd)
+                .then((files) => {
+                    setItems(files)
+                    updatePathSegments(cwd)
+                    selectedItemsRef.current = new Set()
+                    lastSelectedItemRef.current = null
+                    setSelectedCount(0)
+                })
+                .catch((err) => {
+                    console.error(err)
+                })
+        }
+        updateSelectedItemsColor();
+    }
+
+    /**
      * Updates visual selection state for all items
      */
     const updateSelectedItemsColor = () => {
@@ -686,6 +598,15 @@ export const FileExplorer = memo(function FileExplorer ({
      * Supports multi-selection with Ctrl/Cmd and range selection with Shift
      */
     const handleItemClick = (e: React.MouseEvent, item: FileSystemItem) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Check if this file is being transferred - if so, don't allow any interaction
+        const isTransferring = isFileTransferring(item.path, cloudType, accountId);
+        if (isTransferring) {
+            return; // Exit early if file is being transferred
+        }
+
         // Handle double-click for navigation/opening
         if (e.detail === 2) {
             if (!item.isDirectory) {
@@ -698,37 +619,16 @@ export const FileExplorer = memo(function FileExplorer ({
             return
         }
 
+
         // Handle single click for selection
         const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
-        // Range selection with Shift key (TODO: FIX ISSUE WHERE IS NOT WORKING AS EXPECTED)
-        if (e.shiftKey && lastSelectedItemRef.current) {
-            const itemsPathList = sortedItems.map((i) => i.id);
-            const currentIndex = itemsPathList.indexOf(item.id);
-            const lastIndex = itemsPathList.indexOf(lastSelectedItemRef.current);
-
-            if (currentIndex !== -1 && lastIndex !== -1) {
-                // Find the range between current and last selected items
-                const start = Math.min(currentIndex, lastIndex);
-                const end = Math.max(currentIndex, lastIndex);
-
-                if (ctrlOrMeta) {
-                    // Add range to existing selection
-                    const rangeSelection = new Set<string>();
-                    for (let i = start; i <= end; i++) {
-                        rangeSelection.add(itemsPathList[i]);
-                    }
-                    selectedItemsRef.current = new Set([...selectedItemsRef.current, ...rangeSelection]);
-                } else {
-                    // Replace selection with range
-                    const rangeSelection = new Set<string>();
-                    for (let i = start; i <= end; i++) {
-                        rangeSelection.add(itemsPathList[i]);
-                    }
-                    selectedItemsRef.current = rangeSelection;
-                }
-            }
+        // Add to selection with Shift key 
+        if (e.shiftKey) {
+            selectedItemsRef.current = new Set([...selectedItemsRef.current, item.id]);
+            lastSelectedItemRef.current = item.id;
         } 
+        
         // Multi-selection with Ctrl/Cmd key
         else if (ctrlOrMeta) {
             const newSelectedItemsUpdate = new Set(selectedItemsRef.current);
@@ -762,6 +662,9 @@ export const FileExplorer = memo(function FileExplorer ({
         if ((e.target as HTMLElement).closest(".file-item") || e.button !== 0) {
             return;
         }
+
+        if (Date.now() - lastMoveTimeRef.current < 16) return;
+        lastMoveTimeRef.current = Date.now();
 
         // Start selection mode
         isSelectingRef.current = true;
@@ -821,7 +724,7 @@ export const FileExplorer = memo(function FileExplorer ({
     /**
      * Determines which items intersect with the current selection box
      */
-    const updateSelectedItemsFromBox = useCallback((box: {
+    const updateSelectedItemsFromBox = useCallback(async (box: {
         left: number;
         top: number;
         width: number;
@@ -844,6 +747,11 @@ export const FileExplorer = memo(function FileExplorer ({
         itemRefs.current.forEach((element, id) => {
             if (!element) return;
             if (!containerRef.current) return;
+            const isTransferring = itemRefs.current.get(id)?.dataset.isTransferring === 'true';
+            if (isTransferring) {
+                console.log(`Skipping item (${id}) - it is being transferred.`);
+                return; // Skip if item is being transferred
+            }
 
             const itemRect = element.getBoundingClientRect();
 
@@ -854,6 +762,8 @@ export const FileExplorer = memo(function FileExplorer ({
                 right: itemRect.right - containerRect.left,
                 bottom: itemRect.bottom - containerRect.top + containerRef.current.scrollTop,
             };
+
+        
 
             // Check if selection box and item rectangle overlap
             const isIntersecting = !(
@@ -874,7 +784,7 @@ export const FileExplorer = memo(function FileExplorer ({
             : itemsCurrentlyInBox; // Replace selection with new items
         
         updateSelectedItemsColor();
-    }, [isSelectingRef.current, isAdditiveDragRef.current]);
+    }, [sortedItems]);
 
     /** Updates the visual selection box during drag selection */
     const updateSelectionBox = useCallback((currentX: number, currentY: number) => {
@@ -908,6 +818,12 @@ export const FileExplorer = memo(function FileExplorer ({
     /** Handles mouse movement during drag selection */
     const handleMouseMove = useCallback((e: React.MouseEvent | MouseEvent) => {
         if (!isSelectingRef.current || !containerRef.current) return;
+
+        // Throttle mouse move events (PENDING: Check performance with Hojin)
+        if (Date.now() - lastMoveTimeRef.current < 16) {
+            return;
+        }
+        lastMoveTimeRef.current = Date.now();
 
         // Calculate current mouse position relative to container
         const rect = containerRef.current.getBoundingClientRect();
@@ -963,6 +879,37 @@ export const FileExplorer = memo(function FileExplorer ({
             }
         }
 
+        // Store the item info but don't start drag operations yet
+        const potentialDragItem = item;
+
+        // Set up mouse move handler that checks for drag threshold
+        const handlePotentialDrag = (moveEvent: MouseEvent) => {
+            const dx = moveEvent.clientX - dragStartPosRef.current.x;
+            const dy = moveEvent.clientY - dragStartPosRef.current.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Only start drag if mouse moved more than 5 pixels
+            if (distance > 5) {
+                document.removeEventListener("mousemove", handlePotentialDrag);
+                document.removeEventListener("mouseup", handlePotentialMouseUp);
+                // Now start the drag operation
+                startDragOperation(potentialDragItem);
+            }
+        };
+
+        const handlePotentialMouseUp = () => {
+            // Mouse released without dragging
+            document.removeEventListener("mousemove", handlePotentialDrag);
+            document.removeEventListener("mouseup", handlePotentialMouseUp);
+        };
+
+        // Set up threshold detection listeners
+        document.addEventListener("mousemove", handlePotentialDrag);
+        document.addEventListener("mouseup", handlePotentialMouseUp);
+    }
+
+    // Separate function to actually start the drag operation
+    const startDragOperation = (item: FileSystemItem) => {
         // Determine which files to drag
         let itemsToDrag: string[]
         if (selectedItemsRef.current.has(item.id)) {
@@ -971,13 +918,15 @@ export const FileExplorer = memo(function FileExplorer ({
         } else {
             // Item is not selected - just drag this item and select it
             itemsToDrag = [item.id]
-            selectedItemsRef.current = new Set([item.id])
+            selectedItemsRef.current = new Set([...Array.from(selectedItemsRef.current), item.id]);
             lastSelectedItemRef.current = item.id
+            updateSelectedItemsColor();
+            setSelectedCount(selectedItemsRef.current.size);
         }
 
         draggedItemsRef.current = itemsToDrag
 
-        // Set up global mouse event listeners for dragging
+        // Set up global mouse event listeners for actual dragging
         document.addEventListener("mousemove", handleItemMouseMove)
         document.addEventListener("mouseup", handleItemMouseUp)
     }
@@ -1013,23 +962,6 @@ export const FileExplorer = memo(function FileExplorer ({
                     accountId
                 );
                 
-                // Load file contents for transfer (TODO FIX, MULTIPLE CALLS TO TEMPGETFILE)
-                try {
-                    await tempGetFile?.(draggedFileItems.map(item => item.path), cloudType, accountId);
-                } catch (error) {
-                    console.error("Error loading files for drag operation:", error);
-                    // Reset drag state on error
-                    BoxDrag.setDragItems([], null);
-                    BoxDrag.setIsDragging(false);
-                    localIsDraggingRef.current = false;
-                    localDragStartedRef.current = false;
-                    
-                    toast.error("File Load Failed", {
-                        description: "Failed to load files for transfer",
-                        duration: 3000,
-                    });
-                    return;
-                }
             } else {
                 return
             }
@@ -1125,19 +1057,34 @@ export const FileExplorer = memo(function FileExplorer ({
             throttleTimeoutRef.current = null
         }
 
-        // Process file move if there's a valid drop target (TODO: FIX, MULTIPLE CALLS TO TEMPPOSTFILE?)
+        // Process file move if there's a valid drop target
         if (localIsDraggingRef.current && localTargetRef.current) {
             const targetItem = sortedItems.find((item) => item.id === String(localTargetRef.current?.targetId));
             if (targetItem && targetItem.isDirectory) {
                 // Move files to target folder
                 try {
+                    // First, load the files that are being dragged
+                    const draggedFileItems = sortedItems.filter(item =>
+                        draggedItemsRef.current.includes(item.id)
+                    );
+                    const filePaths = draggedFileItems.map(item => item.path);
+                    
+                    // Load file contents first
+                    await tempGetFile?.(filePaths, cloudType, accountId);
+                    
+                    // Then upload to target location
                     await tempPostFile?.(targetItem.path, cloudType, accountId);
                     refreshDirectory(); // TODO: FIX SOMETIMES IT IS BUGGY AND DOES NOT REFRESH
                 } catch (error) {
-                    console.error("Error moving files:", error);
-                    
+                    // The transfer service already handles error display through the transfer manager
+                    // We only show toast for local operation errors that aren't handled by the transfer service
                     if (error && typeof error === 'object' && 'message' in error) {
                         const errorMessage = (error as Error).message;
+                        if (errorMessage.includes('cancelled')) {
+                            // User cancelled - no need to show error
+                            return;
+                        }
+                        
                         if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
                             toast.error("Permission Error", {
                                 description: "Unable to move files.",
@@ -1159,13 +1106,17 @@ export const FileExplorer = memo(function FileExplorer ({
             } else if (targetItem && !targetItem.isDirectory) {
                 // Handle file-to-file operation
                 try {
-                    tempPostFile?.(targetItem.path, cloudType, accountId);
+                    await tempPostFile?.(targetItem.path, cloudType, accountId);
                 } catch (error) {
-                    console.error("Error posting file:", error);
-                    toast.error("File Operation Failed", {
-                        description: "Failed to complete file operation.",
-                        duration: 4000,
-                    });
+                    if (error && typeof error === 'object' && 'message' in error) {
+                        const errorMessage = (error as Error).message;
+                        if (!errorMessage.includes('cancelled')) {
+                            toast.error("File Operation Failed", {
+                                description: "Failed to complete file operation.",
+                                duration: 4000,
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -1229,9 +1180,14 @@ export const FileExplorer = memo(function FileExplorer ({
             // Select all files (Ctrl+A or Cmd+A)
             if ((e.ctrlKey || e.metaKey) && e.key === "a") {
                 e.preventDefault()
-                const allItems = new Set(sortedItems.map((item) => item.id))
-                selectedItemsRef.current = allItems;
-                setSelectedCount(allItems.size);
+                // Only select items that are not currently being transferred
+                const allSelectableItems = new Set(
+                    sortedItems
+                        .filter(item => !isFileTransferring(item.path, cloudType, accountId))
+                        .map((item) => item.id)
+                )
+                selectedItemsRef.current = allSelectableItems;
+                setSelectedCount(allSelectableItems.size);
                 updateSelectedItemsColor();
             }
 
@@ -1911,19 +1867,27 @@ export const FileExplorer = memo(function FileExplorer ({
                         <div className="grid grid-cols-[repeat(auto-fill,minmax(95px,1fr))] gap-2">
                             
                             {/* Loop through each file/folder and create a display item */}
-                            {sortedItems.map((item) => (
-                                <FileItem
-                                    key={item.id}
-                                    item={item}
-                                    isBoxToBoxTransfer={isBoxToBoxTransfer}
-                                    BoxDrag={BoxDrag}
-                                    boxId={boxId}
-                                    draggedItemsRef={draggedItemsRef}
-                                    handleItemClick={handleItemClick}
-                                    handleItemMouseDown={handleItemMouseDown}
-                                    itemRefs={itemRefs}
-                                />
-                            ))}
+                            {sortedItems.map((item) => {
+                                // Check if this file is currently being transferred
+                                const isTransferring = isFileTransferring(item.path, cloudType, accountId);
+                                const transferInfo = getFileTransferInfo(item.path, cloudType, accountId);
+                                
+                                return (
+                                    <FileItem
+                                        key={item.id}
+                                        item={item}
+                                        isBoxToBoxTransfer={isBoxToBoxTransfer}
+                                        BoxDrag={BoxDrag}
+                                        boxId={boxId}
+                                        draggedItemsRef={draggedItemsRef}
+                                        handleItemClick={handleItemClick}
+                                        handleItemMouseDown={handleItemMouseDown}
+                                        itemRefs={itemRefs}
+                                        isTransferring={isTransferring}
+                                        transferInfo={transferInfo}
+                                    />
+                                )
+                            })}
                         </div>
                     ) : (
                         /* Empty folder message when no files are found */

@@ -7,13 +7,14 @@ import { StorageBox } from "@/components/box/StorageBox";
 import { type StorageBoxData } from "@Types/box";
 import StorageSideWindow from '@/components/box/StorageSideWindow';
 import { CloudType } from '@Types/cloudType';
-import { FileContent } from '@Types/fileSystem';
 import { BoxDragProvider } from "@/contexts/BoxDragContext";
 import { BoxDragPreview } from '@/components/box/BoxDragPreview';
 import SettingsPanel from '@/pages/SettingsPanel';
 import AgentWindow from '../components/app/AgentWindow';
-import { MovingItemStatus } from '@/components/transactions/MovingItemStatus';
+import { TransferManager } from '@/components/transactions/TransferManager';
+import { TransferDetailPanel } from '@/pages/TransferDetailPanel';
 import { UploadConfirmationDialog } from '@/components/transactions/UploadConfirmationDialog';
+import { useTransferService } from '@/services/TransferService';
 
 
 const Dashboard = () => {
@@ -27,22 +28,8 @@ const Dashboard = () => {
     const [canvasVwpSize, setCanvasViewportSize] = useState({ width: 0, height: 0 });
     const [showStorageWindow, setShowStorageWindow] = useState(false);
     const [nextBoxId, setNextBoxId] = useState(3);
-    const [isMovingItem, setIsMovingItem] = useState(false);
-    const [movingItemProgress, setMovingItemProgress] = useState(0);
-    const [movingItemError, setMovingItemError] = useState<string | null>(null);
-    const [movingItemCompleted, setMovingItemCompleted] = useState(false);
-    const [currentMovingItem, setCurrentMovingItem] = useState<string>("");
-    const [transferStartTime, setTransferStartTime] = useState<number>(0);
-    const [totalItemsToTransfer, setTotalItemsToTransfer] = useState<number>(0);
     const [showMcpTest, setShowMcpTest] = useState(false);
     const [disabledAction, setDisabledAction] = useState(false);
-    const [isCancelling, setIsCancelling] = useState(false);
-    const [showUploadDialog, setShowUploadDialog] = useState(false);
-    const [uploadDialogResolve, setUploadDialogResolve] = useState<((value: { confirmed: boolean; keepOriginal: boolean }) => void) | null>(null);
-
-    const fileContentsCacheRef = useRef<FileContent[]>([]);
-    const isContentLoading = useRef(false);
-    const transferAbortController = useRef<AbortController | null>(null);
 
     const boxRefs = useRef(new Map());
 
@@ -51,292 +38,6 @@ const Dashboard = () => {
             boxRefs.current.set(id, React.createRef());
         }
         return boxRefs.current.get(id);
-    };
-
-    // Function to show upload confirmation dialog
-    const showUploadConfirmation = (): Promise<{ confirmed: boolean; keepOriginal: boolean }> => {
-        return new Promise((resolve) => {
-            setUploadDialogResolve(() => resolve);
-            setShowUploadDialog(true);
-        });
-    };
-
-    // Handle upload dialog confirmation
-    const handleUploadDialogConfirm = (keepOriginal: boolean) => {
-        setShowUploadDialog(false);
-        if (uploadDialogResolve) {
-            uploadDialogResolve({ confirmed: true, keepOriginal });
-            setUploadDialogResolve(null);
-        }
-    };
-
-    // Handle upload dialog cancellation
-    const handleUploadDialogCancel = () => {
-        setShowUploadDialog(false);
-        if (uploadDialogResolve) {
-            uploadDialogResolve({ confirmed: false, keepOriginal: false });
-            setUploadDialogResolve(null);
-        }
-    };
-
-    // Should be called from the successful uploaded file
-    const deleteFileFromSource = async (fileContentCache: FileContent, keepOriginal: boolean = false) => {
-        if (keepOriginal) {
-            console.log("Keeping original file, skipping deletion:", fileContentCache.path);
-            return;
-        }
-
-        console.log("Deleting file from source:", fileContentCache);
-        // source from the local file system
-        if (!fileContentCache.sourceCloudType || !fileContentCache.sourceAccountId) {
-            await (window as any).fsApi.deleteFile(fileContentCache.path);
-        } else {
-            // source from the cloud file system
-            await (window as any).cloudFsApi.deleteFile(fileContentCache.sourceCloudType, fileContentCache.sourceAccountId, fileContentCache.path);
-        }
-        storageBoxesRef.current.forEach((box) => {
-            console.log("Checking box:", box.id, "for file deletion");
-            console.log("Box sourceAccountId:", box.accountId, "Box cloudType:", box.cloudType);
-            console.log("File sourceAccountId:", fileContentCache.sourceAccountId, "File cloudType:", fileContentCache.sourceCloudType);
-            if (box.accountId === fileContentCache.sourceAccountId && box.cloudType === fileContentCache.sourceCloudType ||
-                (!box.accountId && !fileContentCache.sourceAccountId && !box.cloudType && !fileContentCache.sourceCloudType) // Local file system
-            ) {
-                // If the box is open, we can call a method on the box to update its content
-                console.log("Refresh for updated box content for box:", box.id);
-                const ref = boxRefs.current.get(box.id);
-                ref.current?.callDoRefresh?.();
-            }
-        });
-    }
-
-
-    const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
-        try {
-            // Wait for user confirmation with the new dialog
-            const confirmation = await showUploadConfirmation();
-            if (!confirmation.confirmed) {
-                throw new Error("User cancelled the operation");
-            }
-
-            // Show MovingItemStatus popup immediately after confirmation
-            setIsMovingItem(true);
-            setMovingItemProgress(0);
-            setMovingItemError(null);
-            setMovingItemCompleted(false);
-            setCurrentMovingItem("Preparing transfer...");
-            setIsCancelling(false);
-            setTransferStartTime(Date.now());
-
-            // Create abort controller for cancellation
-            transferAbortController.current = new AbortController();
-
-            // Wait for download to complete if still in progress
-            while (isContentLoading.current) {
-                setCurrentMovingItem("Downloading files...");
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-
-            const fileContentsCache = fileContentsCacheRef.current;
-            if (!fileContentsCache?.length) {
-                throw new Error("No file content to upload");
-            }
-
-            const totalFiles = fileContentsCache.length;
-            setTotalItemsToTransfer(totalFiles);
-
-            const startProgress = 0;
-            setMovingItemProgress(startProgress);
-
-            let completedFiles = 0;
-            const progressRange = 100;
-
-            // Upload files based on destination type
-            if (!cloudType || !accountId) {
-                // Local file system uploads
-                for (const fileContent of fileContentsCache) {
-                    if (transferAbortController.current.signal.aborted) {
-                        throw new Error("Transfer cancelled by user");
-                    }
-
-                    setCurrentMovingItem(`${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${fileContent.name}`);
-                    
-                    try {
-                        await (window as any).fsApi.postFile(
-                            fileContent.name,
-                            parentPath,
-                            fileContent.content
-                        );
-                        await deleteFileFromSource(fileContent, confirmation.keepOriginal);
-                        completedFiles++;
-                        setMovingItemProgress((completedFiles / totalFiles) * progressRange);
-                    } catch (err) {
-                        throw new Error(`Failed to upload ${fileContent.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
-                    }
-                }
-            } else {
-                // Cloud file system uploads
-                for (const fileContent of fileContentsCache) {
-                    if (transferAbortController.current.signal.aborted) {
-                        throw new Error("Transfer cancelled by user");
-                    }
-
-                    setCurrentMovingItem(`${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${fileContent.name}`);
-                    
-                    try {
-                        await (window as any).cloudFsApi.postFile(
-                            cloudType,
-                            accountId,
-                            fileContent.name,
-                            parentPath,
-                            fileContent.content
-                        );
-                        await deleteFileFromSource(fileContent, confirmation.keepOriginal);
-                        completedFiles++;
-                        setMovingItemProgress((completedFiles / totalFiles) * progressRange);
-                    } catch (err) {
-                        throw new Error(`Failed to upload ${fileContent.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
-                    }
-                }
-            }
-
-            // Success
-            setMovingItemCompleted(true);
-
-            setTimeout(() => {
-                if (!movingItemError) {
-                    resetMovingItemState();
-                }
-            }, 3000);
-
-        } catch (error) {
-            console.log("File upload failed:", error);
-            const errorMessage = error instanceof Error ? error.message : "Upload failed";
-            
-            if (errorMessage.includes("cancelled")) {
-                setMovingItemError("Transfer cancelled");
-            } else {
-                setMovingItemError(errorMessage);
-            }
-        } finally {
-            setIsCancelling(false);
-            transferAbortController.current = null;
-        }
-    }
-
-    const handleCancelTransfer = () => {
-        if (transferAbortController.current && !isCancelling) {
-            setIsCancelling(true);
-            transferAbortController.current.abort();
-        }
-    };
-
-    const resetMovingItemState = () => {
-        setIsMovingItem(false);
-        setMovingItemProgress(0);
-        setMovingItemError(null);
-        setMovingItemCompleted(false);
-        setCurrentMovingItem("");
-        setIsCancelling(false);
-        setTransferStartTime(0);
-        setTotalItemsToTransfer(0);
-        fileContentsCacheRef.current = [];
-        transferAbortController.current = null;
-    };
-
-    const tempGetFile = async (filePaths: string[], cloudType?: CloudType, accountId?: string) => {
-        try {
-            isContentLoading.current = true; 
-            
-            // Reset file cache
-            fileContentsCacheRef.current = [];
-            
-            const totalFiles = filePaths.length;
-            let downloadedFiles = 0;
-            
-            if (!cloudType || !accountId) {
-                // local file system
-                console.log("local file system, call getFile from local file system:", filePaths);
-                for (const filePath of filePaths) {
-                    try {
-                        const fileName = filePath.split('/').pop() || filePath;
-                        
-                        const fileContent: FileContent = await (window as any).fsApi.getFile(filePath);
-                        console.log("File content:", fileContent);
-                        fileContentsCacheRef.current.push(fileContent); // Update the ref with the new file content
-                        downloadedFiles++;
-                    } catch (err: any) {
-                        console.error(err);
-                        throw new Error(`Failed to read ${filePath}: ${err.message}`);
-                    }
-                }
-            } else {
-                console.log("Fetching file content from cloud account:", cloudType, accountId, filePaths);
-
-                for (const filePath of filePaths) {
-                    try {
-                        const fileName = filePath.split('/').pop() || filePath;
-                        
-                        const fileContent: FileContent = await (window as any).cloudFsApi.getFile(cloudType, accountId, filePath);
-                        console.log("File content:", fileContent);
-                        fileContentsCacheRef.current.push(fileContent); // Update the ref with the new file content
-                        downloadedFiles++;
-                    } catch (err: any) {
-                        console.error(err);
-                        throw new Error(`Failed to download ${filePath}: ${err.message}`);
-                    }
-                }
-            }
-            console.log("File content fetch completed");
-        } catch (error: any) {
-            throw error;
-        } finally {
-            isContentLoading.current = false;
-        }
-    }
-
-    //Manage box-to-box transfer
-    const handleBoxTransfer = async (
-        sourceItems: any[],
-        targetBoxId: number,
-        targetPath: string = "/"
-    ) => {
-        const targetBox = storageBoxes.find(box => box.id === targetBoxId);
-        if (!targetBox) {
-            console.error("Target box not found:", targetBoxId);
-            return;
-        }
-
-
-        console.log("Starting box transfer:");
-        console.log("Source items:", sourceItems);
-        console.log("Target box:", targetBox);
-        console.log("Target path:", targetPath);
-
-        // TODO: Implement actual box file transfer logic, I will leave this to you,
-        for (const item of sourceItems) {
-            console.log(`Transferring: ${item.name} to box ${targetBoxId}`);
-
-            if (targetBox.cloudType && targetBox.accountId) {
-                // Cloud
-
-                console.log("Would transfer to cloud:", targetBox.cloudType, targetBox.accountId);
-            } else {
-                // Local
-                console.log("Would transfer to local:", targetPath);
-            }
-        }
-
-        console.log("Box transfer completed");
-    };
-
-    const toggleShowSideWindow = () => {
-        setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
-    };
-
-
-    const toggleShowAgentWindow = () => {
-        console.log("Toggling MCP Test window visibility");
-        setShowMcpTest(!showMcpTest); // Toggle the storage window visibility
     };
 
     const [storageBoxes, setStorageBoxes] = useState<StorageBoxData[]>([
@@ -357,6 +58,30 @@ const Dashboard = () => {
     useEffect(() => {
         storageBoxesRef.current = storageBoxes;
     }, [storageBoxes]);
+
+    // Initialize transfer service
+    const {
+        transferQueue,
+        fileContentsCacheRef,
+        showUploadDialog,
+        handleCancelTransfer,
+        handleCloseTransfer,
+        handleRetryTransfer,
+        tempPostFile,
+        tempGetFile,
+        tempDragDropTransfer,
+        handleUploadDialogConfirm,
+        handleUploadDialogCancel,
+    } = useTransferService({ boxRefs, storageBoxesRef });
+
+    const toggleShowSideWindow = () => {
+        setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
+    };
+
+    const toggleShowAgentWindow = () => {
+        console.log("Toggling MCP Test window visibility");
+        setShowMcpTest(!showMcpTest); // Toggle the storage window visibility
+    };
 
     useEffect(() => {
         const observedElement = canvasVwpRef.current;
@@ -383,32 +108,10 @@ const Dashboard = () => {
             }
         }
 
-
         return () => {
             resizeObserver.unobserve(observedElement);
         };
     }, [canvasVwpRef.current]);
-
-    useEffect(() => {
-        return () => {
-            if (transferAbortController.current) {
-                transferAbortController.current.abort();
-            }
-        };
-    }, []);
-
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && isMovingItem && !movingItemCompleted && !movingItemError) {
-                handleCancelTransfer();
-            }
-        };
-
-        if (isMovingItem) {
-            document.addEventListener('keydown', handleKeyDown);
-            return () => document.removeEventListener('keydown', handleKeyDown);
-        }
-    }, [isMovingItem, movingItemCompleted, movingItemError]);
 
     const addStorageBox = (type: string, title: string, icon: React.ReactNode, cloudType?: CloudType, accountId?: string) => {
         const newStorageBox: StorageBoxData = {
@@ -460,8 +163,6 @@ const Dashboard = () => {
         // Update all box z-indices
         storageBoxesRef.current.forEach((box) => {
             const boxRef = boxRefs.current.get(box.id);
-            console.log(box.id === id);
-            console.log("Box ref:", boxRef);
             if (boxRef && boxRef.current) {
                 // Set higher z-index for clicked box, lower for others
                 boxRef?.current?.setStyle({
@@ -491,6 +192,10 @@ const Dashboard = () => {
             setShowMcpTest(false);
             setShowStorageWindow(false);
             setDisabledAction(true)
+        } else if (newAction === "transfers") {
+            setShowMcpTest(false);
+            setShowStorageWindow(false);
+            setDisabledAction(true)
         } else {
             setDisabledAction(false)
         }
@@ -517,19 +222,14 @@ const Dashboard = () => {
                 </div>
             </header>
             <main className="flex flex-1 overflow-hidden" ref={canvasVwpRef}>
-                {isMovingItem && (
-                    <MovingItemStatus
-                        isVisible={isMovingItem}
-                        itemCount={totalItemsToTransfer}
-                        currentItem={currentMovingItem}
-                        progress={movingItemProgress}
-                        error={movingItemError}
-                        isCompleted={movingItemCompleted}
-                        onCancel={isCancelling ? undefined : handleCancelTransfer}
-                        onClose={resetMovingItemState}
-                        startTime={transferStartTime}
-                    />
-                )}
+                <TransferManager
+                    transfers={transferQueue.transfers}
+                    onCancelTransfer={handleCancelTransfer}
+                    onCloseTransfer={handleCloseTransfer}
+                    onRetryTransfer={handleRetryTransfer}
+                    isHidden={action === "transfers"}
+                    isTransferPanelOpen={action === "transfers"}
+                />
                 <ActionBar action={action} setAction={handleActionChange} toggleShowSideWindow={toggleShowSideWindow} toggleShowAgentWindow={toggleShowAgentWindow} />
                 <BoxDragProvider>
                     <div className="relative flex flex-1">
@@ -537,6 +237,13 @@ const Dashboard = () => {
                         <div className="relative flex flex-col flex-1">
                             {action === "settings" ? (
                                 <SettingsPanel onAccountsCleared={handleAccountsCleared} />
+                            ) : action === "transfers" ? (
+                                <TransferDetailPanel 
+                                    transfers={transferQueue.transfers}
+                                    onCancelTransfer={handleCancelTransfer}
+                                    onCloseTransfer={handleCloseTransfer}
+                                    onRetryTransfer={handleRetryTransfer}
+                                />
                             ) : canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
                                 <CanvasContainer
                                     zoomLevel={zoomLevel}
@@ -562,7 +269,7 @@ const Dashboard = () => {
                                             setIsMaximized={(isMaximized: boolean) => setBoxMaximized(box.id, isMaximized)}
                                             tempPostFile={tempPostFile}
                                             tempGetFile={tempGetFile}
-                                            onBoxTransfer={handleBoxTransfer}
+                                            tempDragDropTransfer={tempDragDropTransfer}
                                         />
                                     ))}
                                 </CanvasContainer>

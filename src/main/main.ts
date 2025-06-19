@@ -19,6 +19,7 @@ import MCPClient from './MCP/mcpClient';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createFileSystemServer } from './MCP/fileSystemMcpServer';
 import { PermissionManager } from './permissions/permissionManager';
+import { v4 as uuidv4 } from 'uuid';
 
 let mcpClient: MCPClient | null = null;
 
@@ -135,8 +136,10 @@ ipcMain.handle('cloud-read-directory', async (_e, cloudType: CloudType, accountI
 ipcMain.handle('cloud-get-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return getFile(cloudType, accountId, filePath);
 });
-ipcMain.handle('cloud-post-file', async (_e, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer) => {
-    return postFile(cloudType, accountId, fileName, folderPath, data);
+ipcMain.handle('cloud-post-file', async (_e, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer | any) => {
+    // Ensure data is a Buffer (handle IPC serialization issues)
+    const bufferData = Buffer.isBuffer(data) ? data : Buffer.from(data.data || data);
+    return postFile(cloudType, accountId, fileName, folderPath, bufferData);
 });
 ipcMain.handle('cloud-delete-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return deleteFile(cloudType, accountId, filePath);
@@ -217,7 +220,7 @@ ipcMain.handle('read-directory', async (_e, dirPath: string) => {
     try {
         const items = await fs.promises.readdir(dirPath, { withFileTypes: true })
         return Promise.all(items.map(async item => ({
-            id: item.name, // Using name as a simple ID, could be improved with a unique identifier
+            id: uuidv4(), // Generate unique UUID for each item
             name: item.name,
             isDirectory: item.isDirectory(),
             path: path.join(dirPath, item.name),
@@ -328,8 +331,12 @@ ipcMain.handle('open-file', async (event, fileContent: FileContent) => {
     }
   });
 
-ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, data: Buffer) => {
+ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, data: Buffer | any) => {
     console.log('Posting file:', fileName, folderPath, data);
+    
+    // Ensure data is a Buffer (handle IPC serialization issues)
+    const bufferData = Buffer.isBuffer(data) ? data : Buffer.from(data.data || data);
+    
     const filePath = path.join(folderPath, fileName);
     
     const permissionManager = PermissionManager.getInstance();
@@ -340,7 +347,7 @@ ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, dat
     }
 
     try {
-        fs.writeFileSync(filePath, data);
+        fs.writeFileSync(filePath, bufferData);
         console.log('File posted successfully:', filePath);
     } catch (error: any) {
         if (error.code === 'EPERM' || error.code === 'EACCES') {

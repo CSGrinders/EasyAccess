@@ -7,6 +7,7 @@ import { drive_v3, google } from 'googleapis';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
 import { shell } from 'electron';
+import { v4 as uuidv4 } from 'uuid';
 const { Readable } = require('stream');
 import * as http from 'http';
 import { URL } from 'url';
@@ -197,7 +198,7 @@ export class GoogleDriveStorage implements CloudStorage {
           const filePath = dir === '/' ? `/${file.name}` : `${dir}/${file.name}`;
         
           return {
-            id: file.id || '', // Use file ID as unique identifier (Google allows duplicate names)
+            id: uuidv4(), // Generate unique UUID for each item
             name: file.name ?? '',
             isDirectory: file.mimeType === 'application/vnd.google-apps.folder',
             path: CLOUD_HOME + filePath,

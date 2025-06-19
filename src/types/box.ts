@@ -67,6 +67,9 @@ export interface StorageBoxProps {
     /** Optional file download handler for cloud storage */
     tempGetFile?: (filePaths: string[], cloudType?: CloudType, accountId?: string) => void;
     
+    /** Optional drag and drop transfer handler with confirmation first */
+    tempDragDropTransfer?: (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => void;
+    
     /** Handler for transferring items between storage boxes */
     onBoxTransfer?: (sourceItems: any[], targetBoxId: number, targetPath?: string) => void;
 }

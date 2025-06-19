@@ -37,7 +37,9 @@ module.exports = {
             '@Types': path.resolve(__dirname, 'src/types'),
             '@': path.resolve(__dirname, 'src/renderer'),
         },
-
+        fallback: {
+            "buffer": require.resolve("buffer")
+        },
         extensions: ['.tsx', '.ts', '.js', '.css'],
     },
     output: {

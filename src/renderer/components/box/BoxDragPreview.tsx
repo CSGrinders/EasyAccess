@@ -12,19 +12,26 @@ export const BoxDragPreview = ({ zoomLevel }: { zoomLevel: number }) => {
     const {isDragging, dragItems} = useBoxDrag();
     const dragPreviewRef = React.useRef<HTMLDivElement | null>(null);
 
-    /** Updates the drag preview position to follow the mouse cursor */
+    /** Updates the drag preview position to follow the mouse cursor  (PENDING: Check performance)*/
     useEffect(() => {
         // If we're not dragging, don't do anything
         if (!isDragging) return;
 
+        let animationId: number;
+
         const handleMouseMove = (e: MouseEvent) => {
             // Make sure our preview element exists before trying to move it
             if (!dragPreviewRef.current) return;
-            
-            requestAnimationFrame(() => {
+        
+            // Cancel any pending animation frame
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+        
+            animationId = requestAnimationFrame(() => {
                 if (dragPreviewRef.current) {
-                    const x = e.clientX;
-                    const y = e.clientY;
+                    const x = e.clientX + 15;
+                    const y = e.clientY - 50 - (zoomLevel - 1) * 10; 
 
                     // Move the preview to the mouse position and apply zoom scaling
                     dragPreviewRef.current.style.transform = 
@@ -35,7 +42,12 @@ export const BoxDragPreview = ({ zoomLevel }: { zoomLevel: number }) => {
 
         // Start listening for mouse movements across the entire window
         window.addEventListener('mousemove', handleMouseMove);
-        return () => window.removeEventListener('mousemove', handleMouseMove);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+        };
     }, [isDragging, zoomLevel]);
 
     // Don't render if not dragging or no items to display

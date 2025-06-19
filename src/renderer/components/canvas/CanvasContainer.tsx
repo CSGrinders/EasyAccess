@@ -400,12 +400,6 @@ export function CanvasContainer({
               Go Center
             </span>
                     </div>
-
-                    {/* Position indicator */}
-                    <div
-                        className="select-none bg-slate-800 text-slate-200 text-xs px-3 py-1.5 rounded-md shadow-lg border border-slate-700">
-                        Position: {Math.round(controlledPos.x)}, {Math.round(controlledPos.y)}
-                    </div>
                 </div>
             )}
         </div>
