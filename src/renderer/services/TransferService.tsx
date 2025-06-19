@@ -5,6 +5,7 @@ import { FileContent } from '@Types/fileSystem';
 import { TransferItem, TransferQueueState } from '@Types/transfer';
 import { StorageBoxData } from '@Types/box';
 import { useTransferState } from '@/contexts/TransferStateContext';
+import { v4 as uuidv4 } from 'uuid';
 
 interface TransferServiceProps {
     boxRefs: React.RefObject<Map<any, any>>;
@@ -84,8 +85,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
 
     // Transfer queue management functions
     const createTransfer = (sourceDescription: string, targetDescription: string, keepOriginal: boolean, itemCount: number, fileList?: string[]): TransferItem => {
-        // Use timestamp + random to ensure unique IDs
-        const transferId = `transfer-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        // Use uuid to have unique IDs
+        const transferId =  uuidv4();
         const newTransfer: TransferItem = {
             id: transferId,
             itemCount,
