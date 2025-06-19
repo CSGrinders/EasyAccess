@@ -10,7 +10,7 @@ interface SettingsPanelProps {
     onAccountsCleared?: () => void;
 }
 
-export const SettingsPanel: React.FC<SettingsPanelProps> = ({ className, onAccountsCleared }) => {
+export const SettingsPanel = ({ className, onAccountsCleared }: SettingsPanelProps) => {
     const [isClearing, setIsClearing] = useState(false);
 
     const handleClearAccounts = async () => {

@@ -7,14 +7,14 @@ import { StorageBoxData } from '@Types/box';
 import { useTransferState } from '@/contexts/TransferStateContext';
 
 interface TransferServiceProps {
-    boxRefs: React.MutableRefObject<Map<any, any>>;
-    storageBoxesRef: React.MutableRefObject<StorageBoxData[]>;
+    boxRefs: React.RefObject<Map<any, any>>;
+    storageBoxesRef: React.RefObject<StorageBoxData[]>;
 }
 
 interface TransferServiceReturn {
     transferQueue: TransferQueueState;
-    fileContentsCacheRef: React.MutableRefObject<FileContent[]>;
-    isContentLoading: React.MutableRefObject<boolean>;
+    fileContentsCacheRef: React.RefObject<FileContent[]>;
+    isContentLoading: React.RefObject<boolean>;
     showUploadDialog: boolean;
     setShowUploadDialog: React.Dispatch<React.SetStateAction<boolean>>;
     uploadDialogResolve: ((value: { confirmed: boolean; keepOriginal: boolean }) => void) | null;
