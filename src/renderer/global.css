@@ -362,6 +362,29 @@ body {
     animation: slideOut 0.2s ease-in forwards;
 }
 
+.file-action-bar {
+    container-type: inline-size;
+}
+
+.actions-container {
+    display: none;
+}
+
+.dropdown-container {
+    display: flex;
+}
+
+@container (min-width: 600px) {
+    .actions-container {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .dropdown-container {
+        display: none;
+    }
+}
+
 @keyframes slideIn {
     from {
         transform: translateX(100%);

@@ -265,14 +265,12 @@ export const FileItem = memo<FileItemProps>(function FileItem({
                     </div>
                 )}
             </div>
-
             {/* File/folder name */}
             <span
                 className={cn(
                     "block w-full px-1 text-xs leading-tight text-center",
                     "break-all line-clamp-2 min-h-[2.5rem]",
                     "text-slate-800 dark:text-slate-200",
-
                     // Prevent text selection when transferring
                     isTransferring && "select-none",
 
