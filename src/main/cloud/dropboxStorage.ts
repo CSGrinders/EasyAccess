@@ -6,6 +6,7 @@ import { BrowserWindow } from 'electron';
 import { Dropbox } from 'dropbox';
 
 const mime = require('mime-types');
+import { minimatch } from 'minimatch';
 
 const DROPBOX_APP_KEY = process.env.DROPBOX_KEY;
 // const DROPBOX_APP_SECRET = process.env.DROPBOX_SECRET;
@@ -272,7 +273,7 @@ export class DropboxStorage implements CloudStorage {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${this.AuthToken?.access_token}`,
-                'Dropbox-API-Arg': JSON.stringify({ path: folderPath + '/' + fileName, mode: 'add', autorename: true, mute: false }),
+                'Dropbox-API-Arg': JSON.stringify({ path: '/' + folderPath + '/' + fileName, mode: 'add', autorename: true, mute: false }),
                 'Content-Type': 'application/octet-stream'
             },
             body: data
@@ -298,6 +299,91 @@ export class DropboxStorage implements CloudStorage {
             console.log(`File "${filePath}" deleted successfully`);
         } catch (error) {
             console.error('Failed to delete file:', error);
+            throw error;
+        }
+    }
+
+    async searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]> {
+        // Not implemented for Dropbox yet
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            return Promise.reject('Dropbox client is not initialized');
+        }
+
+        const result: FileSystemItem[] = [];
+
+        try {
+            if (rootPath === '/') {
+                rootPath = '';
+            } // DROPBOX API HOME
+            const response = await this.client.filesListFolder({ path: rootPath, recursive: true, include_media_info: false, include_deleted: false }); 
+            const entries = response.result.entries;
+
+            console.log('Dropbox search response:', response);
+            console.log('Dropbox search entries:', entries);
+
+            for (const entry of entries) {
+                if (entry['.tag'] === 'file') {
+                    const fileName = entry.name;
+                    const filePath = entry.path_lower || '';
+                    // Check if the file matches the pattern and does not match any exclude patterns
+                    if ((fileName.includes(pattern) || pattern.includes("*") && minimatch(fileName, pattern, { dot: true }))
+                        && !excludePatterns.some(exclude => fileName.includes(exclude))) {
+                        result.push({
+                            id: entry.id,
+                            name: fileName,
+                            isDirectory: false,
+                            path: filePath,
+                        });
+                    }
+                } else if (entry['.tag'] === 'folder') {
+                    const folderPath = entry.path_lower || '';
+                    // Check if the folder matches the pattern and does not match any exclude patterns
+                    if ((folderPath.includes(pattern) || pattern.includes("*") && minimatch(folderPath, pattern, { dot: true }))
+                        && !excludePatterns.some(exclude => folderPath.includes(exclude))) {
+                        result.push({
+                            id: entry.id,
+                            name: entry.name,
+                            isDirectory: true,
+                            path: folderPath,
+                        });
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error searching Dropbox folder:', error);
+        }
+        return result;
+    }
+
+    async getFileInfo(filePath: string): Promise<FileSystemItem> {
+        // Not implemented for Dropbox yet
+        throw new Error('getFileInfo is not implemented for DropboxStorage');
+    }
+
+    async getDirectoryTree(dir: string): Promise<FileSystemItem[]> {
+        // Not implemented for Dropbox yet
+        throw new Error('getDirectoryTree is not implemented for DropboxStorage');
+    }
+
+    async createDirectory(dir: string): Promise<void> {
+        // Not implemented for Dropbox yet
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            return Promise.reject('Dropbox client is not initialized');
+        }
+        try {
+            const response = await this.client.filesCreateFolderV2({ path: dir });
+            console.log(`Directory "${dir}" created successfully`);
+            console.log('Create Directory Response:', response);
+        } catch (error: any) {
+            if (error.status === 409) {
+                console.warn(`Directory "${dir}" already exists`);
+                return; // Directory already exists, no need to throw an error
+            }
+            console.error('Failed to create directory:', error);
             throw error;
         }
     }

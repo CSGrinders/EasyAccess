@@ -47,8 +47,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
 contextBridge.exposeInMainWorld('mcpApi', {
     processQuery: (query: string) => ipcRenderer.invoke('mcp-process-query', query),
+    processQueryTest: (toolName: string, toolArgs: { [x: string]: unknown }) => ipcRenderer.invoke('mcp-process-query-test', toolName, toolArgs),
     reinitialize: () => ipcRenderer.invoke('reinitialize-mcp'),
-    getStatus: () => ipcRenderer.invoke('get-mcp-status')
+    getStatus: () => ipcRenderer.invoke('get-mcp-status'),
+    onReloadAgentMessage: (callback: (event: Electron.IpcRendererEvent, ...args: any[]) => void) => {
+        // Remove any existing listeners first to prevent duplicates
+        ipcRenderer.removeAllListeners('reload-agent-message');
+        ipcRenderer.on('reload-agent-message', callback);
+    },
+    
+    // Method to remove the listener when component unmounts
+    removeReloadAgentMessageListener: () => {
+        ipcRenderer.removeAllListeners('reload-agent-message');
+    },
 });
 
 contextBridge.exposeInMainWorld('permissionApi', {

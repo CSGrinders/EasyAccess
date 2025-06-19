@@ -1,9 +1,10 @@
-import { CloudStorage,AuthTokens, isValidToken } from './cloudStorage';
+import { CloudStorage, AuthTokens, isValidToken } from './cloudStorage';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
 import { file } from 'googleapis/build/src/apis/file';
 import dotenv from 'dotenv';
+import { minimatch } from 'minimatch';
 dotenv.config();
 
 const {
@@ -19,8 +20,8 @@ const { shell } = require('electron');
 
 const MSAL_CONFIG = {
   auth: {
-      clientId: process.env.MICROSOFT_CLIENT_ID,
-      authority: "https://login.microsoftonline.com/common",
+    clientId: process.env.MICROSOFT_CLIENT_ID,
+    authority: "https://login.microsoftonline.com/common",
   },
 };
 
@@ -45,7 +46,7 @@ export class OneDriveStorage implements CloudStorage {
   async initClient(): Promise<void> {
     // You can use the helper functions provided through the Environment class to construct your cache path
     // The helper functions provide consistent implementations across Windows, Mac and Linux.
-    
+
     let cachePath;
     if (process.platform === 'win32') {
       cachePath = path.join(process.env.LOCALAPPDATA || '', './msal-cache.json');
@@ -112,7 +113,7 @@ export class OneDriveStorage implements CloudStorage {
 
         // check if the response is valid
         console.log('Response from acquireTokenSilent:', response);
-      
+
         const accessToken = response.accessToken;
 
         // Initialize the Graph client with the acquired access token
@@ -137,8 +138,8 @@ export class OneDriveStorage implements CloudStorage {
   }
 
   async connect(): Promise<void | any> {
-    this.authCancelled = false; 
-    
+    this.authCancelled = false;
+
     // Initialize the MSAL client if not already initialized
     if (!this.client) {
       await this.initClient();
@@ -148,11 +149,11 @@ export class OneDriveStorage implements CloudStorage {
       console.error('MSAL client is not initialized');
       throw new Error('OneDrive client initialization failed');
     }
-    
+
     if (this.authCancelled) {
       throw new Error('Authentication cancelled');
     }
-    
+
     // scopes for the OneDrive API
     const tokenRequest = {
       scopes: [
@@ -167,23 +168,23 @@ export class OneDriveStorage implements CloudStorage {
     try {
       // open browser function to handle the interactive authentication flow
       const openBrowser = async (url: any) => {
-          await shell.openExternal(url);
+        await shell.openExternal(url);
       };
 
       // Acquire token interactively
       const authResponse = await this.client.acquireTokenInteractive({
-          ...tokenRequest,
-          openBrowser,
-          successTemplate: '<h1>Successfully signed in!</h1> <p>You can close this window now.</p>',
-          errorTemplate: '<h1>Oops! Something went wrong</h1> <p>Check the console for more information.</p>',
+        ...tokenRequest,
+        openBrowser,
+        successTemplate: '<h1>Successfully signed in!</h1> <p>You can close this window now.</p>',
+        errorTemplate: '<h1>Oops! Something went wrong</h1> <p>Check the console for more information.</p>',
       });
-      
+
       console.log('authResponse: ', authResponse);
-      
+
       if (this.authCancelled) {
         throw new Error('Authentication cancelled');
       }
-      
+
       if (authResponse && authResponse.account) {
         this.accountId = authResponse.account?.username || '';
         this.AuthToken = null; // AuthToken is not set here since MSAL handles it internally. This should be allowed to be null
@@ -192,7 +193,7 @@ export class OneDriveStorage implements CloudStorage {
         // Initialize the Graph client with the acquired access token
         this.graphClient = Client.init({
           authProvider: (done) => {
-            done(null, authResponse.accessToken); 
+            done(null, authResponse.accessToken);
           },
         });
         console.log('OneDrive account connected:', this.accountId);
@@ -200,16 +201,16 @@ export class OneDriveStorage implements CloudStorage {
         throw new Error('Authentication failed - no account information received');
       }
     } catch (error: any) {
-        console.error('OneDrive authentication error:', error);
-        if (error.errorCode === 'user_cancelled' || error.message?.includes('cancelled') || error.message?.includes('aborted')) {
-            throw new Error('Authentication cancelled');
-        } else if (error.errorCode === 'network_error' || error.message?.includes('network') || error.message?.includes('timeout')) {
-            throw new Error('Network connection failed');
-        } else if (error.errorCode === 'invalid_grant' || error.message?.includes('invalid')) {
-            throw new Error('Authentication failed');
-        } else {
-            throw new Error('Authentication failed. Please try again.');
-        }
+      console.error('OneDrive authentication error:', error);
+      if (error.errorCode === 'user_cancelled' || error.message?.includes('cancelled') || error.message?.includes('aborted')) {
+        throw new Error('Authentication cancelled');
+      } else if (error.errorCode === 'network_error' || error.message?.includes('network') || error.message?.includes('timeout')) {
+        throw new Error('Network connection failed');
+      } else if (error.errorCode === 'invalid_grant' || error.message?.includes('invalid')) {
+        throw new Error('Authentication failed');
+      } else {
+        throw new Error('Authentication failed. Please try again.');
+      }
     }
   }
 
@@ -223,28 +224,28 @@ export class OneDriveStorage implements CloudStorage {
     if (!this.graphClient) {
       await this.initAccount();
     }
-    
+
     if (!this.graphClient) {
       console.error('Graph client is not initialized');
       return [];
     }
-    
+
     try {
       // get the api path for the requested directory
-      const apiPath = dir === '/' || dir === '' 
-        ? "/me/drive/root/children" 
+      const apiPath = dir === '/' || dir === ''
+        ? "/me/drive/root/children"
         : `/me/drive/root:/${dir.replace(/^\//, '')}:/children`; // remove leading slash if exists, to avoid double slashes
-      
+
       console.log(`Querying OneDrive API path: ${apiPath}`);
-      
+
       const response = await this.graphClient.api(apiPath).get();
       console.log('Response from OneDrive API:', response);
-      
+
       if (!response || !response.value || !Array.isArray(response.value)) {
         console.error('Unexpected response format from OneDrive API:', response);
         return [];
       }
-      
+
       // Convert the OneDrive items into FileSystemItem objects
       const allFiles: FileSystemItem[] = response.value.map((item: any) => {
         // Extract the path, handling OneDrive's path format
@@ -258,13 +259,13 @@ export class OneDriveStorage implements CloudStorage {
           // Root level items
           itemPath = `/${item.name}`;
         }
-        
+
         let modifiedTime: number | undefined = undefined;
         if (item.lastModifiedDateTime) {
           modifiedTime = new Date(item.lastModifiedDateTime).getTime();
         }
 
-        const fileItem : FileSystemItem = {
+        const fileItem: FileSystemItem = {
           // id: item.id, // Use the OneDrive item ID as the unique identifier
           id: item.id, // Use the OneDrive item ID or the path as the unique identifier (One Drive allows duplicate names)
           name: item.name,
@@ -275,20 +276,20 @@ export class OneDriveStorage implements CloudStorage {
         };
         return fileItem;
       });
-      
+
       console.log(`Retrieved ${allFiles.length} items from OneDrive:`, allFiles);
       return allFiles;
-      
+
     } catch (error) {
       console.error('Error reading directory from OneDrive:', error);
-      
+
       // If we get an access denied error, try to refresh the token
       if (error instanceof InteractionRequiredAuthError) {
         console.log('Access denied, attempting to refresh token...');
         await this.connect();
         return this.readDir(dir); // Retry reading the directory after re-authentication
       }
-      
+
       return [];
     }
   }
@@ -304,14 +305,14 @@ export class OneDriveStorage implements CloudStorage {
     if (!this.graphClient) {
       await this.initAccount();
     }
-    
+
     if (!this.graphClient) {
       console.error('Graph client is not initialized');
       return Promise.reject(new Error('Graph client is not initialized'));
     }
-    
+
     const apiPath = `/me/drive/root:/${filePath.replace(/^\//, '')}`; // remove leading slash if exists, to avoid double slashes
-    
+
     console.log(`Querying OneDrive API path: ${apiPath}`);
 
     try {
@@ -334,6 +335,8 @@ export class OneDriveStorage implements CloudStorage {
 
       const fileData = Buffer.from(dataResponse as ArrayBuffer);
 
+      console.log("Base64 file data:", fileData.toString('base64'));
+
       const fileContent: FileContent = {
         name: fileName,
         content: fileData,
@@ -354,14 +357,14 @@ export class OneDriveStorage implements CloudStorage {
     if (!this.graphClient) {
       await this.initAccount();
     }
-    
+
     if (!this.graphClient) {
       console.error('Graph client is not initialized');
       return Promise.reject(new Error('Graph client is not initialized'));
     }
 
     const apiPath = `/me/drive/root:/${folderPath.replace(/^\//, '')}/${fileName}:/content`; // remove leading slash if exists, to avoid double slashes
-    
+
     console.log(`Querying OneDrive API path: ${apiPath}`);
 
     try {
@@ -377,14 +380,14 @@ export class OneDriveStorage implements CloudStorage {
     if (!this.graphClient) {
       await this.initAccount();
     }
-    
+
     if (!this.graphClient) {
       console.error('Graph client is not initialized');
       return Promise.reject(new Error('Graph client is not initialized'));
     }
 
     const apiPath = `/me/drive/root:/${filePath.replace(/^\//, '')}`; // remove leading slash if exists, to avoid double slashes
-    
+
     console.log(`Querying OneDrive API path: ${apiPath}`);
 
     try {
@@ -392,6 +395,142 @@ export class OneDriveStorage implements CloudStorage {
       console.log(`File deleted successfully: ${filePath}`);
     } catch (error) {
       console.error('Error deleting file from OneDrive:', error);
+      throw error;
+    }
+  }
+
+  // Implement missing methods from CloudStorage interface
+
+  async searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]> {
+    // Not implemented for OneDrive yet
+    if (!this.graphClient) {
+      await this.initAccount();
+    }
+
+    if (!this.graphClient) {
+      console.error('Graph client is not initialized');
+      return Promise.reject(new Error('Graph client is not initialized'));
+    }
+
+    const result: FileSystemItem[] = [];
+
+    const search = async (currentPath: string): Promise<void> => {
+      let apiPath: string;
+      const normalizedPath = path.normalize(currentPath).replace(/^\/+/, ''); // Normalize the path and remove leading slashes if exists
+      if (normalizedPath === '') {
+        apiPath = '/me/drive/root/children';
+      } else {
+        apiPath = `/me/drive/root:/${normalizedPath}:/children`;
+      }
+      console.log(`Querying OneDrive API path: ${apiPath}`);
+
+      try {
+        const response = await this.graphClient.api(apiPath).get();
+        const files = response.value || [];
+
+        // log file names
+        console.log('Onedrive search result Files:', files.map((file: any) => file.name));
+
+        for (const file of files) {
+          // Construct the file path for the result
+          // Ensure the file path starts with a slash, which represents the root
+          const filePath = "/" + (normalizedPath ? `${normalizedPath}/${file.name}` : file.name);
+
+          // Check if the file matches any exclude patterns
+          const isExcluded = excludePatterns.some(excludePattern => {
+            return file.name.includes(excludePattern) || 
+                    (excludePattern.includes("*") && minimatch(file.name, excludePattern, { dot: true }));
+          });
+          if (isExcluded) {
+            continue; // Skip excluded files
+          }
+
+          // Check if the file matches the search pattern
+          const matchesPattern = file.name.includes(pattern) ||
+                    (pattern.includes("*") && minimatch(file.name, pattern, { dot: true }));
+          if (matchesPattern) {
+            result.push({
+              id: file.id || '',
+              name: file.name || '',
+              isDirectory: file.folder !== undefined,
+              path: filePath,
+            });
+          }
+
+          // If it's a directory, search recursively
+          if (file.folder) {
+            await search(filePath);
+          }
+        }
+      } catch (error) {
+        console.error('Error querying OneDrive API:', error);
+      }
+    };
+
+    await search(rootPath);
+    return result;
+  }
+
+  async getFileInfo(filePath: string): Promise<FileSystemItem> {
+    // Not implemented for Dropbox yet
+    throw new Error('getFileInfo is not implemented for DropboxStorage');
+  }
+
+  async getDirectoryTree(dir: string): Promise<FileSystemItem[]> {
+    // Not implemented for Dropbox yet
+    throw new Error('getDirectoryTree is not implemented for DropboxStorage');
+  }
+
+  async createDirectory(dir: string): Promise<void> {
+    // Not implemented for OneDrive yet
+    if (!this.graphClient) {
+      await this.initAccount();
+    }
+
+    if (!this.graphClient) {
+      console.error('Graph client is not initialized');
+      return Promise.reject(new Error('Graph client is not initialized'));
+    }
+
+    const apiPath = `/me/drive/root/children`;
+
+    try {
+      const pathParts = dir.split('/').filter(part => part.trim() !== '');
+      let currentPath = '';
+
+      for (let i = 0; i < pathParts.length; i++) {
+        const dirName = pathParts[i];
+        // Determine the parent path for the API call
+        const createPath = currentPath !== '' 
+            ? `${currentPath}:/children`  // Use existing path format
+            : '/me/drive/root/children'; // Root level
+        
+        console.log(`Creating directory at path: ${createPath} with name: ${dirName}`);
+        try {
+          // Create the directory in the current parent
+          const response = await this.graphClient.api(createPath).post({
+              name: dirName,
+              folder: {},
+              "@microsoft.graph.conflictBehavior": "fail"
+          });
+          console.log(`Directory created successfully: ${dirName}`);
+        } catch (error: any) {
+          if (error.code === 'nameAlreadyExists' || error.statusCode === 409) {
+            console.log(`Directory already exists: ${dirName}`);
+          } else {
+            console.error(`Error creating directory "${dirName}":`, error);
+            throw error;
+          }
+        }
+        // Update currentPath for next iteration
+        currentPath = currentPath !== '' 
+            ? `${currentPath}/${dirName}` 
+            : `/me/drive/root:/${dirName}`;
+      }
+
+      console.log(`Full directory path "${dir}" is now available`);
+    } catch (error: any) {
+      console.error('Error creating directory in OneDrive:', error);
       throw error;
     }
   }

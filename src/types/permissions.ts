@@ -27,6 +27,8 @@ export interface MCPAPI {
     processQuery: (query: string) => Promise<string>;
     reinitialize: () => Promise<MCPReinitializeResult>;
     getStatus: () => Promise<MCPStatus>;
+    onReloadAgentMessage: (callback: (event: Electron.IpcRendererEvent, ...args: any[]) => void) => void;
+    removeReloadAgentMessageListener: () => void;
 }
 
 declare global {

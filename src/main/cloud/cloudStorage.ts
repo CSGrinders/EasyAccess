@@ -31,6 +31,12 @@ export interface CloudStorage {
     getAccountId(): string;
     getAuthToken(): AuthTokens | null;
     deleteFile(filePath: string): Promise<void>; //TODO
+
+
+    searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]>; //TODO
+    getFileInfo(filePath: string): Promise<FileSystemItem>; //TODO
+    getDirectoryTree(dir: string): Promise<FileSystemItem[]>; //TODO
+    createDirectory(dir: string): Promise<void>; //TODO
 }
 
 export async function generateCodes(): Promise<{ codeVerifier: string, codeChallenge: string }> {

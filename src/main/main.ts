@@ -1,9 +1,9 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, ipcRenderer } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { config } from 'dotenv';
 import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication } from './cloud/cloudManager';
-
+import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal } from './local/localFileSystem';
 // Load environment variables
 // In development, load from project root; in production, load from app Contents directory
 const envPath = app.isPackaged 
@@ -19,8 +19,10 @@ import MCPClient from './MCP/mcpClient';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createFileSystemServer } from './MCP/fileSystemMcpServer';
 import { PermissionManager } from './permissions/permissionManager';
+import { createFsServer } from './MCP/globalFsMcpServer';
 
 let mcpClient: MCPClient | null = null;
+let mainWindow: BrowserWindow | null = null;
 
 const setUpMCP = async () => {
     const mcpClient = new MCPClient();
@@ -46,7 +48,8 @@ const setUpMCP = async () => {
     }
     
     try {
-        const fsServer = await createFileSystemServer(allowedDirs);
+        // const fsServer = await createFileSystemServer(allowedDirs); // temporarily disabled due to issues with MCP SDK
+        const fsServer = await createFsServer(allowedDirs);
         fsServer.connect(fsServerTransport);
         
         await mcpClient.connectToServer([fsClientTransport]);
@@ -72,6 +75,7 @@ const createWindow = async () => {
         }
 
     });
+    mainWindow = win; // Store reference to main window globally
     console.log('window created');
 
     // Initialize permission manager and check permissions
@@ -111,7 +115,7 @@ const createWindow = async () => {
                 throw new Error('MCP client not initialized - insufficient permissions');
             }
             console.log("Processing MCP query:", query);
-            return await mcpClient.processQuery(query);
+            return await mcpClient.processQuery(query, win);
         } catch (error) {
             console.error("Error in MCP query:", error);
             throw error;
@@ -235,140 +239,40 @@ ipcMain.handle('read-directory', async (_e, dirPath: string) => {
 })
 
 ipcMain.handle('get-file', async (_e, filePath: string) => {
-    console.log('Reading file:', filePath);
-
-    const permissionManager = PermissionManager.getInstance();
-    
-    // Check if we have permission for this path
-    if (!permissionManager.hasPermissionForPath(filePath)) {
-        throw new Error(`Access denied to ${filePath}. Insufficient permissions.`);
-    }
-
-    // check if the file or directory exists
-    try {
-        await fs.promises.access(filePath, fs.constants.R_OK);
-    } catch (error: any) {
-        if (error.code === 'EPERM' || error.code === 'EACCES') {
-            throw new Error(`Permission denied accessing ${filePath}. `);
-        }
-        console.error('File or directory does not exist:', filePath, error);
-        throw new Error(`File or directory does not exist: ${filePath}`);
-    }
-    // if the file is a directory, zip it and return the zip file
-    const stat = await fs.promises.stat(filePath);
-    let data: Buffer;
-    if (stat.isDirectory()) {
-        const archiver = require('archiver');
-        const archive = archiver('zip', { zlib: { level: 9 }});
-        const tempFilePath = path.join(app.getPath('temp'), `${path.basename(filePath)}.zip`);
-        const stream = fs.createWriteStream(tempFilePath);
-
-        await new Promise<void>((resolve, reject) => {
-            const output = fs.createWriteStream(tempFilePath);
-            const archive = archiver('zip', { zlib: { level: 9 }});
-        
-            output.on('close', () => resolve());
-            output.on('error', (err) => reject(err));
-            archive.on('error', (err: any) => reject(err));
-        
-            archive.pipe(output);
-            archive.directory(filePath, false);
-            archive.finalize();
-          });
-        
-        data = await fs.promises.readFile(tempFilePath);
-        filePath = tempFilePath; // Update filePath to the zip file path
-    } else {
-        data = await fs.promises.readFile(filePath);
-    }
-
-    const mimeType = mime.lookup(filePath) || 'application/octet-stream'; // Fallback to generic binary
-
-    const fileContent: FileContent = {
-        name: filePath.split(path.sep).pop() || '', // Get the file name from the path
-        content: data, 
-        type: mimeType, // Get the file extension or default to 'txt'
-        path: filePath, // Full path to the file
-        sourceAccountId: null, // No cloud source for local files
-        sourceCloudType: null // No cloud source for local files
-    };
-
-    return fileContent;
-})
+    return await getFileLocal(filePath);
+});
 
 // Handle opening external URLs
 ipcMain.handle('open-external-url', async (event, url) => {
-    try {
-        await shell.openExternal(url);
-        return { success: true };
-    } catch (error: any) {
-        console.error('Failed to open external URL:', error);
-        return { success: false, error: error };
-    }
+    return await openExternalUrl(url);
 });
 
 ipcMain.handle('open-file', async (event, fileContent: FileContent) => {
-    try {
-      if (fileContent.sourceCloudType) {
-        // If the file is from a cloud source, we need to download it first
-        const tempFilePath = path.join(app.getPath('temp'), fileContent.name);
-        if (fileContent.content) {
-            fs.writeFileSync(tempFilePath, fileContent.content);
-        } else {
-            throw new Error("File content is undefined");
-        }
-        await shell.openPath(tempFilePath);
-        return { success: true };
-      }
-      await shell.openPath(fileContent.path);
-      return { success: true };
-    } catch (err) {
-      console.error("Error opening Python file:", err);
-      return { success: false };
-    }
-  });
+    return await openFileLocal(fileContent);
+});
 
 ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, data: Buffer) => {
-    console.log('Posting file:', fileName, folderPath, data);
-    const filePath = path.join(folderPath, fileName);
-    
-    const permissionManager = PermissionManager.getInstance();
-    
-    // Check if we have permission for this path
-    if (!permissionManager.hasPermissionForPath(folderPath)) {
-        throw new Error(`Access denied to ${folderPath}. Insufficient permissions.`);
-    }
-
-    try {
-        fs.writeFileSync(filePath, data);
-        console.log('File posted successfully:', filePath);
-    } catch (error: any) {
-        if (error.code === 'EPERM' || error.code === 'EACCES') {
-            throw new Error(`Permission denied writing to ${filePath}.`);
-        }
-        console.error('Error posting file:', error);
-        throw error; 
-    }
-})
+    return await postFileLocal(fileName, folderPath, data);
+});
 
 ipcMain.handle('delete-file', async (_e, filePath: string)  => {
-    console.log('deleting file:', filePath);
-    
-    const permissionManager = PermissionManager.getInstance();
-    
-    // Check if we have permission for this path
-    if (!permissionManager.hasPermissionForPath(filePath)) {
-        throw new Error(`Access denied to ${filePath}. Insufficient permissions.`);
+    return await deleteFileLocal(filePath);
+});
+
+ipcMain.handle('mcp-process-query-test', (_e, toolName, toolArgs) => {
+    console.log("Processing MCP tool test:", toolName, toolArgs);
+    let parsedArgs: { [x: string]: unknown };
+  
+    if (typeof toolArgs === "string") {
+        try {
+        parsedArgs = JSON.parse(toolArgs);
+        } catch (e) {
+        throw new Error("Invalid JSON passed as tool arguments");
+        }
+    } else {
+        parsedArgs = toolArgs;
     }
 
-    try {
-        await fs.promises.unlink(filePath);
-        console.log('File deleted successfully:', filePath);
-    } catch (error: any) {
-        if (error.code === 'EPERM' || error.code === 'EACCES') {
-            throw new Error(`Permission denied deleting ${filePath}.`);
-        }
-        console.error('Error deleting file:', error);
-        throw error; 
-    }
-})
+    console.log("Processing MCP tool test:", toolName, parsedArgs);
+    return mcpClient?.callToolTest(toolName, parsedArgs);
+});

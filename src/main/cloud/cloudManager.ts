@@ -271,6 +271,35 @@ export async function getConnectedCloudAccounts(cloudType: CloudType) : Promise<
   return accountIds.length > 0 ? accountIds : null;
 }
 
+export async function createDirectory(CloudType: CloudType, accountId: string, dir: string): Promise<void> {
+  console.log('Creating directory in cloud account:', CloudType, accountId, dir);
+
+  try {
+    const accounts = StoredAccounts.get(CloudType);
+    dir = dir.replace(CLOUD_HOME, "");
+
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            await account.createDirectory(dir);
+            console.log(`Successfully created directory ${dir} in ${CloudType}`);
+            return;
+          } catch (error: any) {
+            console.error(`Error creating directory in ${CloudType}:`, error);
+            throw error; // Re-throw the error to be handled by the caller
+          }
+        }
+      }
+    }
+
+    throw new Error(`No ${CloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud directory creation error for ${CloudType}:`, error);
+    throw error;
+  }
+}
+
 export async function readDirectory(CloudType: CloudType, accountId: string, dir: string): Promise<FileSystemItem[]> {
   console.log('Getting files from cloud account:', CloudType, accountId, dir);
   
@@ -451,6 +480,45 @@ export async function deleteFile(cloudType: CloudType, accountId: string, filePa
   } catch (error: any) {
     console.error(`Cloud file delete error for ${cloudType}:`, error);
     throw error; 
+  }
+}
+
+export async function searchFilesFromStorageAccount(cloudType: CloudType, accountId: string, rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]> {
+  try {
+    rootPath = rootPath.replace(CLOUD_HOME, "");
+    console.log('Searching files in cloud account:', cloudType, accountId, rootPath, pattern, excludePatterns);
+    const accounts = StoredAccounts.get(cloudType);
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            return await account.searchFiles(rootPath, pattern, excludePatterns);
+          } catch (error: any) {
+            console.error(`Error searching files in ${cloudType}:`, error);
+            // Categorize and re-throw with user-friendly messages
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
+              throw new Error('Root path not found or no longer exists.');
+            } else if (error.message?.includes('quota') || error.message?.includes('storage')) {
+              throw new Error('Storage quota exceeded or storage service unavailable.');
+            } else if (error.message?.includes('invalid pattern') || error.message?.includes('syntax error')) {
+              throw new Error('Invalid search pattern. Please check your search criteria.');
+            } else if (error.message?.includes('permission') || error.message?.includes('forbidden')) {
+              throw new Error('Permission denied. You may not have access to search in this location.');
+            } else {
+              throw new Error(`Failed to search files: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
+      }
+    }
+    throw new Error(`No ${cloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud file search error for ${cloudType}:`, error);
+    throw error;
   }
 }
 

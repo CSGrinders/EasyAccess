@@ -10,6 +10,8 @@ import { shell } from 'electron';
 const { Readable } = require('stream');
 import * as http from 'http';
 import { URL } from 'url';
+import { normalize } from 'path';
+import { minimatch } from 'minimatch';
 
 dotenv.config();
 
@@ -566,4 +568,124 @@ export class GoogleDriveStorage implements CloudStorage {
       throw error;
     }
   }
+    // Implement missing methods from CloudStorage interface
+
+    async searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]> {
+        // Not implemented for Google Drive yet
+      await this.refreshOAuthClientIfNeeded();
+      if (!this.oauth2Client) {
+        throw new Error('OAuth2 client is not initialized');
+      }
+      const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+      const result: FileSystemItem[] = [];
+
+      const search = async (currentPath: string): Promise<void> => {
+        const folderId = currentPath ? await this.getFolderId(currentPath) : 'root';
+        const res = await drive.files.list({
+          q: `'${folderId}' in parents and trashed = false`,
+        });
+
+        console.log(`Searching in folder: ${currentPath}`);
+        console.log(`Found files:`, res.data.files);
+
+        const files = res.data.files || [];
+        for (const file of files) {
+          // check if the file matches any of the exclude patterns
+          const matchesExclude = excludePatterns.some(excludePattern => {
+            return file.name?.includes(excludePattern) || 
+                    (excludePattern.includes("*") && minimatch(file.name || '', excludePattern, { dot: true }));
+          });
+          if (matchesExclude) {
+            continue; // Skip files that match exclude patterns
+          }
+          // Check if the file matches the search pattern
+          const matchesPattern = file.name?.includes(pattern) || 
+                    (pattern.includes("*") && minimatch(file.name || '', pattern, { dot: true }));
+          if (matchesPattern) {
+            const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
+            // skip if the filePath is empty or undefined
+            if (!filePath || filePath.trim() === '') {
+              continue;
+            }
+            result.push({
+              id: file.id || '',
+              name: file.name || '',
+              isDirectory: file.mimeType === 'application/vnd.google-apps.folder',
+              path: filePath,
+            });
+          }
+          // If it's a directory, search recursively
+          if (file.mimeType === 'application/vnd.google-apps.folder') {
+            await search(currentPath ? `${currentPath}/${file.name ?? ''}` : (file.name ?? ''));
+          }
+        }
+      }
+
+      await search(rootPath);
+      return result;
+    }
+
+    async getFileInfo(filePath: string): Promise<FileSystemItem> {
+        // Not implemented for Google Drive yet
+        throw new Error('getFileInfo is not implemented for GoogleDriveStorage');
+    }
+
+    async getDirectoryTree(dir: string): Promise<FileSystemItem[]> {
+        // Not implemented for Google Drive yet
+        throw new Error('getDirectoryTree is not implemented for GoogleDriveStorage');
+    }
+
+    async createDirectory(dir: string): Promise<void> {
+        // Not implemented for Google Drive yet
+        await this.refreshOAuthClientIfNeeded();
+        if (!this.oauth2Client) {
+            throw new Error('OAuth2 client is not initialized');
+        }
+        const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+        try {
+          // Split the path into individual directory names
+          const normalizedPath = normalize(dir); // Normalize the path to handle any inconsistencies
+          const pathParts = normalizedPath.split('/').filter(part => part.length > 0);
+          let currentParentId = 'root';
+          
+          let currentDirPath = '';
+
+          // Process each directory level
+          for (const dirName of pathParts) {
+              if (!dirName) {
+                  continue; // Skip empty parts (e.g., leading slash)
+              }
+
+              currentDirPath += `/${dirName}`; // Build the current directory path
+
+              try {
+                const existingFolderId = await this.getFolderId(currentDirPath);
+                // Directory already exists, use it as parent for next level
+                console.log(`Directory "${dirName}" already exists`);
+                currentParentId = existingFolderId;
+              } catch (error) {
+                // Create the directory
+                const response = await drive.files.create({
+                    requestBody: {
+                        name: dirName,
+                        mimeType: 'application/vnd.google-apps.folder',
+                        parents: [currentParentId],
+                    },
+                });
+                
+                if (response.data.id) {
+                    currentParentId = response.data.id;
+                    console.log(`Directory "${dirName}" created successfully with ID: ${currentParentId}`);
+                } else {
+                    throw new Error(`Failed to create directory "${dirName}" - no ID returned`);
+                }
+              }
+          }
+          
+          console.log(`Full directory path "${dir}" is now available`);
+        } catch (error) {
+            console.error('Failed to create directory:', error);
+            throw error;
+        }
+    }
 }

@@ -1,0 +1,134 @@
+Tool Call
+Test Arguments
+Status
+----------------------------------------------------------------------------------------
+create_directory
+{"path": "/new_folder", "provider": "google", "accountId": "sohn5312@gmail.com"}
+{"path": "/test1/test2/test3", "provider": "google", "accountId": "sohn5312@gmail.com"} = nested
+{"path": "/test1/test3/test3", "provider": "google", "accountId": "sohn5312@gmail.com"} = exist + nested
+{"path": "/test1/test2/test3", "provider": "google", "accountId": "sohn5312@gmail.com"} = exist + duplicate.
+{"path": "/test1/test2/test3/test4", "provider": "google", "accountId": "sohn5312@gmail.com"} = exist + append.
+
+{"path": "/test1/test2/test3", "provider": "onedrive", "accountId": "sohn5312@gmail.com"} = nested
+{"path": "/test1/test3/test3", "provider": "onedrive", "accountId": "sohn5312@gmail.com"} = exist + nested
+{"path": "/test1/test2/test3", "provider": "onedrive", "accountId": "sohn5312@gmail.com"} = exist + duplicate.
+{"path": "/test1/test2/test3/test4", "provider": "onedrive", "accountId": "sohn5312@gmail.com"} = exist + append.
+
+{"path": "/new_folder", "provider": "dropbox", "accountId": "sohn5312@gmail.com"}
+{"path": "/test1/test2/test3", "provider": "dropbox", "accountId": "sohn5312@gmail.com"} = nested
+{"path": "/test1/test3/test3", "provider": "dropbox", "accountId": "sohn5312@gmail.com"} = exist + nested
+{"path": "/test1/test2/test3", "provider": "dropbox", "accountId": "sohn5312@gmail.com"} = exist + duplicate.
+{"path": "/test1/test2/test3/test4", "provider": "dropbox", "accountId": "sohn5312@gmail.com"} = exist + append.
+
+existing folder ==> should not create new one
+{"path": "/test1", "provider": "google", "accountId": "sohn5312@gmail.com"} 
+{"path": "/new_folder", "provider": "onedrive", "accountId": "sohn5312@gmail.com"}
+{"path": "/temp1", "provider": "dropbox", "accountId": "sohn5312@gmail.com"}
+Google: Done
+OneDrive: Done
+Dropbox: Done
+
+change return massage TODO
+----------------------------------------------------------------------------------------
+list_connected_cloud_accounts
+{"provider": "google"}
+{"provider": "onedrive"}
+{"provider": "dropbox"}
+Google: Done
+OneDrive: Done
+Dropbox: Done
+----------------------------------------------------------------------------------------
+list_directory
+{"path": "/easyAccess", "provider": "google", "accountId": "sohn5312@gmail.com"}
+"[FILE] 20210805_150528.jpg
+[FILE] 20210805_150517.jpg
+[FILE] CS180_Project-4_Group5.zip
+[DIR] temp1"
+
+{"path": "/", "provider": "onedrive", "accountId": "sohn5312@gmail.com"}
+"[DIR] Documents
+[DIR] new_folder
+[DIR] Pictures
+[FILE] AssigningWorkstations.cpp
+[FILE] presentation.pdf"
+
+{"path": "/", "provider": "dropbox", "accountId": "sohn5312@gmail.com"}
+"[DIR] temp1
+[FILE] aseem.jpg"
+
+Google: Done
+OneDrive: Done
+Dropbox: Done
+----------------------------------------------------------------------------------------
+search_files
+{"path": "/easyAccess", "provider": "google", "accountId": "sohn5312@gmail.com", "pattern": "jpg"}
+"/easyAccess/20210805_150528.jpg
+/easyAccess/20210805_150517.jpg
+/easyAccess/temp1/20210726_145801.jpg"
+
+{"path": "/", "provider": "onedrive", "accountId": "sohn5312@gmail.com", "pattern": "pdf"}
+"/Documents/temp1/degree_histogram.pdf
+/Documents/temp1/Presentation.pdf
+/Documents/temp1/sohn31_hw2.pdf
+/presentation.pdf"
+
+{"path": "/", "provider": "dropbox", "accountId": "sohn5312@gmail.com", "pattern": "jpg"}
+"/aseem.jpg"
+
+Google: Done
+OneDrive: Done
+Dropbox: Done
+TODO Implement regex search when pattern is given as regex
+TODO prompt engineer to return multiple patters in format (e.g. separated by comma)
+----------------------------------------------------------------------------------------
+move_file
+cloud source -> cloud destination
+google -> onedrive
+{"source": "/easyAccess/presentation.pdf", "destination": "/presentation_from_google.pdf", "source_provider": "google", "source_accountId": "sohn5312@gmail.com", "destination_provider": "onedrive", "destination_accountId": "sohn5312@gmail.com"}
+"Successfully moved /easyAccess/presentation.pdf from google:sohn5312@gmail.com to /presentation_from_google.pdf on onedrive:sohn5312@gmail.com"
+
+{"source": "/aseem.jpg", "destination": "/temp1/aseem.jpg", "source_provider": "dropbox", "source_accountId": "sohn5312@gmail.com", "destination_provider": "dropbox", "destination_accountId": "sohn5312@gmail.com"}
+dropbox -> dropbox
+"Successfully moved /aseem.jpg from dropbox:sohn5312@gmail.com to /temp1/aseem.jpg on dropbox:sohn5312@gmail.com"
+
+{"source": "/temp1/aseem.jpg", "destination": "/aseem_from_drop.jpg", "source_provider": "dropbox", "source_accountId": "sohn5312@gmail.com", "destination_provider": "onedrive", "destination_accountId": "sohn5312@gmail.com"}
+dropbox -> onedrive
+"Successfully moved /temp1/aseem.jpg from dropbox:sohn5312@gmail.com to /aseem_from_drop.jpg on onedrive:sohn5312@gmail.com"
+
+local source -> cloud destination
+{"source": "/Users/hojinsohn/Documents/HelloWorld.py", "destination": "/helloworld_from_local.py", "destination_provider": "onedrive", "destination_accountId": "sohn5312@gmail.com"}
+"Successfully moved /Users/hojinsohn/Documents/HelloWorld.py from local storage to /helloworld_from_local.py on onedrive:sohn5312@gmail.com"
+
+{"source": "/Users/hojinsohn/Documents/HelloWorld.py", "destination": "/helloworld_from_local.py", "destination_provider": "google", "destination_accountId": "sohn5312@gmail.com"}
+"Successfully moved /Users/hojinsohn/Documents/HelloWorld.py from local storage to /helloworld_from_local.py on google:sohn5312@gmail.com"
+
+cloud source -> local destination
+{"source": "/presentation.pdf", "destination": "/Users/hojinsohn/Documents/presentation.pdf", "source_provider": "onedrive", "source_accountId": "sohn5312@gmail.com"}
+"Successfully moved /presentation.pdf from onedrive:sohn5312@gmail.com to /Users/hojinsohn/Documents/presentation.pdf"
+
+check if new directory is created and file is created under there
+{"source": "/Users/hojinsohn/Documents/HelloWorld.py", "destination": "/new_for_hello/helloworld_from_local.py", "destination_provider": "onedrive", "destination_accountId": "sohn5312@gmail.com"}
+{"source": "/Users/hojinsohn/Documents/HelloWorld.py", "destination": "/new_for_hello/helloworld_from_local.py", "destination_provider": "google", "destination_accountId": "sohn5312@gmail.com"}
+{"source": "/Users/hojinsohn/Documents/HelloWorld.py", "destination": "/new_for_hello/helloworld_from_local.py", "destination_provider": "dropbox", "destination_accountId": "sohn5312@gmail.com"}
+
+
+----------------------------------------------------------------------------------------
+
+
+Left to be implemented:
+read_file
+read_multiple_files
+write_file
+edit_file
+directory_tree
+move_file
+get_file_info
+
+load_file_into_memory
+upload_file_from_memory
+
+Implement server tools to return the list of accounts to reload after ==> client invoke reload storage box method to reload updated ones
+
+
+Check this query:
+move pdf files from onedrive to google account, by creating there folder named pdf-from-onedrive
