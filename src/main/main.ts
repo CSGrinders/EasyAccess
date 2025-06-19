@@ -204,6 +204,41 @@ ipcMain.handle('get-mcp-status', async (_e) => {
 });
 
 
+/**
+ * Recursively calculates the total size of a directory
+ * @param dirPath - Path to the directory
+ * @returns Total size in bytes
+ */
+async function calculateDirectorySize(dirPath: string): Promise<number> {
+    let totalSize = 0;
+    
+    try {
+        const items = await fs.promises.readdir(dirPath, { withFileTypes: true });
+        
+        for (const item of items) {
+            const itemPath = path.join(dirPath, item.name);
+            
+            try {
+                if (item.isDirectory()) {
+                    // Recursively calculate size of subdirectories
+                    totalSize += await calculateDirectorySize(itemPath);
+                } else {
+                    // Add file size
+                    const stats = await fs.promises.stat(itemPath);
+                    totalSize += stats.size;
+                }
+            } catch (error) {
+                // Skip files/folders we can't access (permissions, etc.)
+                console.warn(`Skipping ${itemPath} due to access error:`, error);
+            }
+        }
+    } catch (error) {
+        console.warn(`Cannot read directory ${dirPath}:`, error);
+    }
+    
+    return totalSize;
+}
+
 ipcMain.handle('read-directory', async (_e, dirPath: string) => {
     const permissionManager = PermissionManager.getInstance();
     
@@ -219,20 +254,45 @@ ipcMain.handle('read-directory', async (_e, dirPath: string) => {
 
     try {
         const items = await fs.promises.readdir(dirPath, { withFileTypes: true })
-        return Promise.all(items.map(async item => ({
-            id: uuidv4(), // Generate unique UUID for each item
-            name: item.name,
-            isDirectory: item.isDirectory(),
-            path: path.join(dirPath, item.name),
-            size: (await fs.promises.stat(path.join(dirPath, item.name))).size,
-            modifiedTime: (await fs.promises.stat(path.join(dirPath, item.name))).mtimeMs
-        })));
+        return Promise.all(items.map(async item => {
+            const itemPath = path.join(dirPath, item.name);
+            const stats = await fs.promises.stat(itemPath);
+            
+            // For files, use actual size. For directories, we will request it size on demand
+            const size = item.isDirectory() ? 0 : stats.size;
+            
+            return {
+                id: uuidv4(), // Generate unique UUID for each item
+                name: item.name,
+                isDirectory: item.isDirectory(),
+                path: itemPath,
+                size: size,
+                modifiedTime: stats.mtimeMs
+            };
+        }));
     } catch (error: any) {
         // Handle permission errors specifically
         if (error.code === 'EPERM' || error.code === 'EACCES') {
             const permissionManager = PermissionManager.getInstance();
             throw new Error(`Permission denied accessing ${dirPath}.`);
         }
+        throw error;
+    }
+})
+
+// Handler for calculating folder size on demand
+ipcMain.handle('calculate-folder-size', async (_e, dirPath: string) => {
+    const permissionManager = PermissionManager.getInstance();
+    
+    // Check if we have permission for this path
+    if (!permissionManager.hasPermissionForPath(dirPath)) {
+        throw new Error(`Access denied to ${dirPath}. Insufficient permissions.`);
+    }
+
+    try {
+        return await calculateDirectorySize(dirPath);
+    } catch (error: any) {
+        console.error('Error calculating folder size:', error);
         throw error;
     }
 })

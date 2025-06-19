@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('fsApi', {
     },
     readDirectory: (dir: string) =>
         ipcRenderer.invoke('read-directory', dir) as Promise<FileSystemItem[]>,
+    calculateFolderSize: (dirPath: string) =>
+        ipcRenderer.invoke('calculate-folder-size', dirPath) as Promise<number>,
     getFile: (filePath: string) =>
         ipcRenderer.invoke('get-file', filePath) as Promise<FileContent>,
     postFile: (fileName: string, folderPath: string, data: Buffer) =>

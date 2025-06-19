@@ -70,6 +70,9 @@ declare global {
             /** Read directory contents and return file/folder items */
             readDirectory: (dir: string) => Promise<FileSystemItem[]>;
             
+            /** Calculate the total size of a directory in bytes */
+            calculateFolderSize: (dirPath: string) => Promise<number>;
+            
             /** Read file content as string */
             readFile: (file: string) => Promise<string>;
         };
