@@ -175,7 +175,7 @@ export const FileExplorer = memo(function FileExplorer ({
 
     /** File Stats dialog state */
     const [showStatsDialog, setShowStatsDialog] = useState(false); // Whether to show the file stats dialog
-    const [selectedFileForStats, setSelectedFileForStats] = useState<FileSystemItem | null>(null); // File for which we want to show stats
+    const [selectedFilesForStats, setSelectedFilesForStats] = useState<FileSystemItem[]>([]); // Files for which we want to show stats
     const [isCalculatingSize, setIsCalculatingSize] = useState(false); // Whether we're currently calculating the size of a folder
     const [selectedCount, setSelectedCount] = useState(0); // Number of currently selected files
 
@@ -1287,17 +1287,18 @@ export const FileExplorer = memo(function FileExplorer ({
 
 
     /**
-     * TODO: IMPLEMENT NAVIGATION TO FILES IN THE CASE WHERE MORE THAN ONE FILE IS SELECTED
+     * Show the file stats dialog for selected files
      */
     const showFileStats = async () => {
         if (selectedItemsRef.current.size === 0) return;
 
-        const firstSelectedId = Array.from(selectedItemsRef.current)[0];
-        const selectedFile = sortedItems.find(item => item.id === firstSelectedId);
+        const selectedFiles = Array.from(selectedItemsRef.current)
+            .map(id => sortedItems.find(item => item.id === id))
+            .filter((item): item is FileSystemItem => item !== undefined);
         
-        if (!selectedFile) return;
+        if (selectedFiles.length === 0) return;
         
-        setSelectedFileForStats(selectedFile);
+        setSelectedFilesForStats(selectedFiles);
         setShowStatsDialog(true);
     };
 
@@ -1606,9 +1607,12 @@ export const FileExplorer = memo(function FileExplorer ({
                 onOpenChange={(open) => {
                     setShowStatsDialog(open);
                 }}
-                selectedFile={selectedFileForStats}
+                selectedFiles={selectedFilesForStats}
                 cloudType={cloudType}
                 accountId={accountId}
+                onFilesChange={(newFiles) => {
+                    setSelectedFilesForStats(newFiles);
+                }}
             />
         </div>
     )

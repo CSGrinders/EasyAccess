@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "dist/main/main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "NODE_OPTIONS='--no-deprecation' electron .",
     "build-main": "tsc --project tsconfig.main.json",
     "watch-main": "tsc --watch --project tsconfig.main.json",
     "dev": "webpack serve --config webpack.renderer.js",

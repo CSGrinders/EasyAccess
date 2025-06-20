@@ -205,36 +205,64 @@ ipcMain.handle('get-mcp-status', async (_e) => {
 
 
 /**
- * Recursively calculates the total size of a directory
+ * Recursively calculates the total size of a directory.
+ * This version calculates size based on blocks allocated on disk.
  */
-async function calculateDirectorySize(dirPath: string): Promise<number> {
-    let totalSize = 0;
-    
+async function calculateDirectorySize(
+    dirPath: string, 
+    processedInodes: Set<string> = new Set(),
+    depth: number = 0
+): Promise<number> {
+
+    // Prevent infinite recursion 
+    if (depth > 100) {
+        console.warn(`Max recursion depth reached at ${dirPath}`);
+        return 0;
+    }
+
+    let stats;
     try {
-        const items = await fs.promises.readdir(dirPath, { withFileTypes: true });
-        
-        for (const item of items) {
-            const itemPath = path.join(dirPath, item.name);
+        // Use lstat to get file info without following symlinks.
+        stats = await fs.promises.lstat(dirPath);
+    } catch (error: any) {
+        if (error.code !== 'ENOENT' && error.code !== 'EPERM' && error.code !== 'EACCES') {
+            console.warn(`Cannot lstat ${dirPath}: ${error.code}`);
+        }
+        return 0;
+    }
+
+    //  if we've seen this inode, don't count it again.
+    const inodeKey = `${stats.dev}-${stats.ino}`;
+    if (processedInodes.has(inodeKey)) {
+        return 0;
+    }
+    processedInodes.add(inodeKey);
+
+    // If it's a directory, sum the sizes of its children recursively.
+    // If it's a file, return its allocated size on disk.
+    if (stats.isDirectory()) {
+        let totalSize = 0;
+        try {
+            const items = await fs.promises.readdir(dirPath, { withFileTypes: true });
             
-            try {
-                if (item.isDirectory()) {
-                    // Recursively calculate size of subdirectories
-                    totalSize += await calculateDirectorySize(itemPath);
-                } else {
-                    // Add file size
-                    const stats = await fs.promises.stat(itemPath);
-                    totalSize += stats.size;
-                }
-            } catch (error) {
-                // Skip files/folders we can't access (permissions, etc.)
-                console.warn(`Skipping ${itemPath} due to access error:`, error);
+            // Use Promise.all for concurrent recursion.
+            const childSizes = await Promise.all(items.map(item => {
+                const itemPath = path.join(dirPath, item.name);
+                return calculateDirectorySize(itemPath, processedInodes, depth + 1);
+            }));
+
+            totalSize = childSizes.reduce((sum, size) => sum + size, 0);
+
+        } catch (error: any) {
+            if (error.code !== 'EPERM' && error.code !== 'EACCES') {
+                console.warn(`Cannot read directory ${dirPath}: ${error.code}`);
             }
         }
-    } catch (error) {
-        console.warn(`Cannot read directory ${dirPath}:`, error);
+        return totalSize;
     }
-    
-    return totalSize;
+
+    // For files and symlinks, return their allocated size.
+    return (stats.blocks || 0) * 512;
 }
 
 ipcMain.handle('read-directory', async (_e, dirPath: string) => {
@@ -256,7 +284,7 @@ ipcMain.handle('read-directory', async (_e, dirPath: string) => {
             const itemPath = path.join(dirPath, item.name);
             const stats = await fs.promises.stat(itemPath);
             
-            // For files, use actual size. For directories, we will request it size on demand
+            // For files, use actual size. For directories, use 0 initially (will be calculated on demand)
             const size = item.isDirectory() ? 0 : stats.size;
             
             return {
@@ -319,26 +347,39 @@ ipcMain.handle('get-file', async (_e, filePath: string) => {
     const stat = await fs.promises.stat(filePath);
     let data: Buffer;
     if (stat.isDirectory()) {
-        const archiver = require('archiver');
-        const archive = archiver('zip', { zlib: { level: 9 }});
-        const tempFilePath = path.join(app.getPath('temp'), `${path.basename(filePath)}.zip`);
-        const stream = fs.createWriteStream(tempFilePath);
-
-        await new Promise<void>((resolve, reject) => {
-            const output = fs.createWriteStream(tempFilePath);
-            const archive = archiver('zip', { zlib: { level: 9 }});
-        
-            output.on('close', () => resolve());
-            output.on('error', (err) => reject(err));
-            archive.on('error', (err: any) => reject(err));
-        
-            archive.pipe(output);
-            archive.directory(filePath, false);
-            archive.finalize();
-          });
-        
-        data = await fs.promises.readFile(tempFilePath);
-        filePath = tempFilePath; // Update filePath to the zip file path
+        try {
+            const archiver = require('archiver');
+            const tempFilePath = path.join(app.getPath('temp'), `${path.basename(filePath)}.zip`);
+            
+            await new Promise<void>((resolve, reject) => {
+                const output = fs.createWriteStream(tempFilePath);
+                const archive = archiver('zip', { 
+                    zlib: { level: 9 },
+                    statConcurrency: 1 
+                });
+            
+                output.on('close', () => resolve());
+                output.on('error', (err) => reject(err));
+                archive.on('error', (err: any) => reject(err));
+                archive.on('warning', (err: any) => {
+                    if (err.code === 'ENOENT') {
+                        console.warn('Archive warning:', err);
+                    } else {
+                        reject(err);
+                    }
+                });
+            
+                archive.pipe(output);
+                archive.directory(filePath, false);
+                archive.finalize();
+            });
+            
+            data = await fs.promises.readFile(tempFilePath);
+            filePath = tempFilePath; // Update filePath to the zip file path
+        } catch (error) {
+            console.error('Error creating zip archive:', error);
+            throw new Error(`Failed to create archive: ${error}`);
+        }
     } else {
         data = await fs.promises.readFile(filePath);
     }
