@@ -1302,6 +1302,25 @@ export const FileExplorer = memo(function FileExplorer ({
         setShowStatsDialog(true);
     };
 
+    /**
+     * Show the file stats dialog for a specific item (right-click)
+     */
+    const showFileStatsForItem = async (e: React.MouseEvent, item: FileSystemItem) => {
+        // If multiple files are selected and the right-clicked item is one of them,
+        // show stats for all selected files
+        if (selectedItemsRef.current.size > 1 && selectedItemsRef.current.has(item.id)) {
+            const selectedFiles = Array.from(selectedItemsRef.current)
+                .map(id => sortedItems.find(fileItem => fileItem.id === id))
+                .filter((fileItem): fileItem is FileSystemItem => fileItem !== undefined);
+            
+            setSelectedFilesForStats(selectedFiles);
+        } else {
+            // Otherwise, show stats for just the right-clicked item
+            setSelectedFilesForStats([item]);
+        }
+        setShowStatsDialog(true);
+    };
+
     return (
         <div className="flex h-full w-full flex-col text-white rounded-lg overflow-hidden select-none">
             
@@ -1583,6 +1602,7 @@ export const FileExplorer = memo(function FileExplorer ({
                                         draggedItemsRef={draggedItemsRef}
                                         handleItemClick={handleItemClick}
                                         handleItemMouseDown={handleItemMouseDown}
+                                        handleItemRightClick={showFileStatsForItem}
                                         itemRefs={itemRefs}
                                         isTransferring={isTransferring}
                                         transferInfo={transferInfo}

@@ -270,6 +270,20 @@ export const FileStatsDialog: React.FC<FileStatsDialogProps> = ({
     }
 
     const item = currentFile;
+    
+    
+    if (!item) {
+        return (
+            <Dialog open={isOpen} onOpenChange={onOpenChange}>
+                <DialogContent className="max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl">
+                    <div className="p-4 text-center">
+                        <p className="text-slate-600 dark:text-slate-400">File not found</p>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        );
+    }
+    
     const IconComponent = getFileIcon(item.name, item.isDirectory);
     const iconColor = getIconColor(item.name, item.isDirectory);
 
