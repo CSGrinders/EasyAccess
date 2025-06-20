@@ -327,16 +327,11 @@ export const FileStatsDialog: React.FC<FileStatsDialogProps> = ({
 
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
-            <DialogContent className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col"
-                style={{ 
-                    width: '50vw', 
-                    maxWidth: '1400px', 
-                    maxHeight: '90vh' 
-            }}
+            <DialogContent className="w-full sm:max-w-lg md:max-w-2xl lg:max-w-3xl xl:max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col"
             >
                 {/* Tab Navigation - only show if multiple files */}
                 {fileList.length > 1 && (
-                    <div className="select-none border-b border-slate-200 dark:border-slate-700 -mx-6 px-6 pt-6 pb-0 flex-shrink-0">
+                    <div className="select-none border-b border-slate-200 dark:border-slate-700 px-6 pt-6 pb-0 flex-shrink-0">
                         <div className="flex items-center gap-2">
                             {/* Left navigation button */}
                             <button
@@ -441,7 +436,7 @@ export const FileStatsDialog: React.FC<FileStatsDialogProps> = ({
                 )}
 
                 {/* Scrollable content area - contained within dialog bounds */}
-                <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+                <div className="flex-1 w-full overflow-y-auto overflow-x-hidden min-h-0">
                     <DialogHeader className="space-y-4 px-6 pt-6 pb-4">
                         <div className="flex items-center gap-4">
                             {/* Icon and title section */}
