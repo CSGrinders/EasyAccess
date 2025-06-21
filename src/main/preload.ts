@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
         ipcRenderer.invoke('cloud-post-file', cloudType, accountId, fileName, folderPath, data) as Promise<void>,
     deleteFile: (cloudType: CloudType, accountId: string, filePath: string) =>
         ipcRenderer.invoke('cloud-delete-file', cloudType, accountId, filePath) as Promise<void>,
+    createDirectory: (cloudType: CloudType, accountId: string, folderPath: string, folderName: string) =>
+        ipcRenderer.invoke('cloud-create-directory', cloudType, accountId, folderPath, folderName) as Promise<void>,
     calculateFolderSize: (cloudType: CloudType, accountId: string, folderPath: string) =>
         ipcRenderer.invoke('cloud-calculate-folder-size', cloudType, accountId, folderPath) as Promise<number>,
     removeAccount: (cloudType: CloudType, accountId: string) =>
@@ -42,6 +44,8 @@ contextBridge.exposeInMainWorld('fsApi', {
         ipcRenderer.invoke('post-file', fileName, folderPath, data) as Promise<void>,
     deleteFile: (filePath: string) =>
         ipcRenderer.invoke('delete-file', filePath) as Promise<void>,
+    createDirectory: (dirPath: string, dirName: string) =>
+        ipcRenderer.invoke('create-directory', dirPath, dirName) as Promise<void>,
 })
 
 contextBridge.exposeInMainWorld('electronAPI', {

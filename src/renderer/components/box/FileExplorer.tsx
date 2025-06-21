@@ -49,7 +49,8 @@ import {
     HardDrive,
     Clock,
     File,
-    MoreHorizontal
+    MoreHorizontal,
+    FolderPlus
 } from "lucide-react"
 import type {FileContent, FileSystemItem} from "@Types/fileSystem"
 import {Input} from "@/components/ui/input"
@@ -74,6 +75,7 @@ import {
 import { toast } from "sonner"
 import { FileItem, getFileIcon, getIconColor } from "@/components/ui/FileItem"
 import { FileStatsDialog } from "@/components/ui/FileStatsDialog"
+import { randomInt } from "crypto"
 
 /**
  * Props interface for the FileExplorer component
@@ -176,6 +178,16 @@ export const FileExplorer = memo(function FileExplorer ({
     /** File Stats dialog state */
     const [showStatsDialog, setShowStatsDialog] = useState(false); // Whether to show the file stats dialog
     const [selectedFilesForStats, setSelectedFilesForStats] = useState<FileSystemItem[]>([]); // Files for which we want to show stats
+
+    /** New folder dialog state */
+    const [showNewFolderDialog, setShowNewFolderDialog] = useState(false); // Whether to show the new folder dialog
+    const generateUniqueId = () => {
+        const timestamp = Date.now().toString(36); // Base36 timestamp
+        const randomPart = crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
+    return timestamp + randomPart.slice(0, 4);
+}   ;
+    const [newFolderName, setNewFolderName] = useState(() => "untitled " + generateUniqueId()); // Name for the new folder
+    const [isCreatingFolder, setIsCreatingFolder] = useState(false); // Whether we're currently creating a folder
     const [isCalculatingSize, setIsCalculatingSize] = useState(false); // Whether we're currently calculating the size of a folder
     const [selectedCount, setSelectedCount] = useState(0); // Number of currently selected files
 
@@ -1291,6 +1303,91 @@ export const FileExplorer = memo(function FileExplorer ({
 
 
     /**
+     * Creates a new folder in the current directory
+     * Handles both local and cloud file systems
+     */
+    const handleCreateFolder = async () => {
+        if (!newFolderName.trim()) {
+            toast.error("Invalid Name", {
+                description: "Please enter a valid folder name.",
+                duration: 2000,
+            });
+            return;
+        }
+
+        setIsCreatingFolder(true);
+        
+        try {
+            // Create the folder path in the current directory
+            const folderPath = `${cwd}/${newFolderName.trim()}`;
+            
+            if (!cloudType || !accountId) {
+                // Local directory creation
+                await (window as any).fsApi.createDirectory(folderPath);
+            } else {
+                // Cloud directory creation
+                await (window as any).cloudFsApi.createDirectory(cloudType, accountId, folderPath);
+            }
+
+            // Success feedback
+            toast.success("Folder Created", {
+                description: `Successfully created "${newFolderName.trim()}"`,
+                duration: 2000,
+            });
+
+            // Reset dialog state
+            setNewFolderName("");
+            setShowNewFolderDialog(false);
+            
+            // Refresh directory to show the new folder
+            await refreshDirectory();
+            
+        } catch (error) {
+            console.error("Error creating folder:", error);
+            
+            if (error && typeof error === 'object' && 'message' in error) {
+                const errorMessage = (error as Error).message;
+                if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
+                    toast.error("Permission Error", {
+                        description: "Unable to create folder due to insufficient permissions.",
+                        duration: 3000,
+                    });
+                } else if (errorMessage.includes('exists') || errorMessage.includes('EEXIST')) {
+                    toast.error("Folder Already Exists", {
+                        description: `A folder named "${newFolderName.trim()}" already exists.`,
+                        duration: 3000,
+                    });
+                } else if (errorMessage.includes('invalid') || errorMessage.includes('EINVAL')) {
+                    toast.error("Invalid Name", {
+                        description: "The folder name contains invalid characters.",
+                        duration: 3000,
+                    });
+                } else {
+                    toast.error("Folder Creation Failed", {
+                        description: `Failed to create folder: ${errorMessage}`,
+                        duration: 3000,
+                    });
+                }
+            } else {
+                toast.error("Folder Creation Failed", {
+                    description: "An unexpected error occurred while creating the folder.",
+                    duration: 3000,
+                });
+            }
+        } finally {
+            setIsCreatingFolder(false);
+        }
+    };
+
+    /**
+     * Opens the new folder dialog
+     */
+    const openNewFolderDialog = () => {
+        setNewFolderName("untitled " + generateUniqueId());
+        setShowNewFolderDialog(true);
+    };
+
+    /**
      * Show the file stats dialog for selected files
      */
     const showFileStats = async () => {
@@ -1391,6 +1488,15 @@ export const FileExplorer = memo(function FileExplorer ({
                     className={`p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 ${isLoading ? "animate-spin" : ""}`}
                 >
                     <RefreshCw className="h-5 w-5"/>
+                </Button>
+
+                {/* folder button - creates a new folder in current directory */}
+                <Button
+                    onClick={openNewFolderDialog}
+                    className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200"
+                    title="Create new folder"
+                >
+                    <FolderPlus className="h-5 w-5"/>
                 </Button>
 
                 {/* Show/Hide hidden files button */}
@@ -1638,6 +1744,68 @@ export const FileExplorer = memo(function FileExplorer ({
                     setSelectedFilesForStats(newFiles);
                 }}
             />
+
+            {/* folder dialog - prompts user for folder name */}
+            <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
+                <DialogContent className="max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                            Create New Folder
+                        </DialogTitle>
+                        <DialogDescription className="text-slate-600 dark:text-slate-400">
+                            Enter a name for the new folder.
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="space-y-4 pt-4">
+                        <Input
+                            type="text"
+                            placeholder="Folder name"
+                            value={newFolderName}
+                            onChange={(e) => setNewFolderName(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !isCreatingFolder) {
+                                    handleCreateFolder();
+                                }
+                                if (e.key === 'Escape') {
+                                    setShowNewFolderDialog(false);
+                                }
+                            }}
+                            className="text-slate-800 dark:text-slate-200 placeholder:text-gray-500 focus-visible:ring-blue-500 focus-visible:ring-offset-0 focus-visible:border-blue-500"
+                            autoFocus
+                            disabled={isCreatingFolder}
+                        />
+                        
+                        <div className="flex justify-end gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowNewFolderDialog(false)}
+                                disabled={isCreatingFolder}
+                                className="text-slate-700 dark:text-slate-300"
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleCreateFolder}
+                                disabled={isCreatingFolder || !newFolderName.trim()}
+                                className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
+                            >
+                                {isCreatingFolder ? (
+                                    <>
+                                        <RefreshCw className="h-4 w-4 animate-spin" />
+                                        Creating...
+                                    </>
+                                ) : (
+                                    <>
+                                        <FolderPlus className="h-4 w-4" />
+                                        Create Folder
+                                    </>
+                                )}
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 });

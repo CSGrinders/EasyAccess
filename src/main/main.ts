@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { config } from 'dotenv';
-import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize } from './cloud/cloudManager';
+import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory } from './cloud/cloudManager';
 
 // Load environment variables
 // In development, load from project root; in production, load from app Contents directory
@@ -146,6 +146,9 @@ ipcMain.handle('cloud-delete-file', async (_e, cloudType: CloudType, accountId: 
 });
 ipcMain.handle('cloud-calculate-folder-size', async (_e, cloudType: CloudType, accountId: string, folderPath: string) => {
     return calculateFolderSize(cloudType, accountId, folderPath);
+});
+ipcMain.handle('cloud-create-directory', async (_e, cloudType: CloudType, accountId: string, dirPath: string) => {
+    return createDirectory(cloudType, accountId, dirPath);
 });
 ipcMain.handle('remove-cloud-account', async (_e, cloudType: CloudType, accountId: string) => {
     return removeCloudAccount(cloudType, accountId);
@@ -478,6 +481,33 @@ ipcMain.handle('delete-file', async (_e, filePath: string)  => {
             throw new Error(`Permission denied deleting ${filePath}.`);
         }
         console.error('Error deleting file:', error);
+        throw error; 
+    }
+})
+
+// Handler for creating new directories in local file system
+ipcMain.handle('create-directory', async (_e, dirPath: string) => {
+    console.log('Creating directory:', dirPath);
+    
+    const permissionManager = PermissionManager.getInstance();
+    const parentDir = path.dirname(dirPath);
+    
+    // Check if we have permission for the parent directory
+    if (!permissionManager.hasPermissionForPath(parentDir)) {
+        throw new Error(`Access denied to ${parentDir}. Insufficient permissions.`);
+    }
+
+    try {
+        await fs.promises.mkdir(dirPath, { recursive: true });
+        console.log('Directory created successfully:', dirPath);
+        return { success: true, path: dirPath };
+    } catch (error: any) {
+        if (error.code === 'EPERM' || error.code === 'EACCES') {
+            throw new Error(`Permission denied creating directory ${dirPath}.`);
+        } else if (error.code === 'EEXIST') {
+            throw new Error(`Directory already exists: ${dirPath}`);
+        }
+        console.error('Error creating directory:', error);
         throw error; 
     }
 })
