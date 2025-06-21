@@ -298,6 +298,7 @@ export class OneDriveStorage implements CloudStorage {
   getAccountId(): string {
     return this.accountId || '';
   }
+  
   getAuthToken(): AuthTokens | null {
     return this.AuthToken || null;
   }
@@ -388,14 +389,139 @@ export class OneDriveStorage implements CloudStorage {
     }
 
     const apiPath = `/me/drive/root:/${filePath.replace(/^\//, '')}`; // remove leading slash if exists, to avoid double slashes
-
-    console.log(`Querying OneDrive API path: ${apiPath}`);
+    
+    console.log(`Deleting OneDrive file: ${apiPath}`);
 
     try {
       await this.graphClient.api(apiPath).delete();
       console.log(`File deleted successfully: ${filePath}`);
     } catch (error) {
       console.error('Error deleting file from OneDrive:', error);
+      throw error;
+    }
+  }
+
+  async createDirectory(dirPath: string): Promise<void> {
+    if (!this.graphClient) {
+      await this.initAccount();
+    }
+    
+    if (!this.graphClient) {
+      console.error('Graph client is not initialized');
+      throw new Error('Graph client is not initialized');
+    }
+
+    try {
+      const pathParts = dirPath.split('/').filter(part => part !== '');
+      let currentPath = '';
+      
+      for (const folderName of pathParts) {
+        currentPath = currentPath ? `${currentPath}/${folderName}` : folderName;
+        
+        try {
+          // Check if folder already exists
+          const checkApiPath = `/me/drive/root:/${currentPath}`;
+          await this.graphClient.api(checkApiPath).get();
+          console.log(`OneDrive folder already exists: ${currentPath}`);
+        } catch (error: any) {
+          // If folder doesn't exist, create it
+          if (error.statusCode === 404 || error.code === 'itemNotFound') {
+            const parentPath = currentPath.split('/').slice(0, -1).join('/');
+            const createApiPath = parentPath 
+              ? `/me/drive/root:/${parentPath}:/children`
+              : '/me/drive/root/children';
+            
+            const folderData = {
+              name: folderName,
+              folder: {},
+              '@microsoft.graph.conflictBehavior': 'fail' // Fail if folder already exists
+            };
+            
+            try {
+              const response = await this.graphClient.api(createApiPath).post(folderData);
+              console.log(`OneDrive folder created successfully: ${currentPath}`, response);
+            } catch (createError: any) {
+              // If folder exist, continue
+              if (createError.code === 'nameAlreadyExists') {
+                console.log(`OneDrive folder already exists: ${currentPath}`);
+              } else {
+                throw createError;
+              }
+            }
+          } else {
+            throw error;
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to create OneDrive folder:', error);
+      throw error;
+    }
+  }
+
+  async calculateFolderSize(folderPath: string): Promise<number> {
+    if (!this.graphClient) {
+      await this.initAccount();
+    }
+    
+    if (!this.graphClient) {
+      console.error('Graph client is not initialized');
+      throw new Error('Graph client is not initialized');
+    }
+
+    try {
+      return await this.calculateFolderSizeRecursive(folderPath);
+    } catch (error) {
+      console.error('Error calculating folder size for OneDrive:', error);
+      throw error;
+    }
+  }
+
+  private async calculateFolderSizeRecursive(folderPath: string): Promise<number> {
+    const apiPath = folderPath === '/' || folderPath === '' 
+      ? "/me/drive/root/children" 
+      : `/me/drive/root:/${folderPath.replace(/^\//, '')}:/children`;
+
+    console.log(`Calculating size for OneDrive folder: ${apiPath}`);
+
+    try {
+      const response = await this.graphClient.api(apiPath).get();
+      
+      if (!response || !response.value || !Array.isArray(response.value)) {
+        console.error('Unexpected response format from OneDrive API:', response);
+        return 0;
+      }
+
+      let totalSize = 0;
+
+      for (const item of response.value) {
+        if (item.folder) {
+          // Recursively calculate size for subdirectories
+          let subFolderPath = '';
+          if (item.parentReference && item.parentReference.path) {
+            const parentPath = item.parentReference.path.replace('/drive/root:', '');
+            subFolderPath = `${parentPath}/${item.name}`.replace(/^\/?/, '/');
+          } else {
+            subFolderPath = `/${item.name}`;
+          }
+          const subFolderSize = await this.calculateFolderSizeRecursive(subFolderPath);
+          totalSize += subFolderSize;
+        } else {
+          // Add file size (OneDrive size is in bytes)
+          const fileSize = item.size || 0;
+          totalSize += fileSize;
+        }
+      }
+
+      return totalSize;
+    } catch (error) {
+      console.error('Error calculating OneDrive folder size:', error);
+      // If we get an access denied error, try to refresh the token
+      if (error instanceof InteractionRequiredAuthError) {
+        console.log('Access denied, attempting to refresh token...');
+        await this.connect();
+        return this.calculateFolderSizeRecursive(folderPath); // Retry after re-authentication
+      }
       throw error;
     }
   }

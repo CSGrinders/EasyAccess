@@ -522,6 +522,88 @@ export async function searchFilesFromStorageAccount(cloudType: CloudType, accoun
   }
 }
 
+// Calculate the total size of a folder recursively for cloud storage
+export async function calculateFolderSize(cloudType: CloudType, accountId: string, folderPath: string): Promise<number> {
+  try {
+    folderPath = folderPath.replace(CLOUD_HOME, "");
+    console.log('Calculating folder size for cloud account:', cloudType, accountId, folderPath);
+    
+    const accounts = StoredAccounts.get(cloudType);
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            return await account.calculateFolderSize(folderPath);
+          } catch (error: any) {
+            console.error(`Error calculating folder size for ${cloudType}:`, error);
+            
+            // error messages
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
+              throw new Error('Folder not found or no longer exists.');
+            } else if (error.message?.includes('quota') || error.message?.includes('storage')) {
+              throw new Error('Storage quota exceeded or storage service unavailable.');
+            } else {
+              throw new Error(`Failed to calculate folder size: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
+      }
+    }
+    
+    throw new Error(`No ${cloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud folder size calculation error for ${cloudType}:`, error);
+    throw error; 
+  }
+}
+
+// Create a new directory in cloud storage
+export async function createDirectory(cloudType: CloudType, accountId: string, dirPath: string): Promise<void> {
+  try {
+    dirPath = dirPath.replace(CLOUD_HOME, "");
+    console.log('Creating directory in cloud account:', cloudType, accountId, dirPath);
+    
+    const accounts = StoredAccounts.get(cloudType);
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            return await account.createDirectory(dirPath);
+          } catch (error: any) {
+            console.error(`Error creating directory in ${cloudType}:`, error);
+            
+            // error messages
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('exists') || error.message?.includes('conflict') || error.message?.includes('nameAlreadyExists')) {
+              throw new Error('A folder with this name already exists.');
+            } else if (error.message?.includes('permission') || error.message?.includes('forbidden')) {
+              throw new Error('Permission denied. You may not have write access to this location.');
+            } else if (error.message?.includes('quota') || error.message?.includes('storage full') || error.message?.includes('insufficient storage')) {
+              throw new Error('Storage quota exceeded. Please free up space or upgrade your account.');
+            } else if (error.message?.includes('invalid') || error.message?.includes('name')) {
+              throw new Error('Invalid folder name. Please use a different name.');
+            } else {
+              throw new Error(`Failed to create directory: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
+      }
+    }
+    
+    throw new Error(`No ${cloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud directory creation error for ${cloudType}:`, error);
+    throw error; 
+  }
+}
+
 // Remove CloudStorage account from local storage and StoredAccounts
 export async function removeCloudAccount(cloudType: CloudType, accountId: string): Promise<boolean> {
   try {

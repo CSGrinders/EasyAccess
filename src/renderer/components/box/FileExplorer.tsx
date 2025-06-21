@@ -49,7 +49,8 @@ import {
     HardDrive,
     Clock,
     File,
-    MoreHorizontal
+    MoreHorizontal,
+    FolderPlus
 } from "lucide-react"
 import type {FileContent, FileSystemItem} from "@Types/fileSystem"
 import {Input} from "@/components/ui/input"
@@ -74,6 +75,8 @@ import {
 import { toast } from "sonner"
 import { FileItem, getFileIcon, getIconColor } from "@/components/ui/FileItem"
 import { RendererIpcCommandDispatcher } from "@/services/AgentControlService"
+import { FileStatsDialog } from "@/components/ui/FileStatsDialog"
+import { randomInt } from "crypto"
 
 /**
  * Props interface for the FileExplorer component
@@ -175,9 +178,18 @@ export const FileExplorer = memo(function FileExplorer ({
 
     /** File Stats dialog state */
     const [showStatsDialog, setShowStatsDialog] = useState(false); // Whether to show the file stats dialog
-    const [selectedFileForStats, setSelectedFileForStats] = useState<FileSystemItem | null>(null); // File for which we want to show stats
+    const [selectedFilesForStats, setSelectedFilesForStats] = useState<FileSystemItem[]>([]); // Files for which we want to show stats
+
+    /** New folder dialog state */
+    const [showNewFolderDialog, setShowNewFolderDialog] = useState(false); // Whether to show the new folder dialog
+    const generateUniqueId = () => {
+        const timestamp = Date.now().toString(36); // Base36 timestamp
+        const randomPart = crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
+    return timestamp + randomPart.slice(0, 4);
+}   ;
+    const [newFolderName, setNewFolderName] = useState(() => "untitled " + generateUniqueId()); // Name for the new folder
+    const [isCreatingFolder, setIsCreatingFolder] = useState(false); // Whether we're currently creating a folder
     const [isCalculatingSize, setIsCalculatingSize] = useState(false); // Whether we're currently calculating the size of a folder
-    const [folderSize, setFolderSize] = useState<number | null>(null); // Size of the folder for which we're showing stats
     const [selectedCount, setSelectedCount] = useState(0); // Number of currently selected files
 
     /** Current zom level */
@@ -1032,19 +1044,23 @@ export const FileExplorer = memo(function FileExplorer ({
                     if (relativeX >= itemLeft && relativeX <= itemRight &&
                         relativeY >= itemTop && relativeY <= itemBottom) {
                         
-                        // Set this item as the drop target
-                        BoxDrag.setTarget({
-                            boxId: boxId,
-                            targetPath: item.path,
-                            targetId: item.id
-                        });
-                        localTargetRef.current = {
-                            boxId: boxId,
-                            targetPath: item.path,
-                            targetId: item.id
-                        };
-                        foundDropTarget = true
-                        break
+                        if (item.isDirectory) {
+                            // Set this item as the drop target
+                            BoxDrag.setTarget({
+                                boxId: boxId,
+                                targetPath: item.path,
+                                targetId: item.id
+                            });
+                            localTargetRef.current = {
+                                boxId: boxId,
+                                targetPath: item.path,
+                                targetId: item.id
+                            };
+                            foundDropTarget = true
+                            break
+                        } else {
+                            resetTarget();
+                        }
                     }
                 }
                 
@@ -1312,318 +1328,123 @@ export const FileExplorer = memo(function FileExplorer ({
 
 
     /**
-     * Recursively calculates the total size of a folder and its contents
-     * Handles both local and cloud file systems with batch processing for performance
-     * 
-     * TODO: FIX FOR MULTIPLE FILES, AND I SUSPECT IT IS NOT WORKING PROPERLY FOR SINGLE
+     * Creates a new folder in the current directory
+     * Handles both local and cloud file systems
      */
-    const calculateFolderSize = async (folderPath: string): Promise<number> => {
+    const handleCreateFolder = async () => {
+        if (!newFolderName.trim()) {
+            toast.error("Invalid Name", {
+                description: "Please enter a valid folder name.",
+                duration: 2000,
+            });
+            return;
+        }
+
+        setIsCreatingFolder(true);
+        
         try {
-            if (cloudType && accountId) {
-                // Cloud file system processing
-                const files = await (window as any).cloudFsApi.readDirectory(cloudType, accountId, folderPath);
-                let totalSize = 0;
-                
-                // Process files in batces
-                const batchSize = 10;
-                for (let i = 0; i < files.length; i += batchSize) {
-                    const batch = files.slice(i, i + batchSize);
-                    const batchSizes = await Promise.allSettled(
-                        batch.map(async (file: FileSystemItem) => {
-                            if (file.isDirectory) {
-                                return await calculateFolderSize(file.path);
-                            } else {
-                                return file.size || 0;
-                            }
-                        })
-                    );
-                    
-                    // Sum up size calculations
-                    batchSizes.forEach((result) => {
-                        if (result.status === 'fulfilled') {
-                            totalSize += result.value;
-                        }
+            // Create the folder path in the current directory
+            const folderPath = `${cwd}/${newFolderName.trim()}`;
+            
+            if (!cloudType || !accountId) {
+                // Local directory creation
+                await (window as any).fsApi.createDirectory(folderPath);
+            } else {
+                // Cloud directory creation
+                await (window as any).cloudFsApi.createDirectory(cloudType, accountId, folderPath);
+            }
+
+            // Success feedback
+            toast.success("Folder Created", {
+                description: `Successfully created "${newFolderName.trim()}"`,
+                duration: 2000,
+            });
+
+            // Reset dialog state
+            setNewFolderName("");
+            setShowNewFolderDialog(false);
+            
+            // Refresh directory to show the new folder
+            await refreshDirectory();
+            
+        } catch (error) {
+            console.error("Error creating folder:", error);
+            
+            if (error && typeof error === 'object' && 'message' in error) {
+                const errorMessage = (error as Error).message;
+                if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
+                    toast.error("Permission Error", {
+                        description: "Unable to create folder due to insufficient permissions.",
+                        duration: 3000,
+                    });
+                } else if (errorMessage.includes('exists') || errorMessage.includes('EEXIST')) {
+                    toast.error("Folder Already Exists", {
+                        description: `A folder named "${newFolderName.trim()}" already exists.`,
+                        duration: 3000,
+                    });
+                } else if (errorMessage.includes('invalid') || errorMessage.includes('EINVAL')) {
+                    toast.error("Invalid Name", {
+                        description: "The folder name contains invalid characters.",
+                        duration: 3000,
+                    });
+                } else {
+                    toast.error("Folder Creation Failed", {
+                        description: `Failed to create folder: ${errorMessage}`,
+                        duration: 3000,
                     });
                 }
-                return totalSize;
             } else {
-                // Local file system processing
-                const files = await window.fsApi.readDirectory(folderPath);
-                let totalSize = 0;
-                
-                const sizeTasks = files.map(async (file: FileSystemItem) => {
-                    try {
-                        if (file.isDirectory) {
-                            return await calculateFolderSize(file.path);
-                        } else {
-                            return file.size || 0;
-                        }
-                    } catch (error) {
-                        console.warn(`Error processing ${file.path}:`, error);
-                        return 0;
-                    }
+                toast.error("Folder Creation Failed", {
+                    description: "An unexpected error occurred while creating the folder.",
+                    duration: 3000,
                 });
-                
-                // Handle all size calculations and sum results
-                const sizes = await Promise.allSettled(sizeTasks);
-                sizes.forEach((result) => {
-                    if (result.status === 'fulfilled') {
-                        totalSize += result.value;
-                    }
-                });
-                
-                return totalSize;
             }
-        } catch (error) {
-            console.error("Error calculating folder size for", folderPath, ":", error);
-            return 0;
+        } finally {
+            setIsCreatingFolder(false);
         }
     };
 
     /**
-     * TODO: IMPLEMENT NAVIGATION TO FILES IN THE CASE WHERE MORE THAN ONE FILE IS SELECTED
+     * Opens the new folder dialog
+     */
+    const openNewFolderDialog = () => {
+        setNewFolderName("untitled " + generateUniqueId());
+        setShowNewFolderDialog(true);
+    };
+
+    /**
+     * Show the file stats dialog for selected files
      */
     const showFileStats = async () => {
         if (selectedItemsRef.current.size === 0) return;
 
-        const firstSelectedId = Array.from(selectedItemsRef.current)[0];
-        const selectedFile = sortedItems.find(item => item.id === firstSelectedId);
+        const selectedFiles = Array.from(selectedItemsRef.current)
+            .map(id => sortedItems.find(item => item.id === id))
+            .filter((item): item is FileSystemItem => item !== undefined);
         
-        if (!selectedFile) return;
+        if (selectedFiles.length === 0) return;
         
-        setSelectedFileForStats(selectedFile);
+        setSelectedFilesForStats(selectedFiles);
         setShowStatsDialog(true);
-        
-        // Calculate folder size asynchronously for directories
-        if (selectedFile.isDirectory) {
-            setIsCalculatingSize(true);
-            try {
-                const size = await calculateFolderSize(selectedFile.path);
-                setFolderSize(size);
-            } catch (error) {
-                console.error("Failed to calculate folder size:", error);
-                setFolderSize(0);
-            } finally {
-                setIsCalculatingSize(false);
-            }
-        }
     };
 
     /**
-     * File statistics dialog component
-     * Displays detailed information about selected files and folders
+     * Show the file stats dialog for a specific item (right-click)
      */
-    const FileStatsDialog = () => {
-        if (!selectedFileForStats) {
-            return (
-                <Dialog open={showStatsDialog} onOpenChange={(open) => {
-                    setShowStatsDialog(open);
-                    if (!open) {
-                        setFolderSize(null);
-                        setIsCalculatingSize(false);
-                    }
-                }}>
-                    <DialogContent className="max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl">
-                        <div className="p-4 text-center">
-                            <p className="text-slate-600 dark:text-slate-400">No file selected</p>
-                        </div>
-                    </DialogContent>
-                </Dialog>
-            );
+    const showFileStatsForItem = async (e: React.MouseEvent, item: FileSystemItem) => {
+        // If multiple files are selected and the right-clicked item is one of them,
+        // show stats for all selected files
+        if (selectedItemsRef.current.size > 1 && selectedItemsRef.current.has(item.id)) {
+            const selectedFiles = Array.from(selectedItemsRef.current)
+                .map(id => sortedItems.find(fileItem => fileItem.id === id))
+                .filter((fileItem): fileItem is FileSystemItem => fileItem !== undefined);
+            
+            setSelectedFilesForStats(selectedFiles);
+        } else {
+            // Otherwise, show stats for just the right-clicked item
+            setSelectedFilesForStats([item]);
         }
-
-        const item = selectedFileForStats;
-        const IconComponent = getFileIcon(item.name, item.isDirectory);
-        const iconColor = getIconColor(item.name, item.isDirectory);
-
-        /** Extracts file extension from filename */
-        const getFileExtension = (fileName: string) => {
-            const ext = fileName.split('.').pop();
-            return ext && ext !== fileName ? ext.toUpperCase() : 'Unknown';
-        };
-
-        /** Formats file size in human-readable format */
-        const formatFileSize = (bytes?: number): string => {
-            if (!bytes || bytes === 0) return "0 B";
-    
-            const sizes = ["B", "KB", "MB", "GB", "TB"];
-            const i = Math.floor(Math.log(bytes) / Math.log(1024));
-            const size = bytes / Math.pow(1024, i);
-    
-            return `${size.toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`;
-        };
-
-        /** Formats timestamp into readable date string */
-        const formatDate = (timestamp?: number): string => {
-            if (!timestamp) return "Unknown";
-    
-            const date = new Date(timestamp);
-            return date.toLocaleString(undefined, {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
-            });
-        };
-
-        /**  Gets the size display for files vs folders */
-        const getItemSize = () => {
-            if (item.isDirectory) { //File is a folder
-                if (isCalculatingSize) {
-                    return "Calculating...";
-                } 
-                return folderSize !== null ? formatFileSize(folderSize) : "Unknown";
-            }
-            return formatFileSize(item.size);
-        };
-
-        /** Converts timestamp to relative time format */
-        const getRelativeTime = (timestamp?: number) => {
-            if (!timestamp) return "Unknown";
-            
-            const now = Date.now();
-            const diff = now - timestamp;
-            const seconds = Math.floor(diff / 1000);
-            const minutes = Math.floor(seconds / 60);
-            const hours = Math.floor(minutes / 60);
-            const days = Math.floor(hours / 24);
-            
-            if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
-            if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-            if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
-            return "Just now";
-        };
-
-        return (
-            <Dialog open={showStatsDialog} onOpenChange={(open) => {
-                setShowStatsDialog(open);
-                if (!open) {
-                    setFolderSize(null);
-                    setIsCalculatingSize(false);
-                }
-            }}>
-                {/** Dialog content for file statistics */}
-                <DialogContent className="max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl">
-                    <DialogHeader className="space-y-4">
-                        <div className="flex items-center gap-4">
-                            {/* Icon and title section */}
-                            <div className="p-3 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-800 dark:to-slate-700">
-                                <IconComponent className={cn("h-8 w-8", iconColor)} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <DialogTitle className="text-xl font-semibold text-slate-900 dark:text-slate-100 truncate">
-                                    {item.name}
-                                </DialogTitle>
-                                <DialogDescription className="text-slate-600 dark:text-slate-400 mt-1">
-                                    {item.isDirectory ? "Folder" : `${getFileExtension(item.name)} File`}
-                                </DialogDescription>
-                            </div>
-                        </div>
-                    </DialogHeader>
-                    
-                    <div className="space-y-6 pt-2">
-                        {/* Quick Stats Grid */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 rounded-xl p-4 border border-blue-200 dark:border-blue-700/50">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-blue-500/20 rounded-lg">
-                                        <HardDrive className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                                    </div>
-
-                                    {/* File Size */}
-                                    <div>
-                                        <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Size</p>
-                                        <p className="text-lg font-bold text-blue-800 dark:text-blue-200 flex items-center gap-2">
-                                            {getItemSize()}
-                                            {isCalculatingSize && (
-                                                <RefreshCw className="h-4 w-4 animate-spin" />
-                                            )}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* File Timestamp */}
-                            <div className="bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900/30 dark:to-emerald-800/30 rounded-xl p-4 border border-green-200 dark:border-green-700/50">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-green-500/20 rounded-lg">
-                                        <Clock className="h-5 w-5 text-green-600 dark:text-green-400" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-medium text-green-900 dark:text-green-100">Modified</p>
-                                        <p className="text-sm font-semibold text-green-800 dark:text-green-200">
-                                            {getRelativeTime(item.modifiedTime)}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* File Information */}
-                        <div className="space-y-4">
-                            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700 pb-2">
-                                Details
-                            </h3>
-                            
-                            {/* Name */}
-                            <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                                <File className="h-5 w-5 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Name</p>
-                                    <p className="text-sm text-slate-600 dark:text-slate-400 break-all mt-1">
-                                        {item.name}
-                                    </p>
-                                </div>
-                            </div>
-
-                            {/* Location */}
-                            <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                                <FolderIcon className="h-5 w-5 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Location</p>
-                                    <p className="text-sm text-slate-600 dark:text-slate-400 break-all mt-1 font-mono bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">
-                                        {item.path}
-                                    </p>
-                                </div>
-                            </div>
-
-                            {/* Full Date */}
-                            {item.modifiedTime && (
-                                <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                                    <Calendar className="h-5 w-5 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Last Modified</p>
-                                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                                            {formatDate(item.modifiedTime)}
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Storage Source */}
-                            <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                                <Database className="h-5 w-5 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Storage</p>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <span className={cn(
-                                            "px-2 py-1 rounded-full text-xs font-medium",
-                                            cloudType 
-                                                ? "bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300" 
-                                                : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
-                                        )}>
-                                            {cloudType ? `${cloudType} Cloud` : "Local Storage"}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </DialogContent>
-            </Dialog>
-        );
+        setShowStatsDialog(true);
     };
 
     return (
@@ -1692,6 +1513,15 @@ export const FileExplorer = memo(function FileExplorer ({
                     className={`p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 ${isLoading ? "animate-spin" : ""}`}
                 >
                     <RefreshCw className="h-5 w-5"/>
+                </Button>
+
+                {/* folder button - creates a new folder in current directory */}
+                <Button
+                    onClick={openNewFolderDialog}
+                    className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200"
+                    title="Create new folder"
+                >
+                    <FolderPlus className="h-5 w-5"/>
                 </Button>
 
                 {/* Show/Hide hidden files button */}
@@ -1907,6 +1737,7 @@ export const FileExplorer = memo(function FileExplorer ({
                                         draggedItemsRef={draggedItemsRef}
                                         handleItemClick={handleItemClick}
                                         handleItemMouseDown={handleItemMouseDown}
+                                        handleItemRightClick={showFileStatsForItem}
                                         itemRefs={itemRefs}
                                         isTransferring={isTransferring}
                                         transferInfo={transferInfo}
@@ -1925,8 +1756,81 @@ export const FileExplorer = memo(function FileExplorer ({
                 )}
             </div>
 
-                    {/* File statistics dialog - shows detailed info about selected files */}
-            <FileStatsDialog />
+            {/* File statistics dialog - shows detailed info about selected files */}
+            <FileStatsDialog
+                isOpen={showStatsDialog}
+                onOpenChange={(open) => {
+                    setShowStatsDialog(open);
+                }}
+                selectedFiles={selectedFilesForStats}
+                cloudType={cloudType}
+                accountId={accountId}
+                onFilesChange={(newFiles) => {
+                    setSelectedFilesForStats(newFiles);
+                }}
+            />
+
+            {/* folder dialog - prompts user for folder name */}
+            <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
+                <DialogContent className="max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                            Create New Folder
+                        </DialogTitle>
+                        <DialogDescription className="text-slate-600 dark:text-slate-400">
+                            Enter a name for the new folder.
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="space-y-4 pt-4">
+                        <Input
+                            type="text"
+                            placeholder="Folder name"
+                            value={newFolderName}
+                            onChange={(e) => setNewFolderName(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !isCreatingFolder) {
+                                    handleCreateFolder();
+                                }
+                                if (e.key === 'Escape') {
+                                    setShowNewFolderDialog(false);
+                                }
+                            }}
+                            className="text-slate-800 dark:text-slate-200 placeholder:text-gray-500 focus-visible:ring-blue-500 focus-visible:ring-offset-0 focus-visible:border-blue-500"
+                            autoFocus
+                            disabled={isCreatingFolder}
+                        />
+                        
+                        <div className="flex justify-end gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowNewFolderDialog(false)}
+                                disabled={isCreatingFolder}
+                                className="text-slate-700 dark:text-slate-300"
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleCreateFolder}
+                                disabled={isCreatingFolder || !newFolderName.trim()}
+                                className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
+                            >
+                                {isCreatingFolder ? (
+                                    <>
+                                        <RefreshCw className="h-4 w-4 animate-spin" />
+                                        Creating...
+                                    </>
+                                ) : (
+                                    <>
+                                        <FolderPlus className="h-4 w-4" />
+                                        Create Folder
+                                    </>
+                                )}
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 });

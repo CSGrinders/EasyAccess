@@ -6,6 +6,16 @@
     --background-end-rgb: 255, 255, 255;
 }
 
+/* Scrollbar hiding utility */
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
 
 @media (prefers-color-scheme: dark) {
     :root {
@@ -401,6 +411,44 @@ body {
         transform: translateX(100%);
         opacity: 0;
     }
+}
+
+/* File Stats Dialog Tab Animations */
+.file-stats-tab {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.file-stats-tab:hover {
+    transform: translateY(-1px);
+}
+
+.file-stats-tab.active {
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.file-stats-scroll-container {
+    scroll-behavior: smooth;
+}
+
+.file-stats-scroll-container::-webkit-scrollbar {
+    display: none;
+}
+
+/* File Stats Dialog Containment */
+[data-slot="dialog-content"]:has(.file-stats-scroll-container) {
+    contain: layout style;
+    overflow: hidden;
+}
+
+[data-slot="dialog-content"]:has(.file-stats-scroll-container) * {
+    box-sizing: border-box;
+}
+
+/* Ensure loading animations stay within bounds */
+.file-stats-tab .animate-spin,
+[data-slot="dialog-content"] .animate-spin {
+    contain: layout style;
+    will-change: transform;
 }
 
 

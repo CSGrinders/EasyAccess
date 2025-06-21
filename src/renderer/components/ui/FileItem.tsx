@@ -184,6 +184,7 @@ interface FileItemProps {
     draggedItemsRef: React.RefObject<string[]>;
     handleItemClick: (e: React.MouseEvent, item: FileSystemItem) => void;
     handleItemMouseDown: (e: React.MouseEvent, item: FileSystemItem) => void;
+    handleItemRightClick?: (e: React.MouseEvent, item: FileSystemItem) => void;
     itemRefs: React.RefObject<Map<string, HTMLDivElement>>;
     isTransferring?: boolean;
     transferInfo?: { isMove: boolean } | null;
@@ -197,13 +198,18 @@ export const FileItem = memo<FileItemProps>(function FileItem({
     draggedItemsRef, 
     handleItemClick, 
     handleItemMouseDown, 
+    handleItemRightClick,
     itemRefs,
     isTransferring = false,
     transferInfo = null
 }) {
     const IconComponent = getFileIcon(item.name, item.isDirectory);
-    const iconColor = getIconColor(item.name, item.isDirectory, false, BoxDrag.target?.boxId === Number(item.id));
+    const isDropTarget = BoxDrag.target?.targetId === item.id && 
+                         BoxDrag.target?.boxId === boxId && 
+                         item.isDirectory;
+    const iconColor = getIconColor(item.name, item.isDirectory, false, isDropTarget);
 
+    const isDraggingOverFile = BoxDrag.isDragging && !item.isDirectory && BoxDrag.sourceBoxId === boxId;
     return (
         <div
             key={item.id}
@@ -222,6 +228,13 @@ export const FileItem = memo<FileItemProps>(function FileItem({
                     handleItemMouseDown(e, item)
                 }
             }}
+            onContextMenu={(e) => {
+                if (!isTransferring && handleItemRightClick) {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleItemRightClick(e, item)
+                }
+            }}
             className={cn(
                 // Base styles for all file items
                 "file-item flex flex-col items-center justify-center w-25 h-25 rounded-md transition-all",
@@ -231,14 +244,23 @@ export const FileItem = memo<FileItemProps>(function FileItem({
                     transferInfo?.isMove 
                         ? "opacity-50 cursor-not-allowed bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 pointer-events-none" // Moving files
                         : "opacity-75 cursor-not-allowed bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 pointer-events-none" // Copying files
-                ) : "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800",
+                ) : isDraggingOverFile ? (
+                    // When dragging over a file, disable hover effects and show "not allowed" cursor
+                    "cursor-not-allowed border border-transparent"
+                ) : BoxDrag.target?.boxId === boxId ? (
+                    // When this box is a drop target, disable hover effects to let green overlay show through
+                    "cursor-pointer border border-transparent"
+                ) : (
+                    // Normal interactive state
+                    "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+                ),
                 
-                // Basic hover styles when not in box-to-box transfer mode and not transferring
-                !isBoxToBoxTransfer && !isTransferring
+                // Basic hover styles when not in box-to-box transfer mode and not transferring and not dragging over file
+                !isBoxToBoxTransfer && !isTransferring && !isDraggingOverFile && BoxDrag.target?.boxId !== boxId
                         ? "hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent"
                         : "border border-transparent",
-                // Add hover effect when dragging (only if not transferring)
-                !isTransferring && BoxDrag.isDragging && !draggedItemsRef.current.includes(item.id) && BoxDrag.sourceBoxId == boxId &&
+                // Add hover effect when dragging (only if not transferring and not in a drop zone)
+                !isTransferring && BoxDrag.isDragging && !draggedItemsRef.current.includes(item.id) && BoxDrag.sourceBoxId == boxId && item.isDirectory && BoxDrag.target?.boxId !== boxId &&
                     "hover:ring-2 hover:ring-green-500 hover:bg-green-100 dark:hover:bg-green-900/30",
                 
                 // Dragged items opacity (only if not transferring)

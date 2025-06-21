@@ -28,6 +28,7 @@ export interface CloudStorage {
     // readFile(filePath: string): Promise<string>
     getFile(filePath: string): Promise<FileContent>; //TODO
     postFile(fileName: string, folderPath: string, type: string, data: Buffer): Promise<void>; //TODO
+    createDirectory(dirPath: string): Promise<void>; // Create a new directory
     getAccountId(): string;
     getAuthToken(): AuthTokens | null;
     deleteFile(filePath: string): Promise<void>; //TODO
@@ -37,6 +38,7 @@ export interface CloudStorage {
     getFileInfo(filePath: string): Promise<FileSystemItem>; //TODO
     getDirectoryTree(dir: string): Promise<FileSystemItem[]>; //TODO
     createDirectory(dir: string): Promise<void>; //TODO
+    calculateFolderSize(folderPath: string): Promise<number>; // Calculate total size of a folder recursively
 }
 
 export async function generateCodes(): Promise<{ codeVerifier: string, codeChallenge: string }> {
