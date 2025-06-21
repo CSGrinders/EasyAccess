@@ -51,6 +51,7 @@ export const FileStatsDialog: React.FC<FileStatsDialogProps> = ({
     onOpenChange,
     selectedFiles,
     cloudType,
+    accountId,
     onFilesChange}) => {
     
     // Convert selectedFiles to array 
@@ -114,13 +115,20 @@ export const FileStatsDialog: React.FC<FileStatsDialogProps> = ({
 
     /** Trigger folder size calculation */
     const triggerFolderSizeCalculation = useCallback(async () => {
-        if (!currentFile?.isDirectory || cloudType || calculatingPaths.has(currentFile.path)) {
+        if (!currentFile?.isDirectory || calculatingPaths.has(currentFile.path)) {
             return;
         }
 
         setCalculatingPaths(prev => new Set(prev).add(currentFile.path));
         try {
-            const size = await window.fsApi.calculateFolderSize(currentFile.path);
+            let size: number;
+            if (cloudType && accountId) {
+                // Use cloud folder size calculation
+                size = await window.cloudFsApi.calculateFolderSize(cloudType, accountId, currentFile.path);
+            } else {
+                // Use local folder size calculation
+                size = await window.fsApi.calculateFolderSize(currentFile.path);
+            }
             setFolderSizes(prev => new Map(prev).set(currentFile.path, size));
         } catch (error) {
             console.error('Error calculating folder size:', error);
@@ -131,7 +139,7 @@ export const FileStatsDialog: React.FC<FileStatsDialogProps> = ({
                 return newSet;
             });
         }
-    }, [currentFile, cloudType, calculatingPaths]);
+    }, [currentFile, cloudType, accountId, calculatingPaths]);
 
     // Update scroll state when tabs change or container is resized
     useEffect(() => {
@@ -161,7 +169,7 @@ export const FileStatsDialog: React.FC<FileStatsDialogProps> = ({
 
     // Calculate folder size for current file if it's a directory 
     useEffect(() => {
-        if (!isOpen || !currentFile?.isDirectory || cloudType) {
+        if (!isOpen || !currentFile?.isDirectory) {
             return;
         }
 
@@ -169,10 +177,22 @@ export const FileStatsDialog: React.FC<FileStatsDialogProps> = ({
             return;
         }
 
+        // Skip calculation if it's a cloud folder but we don't have accountId
+        if (cloudType && !accountId) {
+            return;
+        }
+
         const calculateSize = async () => {
             setCalculatingPaths(prev => new Set(prev).add(currentFile.path));
             try {
-                const size = await window.fsApi.calculateFolderSize(currentFile.path);
+                let size: number;
+                if (cloudType && accountId) {
+                    // Use cloud folder size calculation
+                    size = await window.cloudFsApi.calculateFolderSize(cloudType, accountId, currentFile.path);
+                } else {
+                    // Use local folder size calculation
+                    size = await window.fsApi.calculateFolderSize(currentFile.path);
+                }
                 setFolderSizes(prev => new Map(prev).set(currentFile.path, size));
             } catch (error) {
                 console.error('Error calculating folder size:', error);
@@ -191,7 +211,7 @@ export const FileStatsDialog: React.FC<FileStatsDialogProps> = ({
         };
 
         calculateSize();
-    }, [isOpen, currentFile, cloudType, folderSizes, calculatingPaths]);
+    }, [isOpen, currentFile, cloudType, accountId, folderSizes, calculatingPaths]);
 
     // Keyboard navigation
     useEffect(() => {
@@ -470,7 +490,11 @@ export const FileStatsDialog: React.FC<FileStatsDialogProps> = ({
                                         : ""
                                 )}
                                 onClick={() => {
-                                    if (item.isDirectory && !cloudType && !folderSizes.has(item.path) && !calculatingPaths.has(item.path)) {
+                                    if (item.isDirectory && !folderSizes.has(item.path) && !calculatingPaths.has(item.path)) {
+                                        // Skip if it's a cloud folder but we don't have accountId
+                                        if (cloudType && !accountId) {
+                                            return;
+                                        }
                                         triggerFolderSizeCalculation();
                                     }
                                 }}

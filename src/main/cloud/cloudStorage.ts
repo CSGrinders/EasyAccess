@@ -31,6 +31,7 @@ export interface CloudStorage {
     getAccountId(): string;
     getAuthToken(): AuthTokens | null;
     deleteFile(filePath: string): Promise<void>; //TODO
+    calculateFolderSize(folderPath: string): Promise<number>; // Calculate total size of a folder recursively
 }
 
 export async function generateCodes(): Promise<{ codeVerifier: string, codeChallenge: string }> {

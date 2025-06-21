@@ -196,7 +196,6 @@ export class GoogleDriveStorage implements CloudStorage {
         const files = res.data.files || [];
         const mappedFiles: FileSystemItem[] = files.map(file => {
           const filePath = dir === '/' ? `/${file.name}` : `${dir}/${file.name}`;
-        
           return {
             id: uuidv4(), // Generate unique UUID for each item
             name: file.name ?? '',
@@ -566,5 +565,56 @@ export class GoogleDriveStorage implements CloudStorage {
       console.error('Error deleting file:', error);
       throw error;
     }
+  }
+
+  async calculateFolderSize(folderPath: string): Promise<number> {
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+    
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+    
+    try {
+      const folderId = await this.getFolderId(folderPath);
+      return await this.calculateFolderSizeRecursive(drive, folderId);
+    } catch (error) {
+      console.error('Error calculating folder size for Google Drive:', error);
+      throw error;
+    }
+  }
+
+  private async calculateFolderSizeRecursive(drive: any, folderId: string): Promise<number> {
+    let totalSize = 0;
+    let nextPageToken: string | undefined = undefined;
+
+    do {
+      const res: { data: drive_v3.Schema$FileList } = await drive.files.list({
+        q: `'${folderId}' in parents`,
+        pageSize: 1000,
+        fields: 'nextPageToken, files(id, name, mimeType, size)',
+        pageToken: nextPageToken,
+      });
+
+      const files = res.data.files || [];
+      
+      for (const file of files) {
+        if (file.mimeType === 'application/vnd.google-apps.folder') {
+          // Recursively calculate size for subdirectories
+          if (file.id) {
+            const subFolderSize = await this.calculateFolderSizeRecursive(drive, file.id);
+            totalSize += subFolderSize;
+          }
+        } else {
+          // Add file size 
+          const fileSize = file.size ? Number(file.size) : 0;
+          totalSize += fileSize;
+        }
+      }
+
+      nextPageToken = res.data.nextPageToken || undefined;
+    } while (nextPageToken);
+
+    return totalSize;
   }
 }
