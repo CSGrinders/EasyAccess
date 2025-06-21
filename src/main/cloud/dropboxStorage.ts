@@ -368,27 +368,6 @@ export class DropboxStorage implements CloudStorage {
         throw new Error('getDirectoryTree is not implemented for DropboxStorage');
     }
 
-    async createDirectory(dir: string): Promise<void> {
-        // Not implemented for Dropbox yet
-        await this.initClient();
-        if (!this.client) {
-            console.error('Dropbox client is not initialized');
-            return Promise.reject('Dropbox client is not initialized');
-        }
-        try {
-            const response = await this.client.filesCreateFolderV2({ path: dir });
-            console.log(`Directory "${dir}" created successfully`);
-            console.log('Create Directory Response:', response);
-        } catch (error: any) {
-            if (error.status === 409) {
-                console.warn(`Directory "${dir}" already exists`);
-                return; // Directory already exists, no need to throw an error
-            }
-            console.error('Failed to create directory:', error);
-            throw error;
-        }
-    }
-
     async createDirectory(dirPath: string): Promise<void> {
         await this.initClient();
         if (!this.client) {

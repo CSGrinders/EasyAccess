@@ -271,35 +271,6 @@ export async function getConnectedCloudAccounts(cloudType: CloudType) : Promise<
   return accountIds.length > 0 ? accountIds : null;
 }
 
-export async function createDirectory(CloudType: CloudType, accountId: string, dir: string): Promise<void> {
-  console.log('Creating directory in cloud account:', CloudType, accountId, dir);
-
-  try {
-    const accounts = StoredAccounts.get(CloudType);
-    dir = dir.replace(CLOUD_HOME, "");
-
-    if (accounts) {
-      for (const account of accounts) {
-        if (account.getAccountId() === accountId) {
-          try {
-            await account.createDirectory(dir);
-            console.log(`Successfully created directory ${dir} in ${CloudType}`);
-            return;
-          } catch (error: any) {
-            console.error(`Error creating directory in ${CloudType}:`, error);
-            throw error; // Re-throw the error to be handled by the caller
-          }
-        }
-      }
-    }
-
-    throw new Error(`No ${CloudType} account found with ID: ${accountId}`);
-  } catch (error: any) {
-    console.error(`Cloud directory creation error for ${CloudType}:`, error);
-    throw error;
-  }
-}
-
 export async function readDirectory(CloudType: CloudType, accountId: string, dir: string): Promise<FileSystemItem[]> {
   console.log('Getting files from cloud account:', CloudType, accountId, dir);
   

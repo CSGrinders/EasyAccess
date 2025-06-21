@@ -3,7 +3,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { config } from 'dotenv';
 import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory } from './cloud/cloudManager';
-import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal } from './local/localFileSystem';
+import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal } from './local/localFileSystem';
 // Load environment variables
 // In development, load from project root; in production, load from app Contents directory
 const envPath = app.isPackaged 
@@ -276,44 +276,15 @@ async function calculateDirectorySize(
 }
 
 ipcMain.handle('read-directory', async (_e, dirPath: string) => {
-    const permissionManager = PermissionManager.getInstance();
-    
-    // Check if we fhave permission for this path
-    if (!permissionManager.hasPermissionForPath(dirPath)) {
-        const permissions = permissionManager.getPermissions();
-        if (permissions.rememberChoice && !permissions.filesystemAccess) {
-            throw new Error(`Access denied to ${dirPath}. Please grant permissions in app settings.`);
-        }
-        
-        throw new Error(`Access denied to ${dirPath}. Insufficient permissions.`);
-    }
+    return await readDirectoryLocal(dirPath);
+})
 
-    try {
-        const items = await fs.promises.readdir(dirPath, { withFileTypes: true })
-        return Promise.all(items.map(async item => {
-            const itemPath = path.join(dirPath, item.name);
-            const stats = await fs.promises.stat(itemPath);
-            
-            // For files, use actual size. For directories, use 0 initially (will be calculated on demand)
-            const size = item.isDirectory() ? 0 : stats.size;
-            
-            return {
-                id: uuidv4(), // Generate unique UUID for each item
-                name: item.name,
-                isDirectory: item.isDirectory(),
-                path: itemPath,
-                size: size,
-                modifiedTime: stats.mtimeMs
-            };
-        }));
-    } catch (error: any) {
-        // Handle permission errors specifically
-        if (error.code === 'EPERM' || error.code === 'EACCES') {
-            const permissionManager = PermissionManager.getInstance();
-            throw new Error(`Permission denied accessing ${dirPath}.`);
-        }
-        throw error;
-    }
+ipcMain.handle('search-file', async (_e, 
+    rootPath: string,
+    pattern: string,
+    excludePatterns: string[] = []) => {
+        // not fully implemented yet
+    return await searchFilesLocal(rootPath, pattern, excludePatterns);
 })
 
 // Handler for calculating folder size on demand
@@ -458,27 +429,5 @@ export async function triggerChangeDirectoryOnAccountWindow(dir: string, cloudTy
 
 // Handler for creating new directories in local file system
 ipcMain.handle('create-directory', async (_e, dirPath: string) => {
-    console.log('Creating directory:', dirPath);
-    
-    const permissionManager = PermissionManager.getInstance();
-    const parentDir = path.dirname(dirPath);
-    
-    // Check if we have permission for the parent directory
-    if (!permissionManager.hasPermissionForPath(parentDir)) {
-        throw new Error(`Access denied to ${parentDir}. Insufficient permissions.`);
-    }
-
-    try {
-        await fs.promises.mkdir(dirPath, { recursive: true });
-        console.log('Directory created successfully:', dirPath);
-        return { success: true, path: dirPath };
-    } catch (error: any) {
-        if (error.code === 'EPERM' || error.code === 'EACCES') {
-            throw new Error(`Permission denied creating directory ${dirPath}.`);
-        } else if (error.code === 'EEXIST') {
-            throw new Error(`Directory already exists: ${dirPath}`);
-        }
-        console.error('Error creating directory:', error);
-        throw error; 
-    }
+    return await createDirectoryLocal(dirPath);
 })

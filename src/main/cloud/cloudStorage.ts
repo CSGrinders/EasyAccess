@@ -37,7 +37,6 @@ export interface CloudStorage {
     searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]>; //TODO
     getFileInfo(filePath: string): Promise<FileSystemItem>; //TODO
     getDirectoryTree(dir: string): Promise<FileSystemItem[]>; //TODO
-    createDirectory(dir: string): Promise<void>; //TODO
     calculateFolderSize(folderPath: string): Promise<number>; // Calculate total size of a folder recursively
 }
 

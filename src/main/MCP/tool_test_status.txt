@@ -3,6 +3,7 @@ Test Arguments
 Status
 ----------------------------------------------------------------------------------------
 create_directory
+{"path": "/Users/hojinsohn/Documents/yeyeTest"}
 {"path": "/new_folder", "provider": "google", "accountId": "sohn5312@gmail.com"}
 {"path": "/test1/test2/test3", "provider": "google", "accountId": "sohn5312@gmail.com"} = nested
 {"path": "/test1/test3/test3", "provider": "google", "accountId": "sohn5312@gmail.com"} = exist + nested

@@ -17,7 +17,7 @@ import { getFile, readDirectory, getConnectedCloudAccounts, searchFilesFromStora
 import { CloudType } from "../../types/cloudType";
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { createServerMemory } from "./serverMemory";
-import { getFileLocal, postFileLocal } from "../local/localFileSystem";
+import { createDirectoryLocal, getFileLocal, postFileLocal } from "../local/localFileSystem";
 import { triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerPostFileOnRenderer } from "../main";
 
 
@@ -637,9 +637,10 @@ export const createFsServer = async (allowedDirs: string[]) => {
           const provider = parsed.data.provider;
           const accountId = parsed.data.accountId;
           // local storage
+          // need to change this to use createDirectoryLocal? TODO
           if (!provider || !accountId) {
             const validPath = await validatePath(parsed.data.path);
-            await fs.mkdir(validPath, { recursive: true });
+            await createDirectoryLocal(validPath);
             return {
               content: [{ type: "text", text: `Successfully created directory ${parsed.data.path}` }],
             };
@@ -786,19 +787,22 @@ export const createFsServer = async (allowedDirs: string[]) => {
             // dataToMove = await getFile(cloudType, parsed.data.source_accountId, parsed.data.source);
           }
 
-          // if (!dataToMove || !dataToMove.content) {
-          //   throw new Error(`File not found: ${parsed.data.source}`);
-          // }
-
           // Now we have the data to move, we can proceed with the destination
           if (!destinationProvider) {
             // destination is local storage
             const validDestPath = await validatePath(parsed.data.destination);
             const destFolder = path.dirname(validDestPath);
             const destFileName = path.basename(validDestPath);
+            try {
+              await createDirectoryLocal(destFolder); // Ensure the destination directory exists
+            } catch (error) {
+              if (error instanceof Error && error.message.includes("Directory already exists")) {
+                // Directory already exists, no action needed
+                console.log(`Directory already exists: ${destFolder}. No creation needed.`);
+              }
+            }
             // const response = await postFileLocal(destFileName, destFolder, dataToMove.content);
             await triggerPostFileOnRenderer(destFolder, undefined, undefined, destFileName);
-            await triggerChangeDirectoryOnAccountWindow(destFolder, undefined, undefined);
             if (!sourceProvider) {
               return {
                 content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination}` }],
@@ -820,8 +824,6 @@ export const createFsServer = async (allowedDirs: string[]) => {
             await createDirectory(cloudType, parsed.data.destination_accountId, destFolder); // Ensure the destination directory exists
             // await postFile(cloudType, parsed.data.destination_accountId, destFileName, destFolder, dataToMove.content);
             await triggerPostFileOnRenderer(destFolder, cloudType, parsed.data.destination_accountId, destFileName);
-
-            // await triggerChangeDirectoryOnAccountWindow(destFolder, cloudType, parsed.data.destination_accountId);
             if (!sourceProvider) {
               return {
                 content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}` }],
