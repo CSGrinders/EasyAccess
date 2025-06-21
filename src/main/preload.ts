@@ -60,6 +60,14 @@ contextBridge.exposeInMainWorld('mcpApi', {
     removeReloadAgentMessageListener: () => {
         ipcRenderer.removeAllListeners('reload-agent-message');
     },
+    mcpRenderer: {
+        on: (channel: string, callback: (event: Electron.IpcRendererEvent, ...args: any[]) => void) => {
+            ipcRenderer.on(channel, (event, ...args) => callback(event, ...args));
+        },
+        send: (channel: string, ...args: any[]) => {
+            ipcRenderer.send(channel, ...args);
+        }
+    }
 });
 
 contextBridge.exposeInMainWorld('permissionApi', {

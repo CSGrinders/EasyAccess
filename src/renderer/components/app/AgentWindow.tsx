@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, ArrowUp } from "lucide-react";
 import { MCPStatus } from "@Types/permissions";
+import { RendererIpcCommandDispatcher } from '@/services/AgentControlService';
 
 export default function AgentWindow({ show }: { show: boolean }) {
     
@@ -41,15 +42,16 @@ export default function AgentWindow({ show }: { show: boolean }) {
     const ACTION_BAR_WIDTH = 80; 
 
     useEffect(() => {
-        const handleReloadAgentMessage = (event: Electron.IpcRendererEvent, text: string) => {
+        const handleReloadAgentMessage = (text: string) => {
             console.log('Received message from MCP:', text);
             setResponse(text);
         };
+        const dispatcher = RendererIpcCommandDispatcher.getInstance();
 
-        window.mcpApi.onReloadAgentMessage(handleReloadAgentMessage);
-        console.log('AgentWindow: Listening for MCP messages');
+        dispatcher.register('refreshAgentMessage', handleReloadAgentMessage);
+
         return () => {
-            window.mcpApi.removeReloadAgentMessageListener();
+            dispatcher.unregister('refreshAgentMessage');
         };
     }, []);
 

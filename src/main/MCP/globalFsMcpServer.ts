@@ -18,6 +18,7 @@ import { CloudType } from "../../types/cloudType";
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { createServerMemory } from "./serverMemory";
 import { getFileLocal, postFileLocal } from "../local/localFileSystem";
+import { triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerPostFileOnRenderer } from "../main";
 
 
 export const createFsServer = async (allowedDirs: string[]) => {
@@ -489,7 +490,9 @@ export const createFsServer = async (allowedDirs: string[]) => {
         {
           name: "list_connected_cloud_accounts",
           description:
-            "Returns the list of connected cloud accounts for the current user.",
+            "Returns the list of connected cloud accounts for the current user." +
+            "Use this to find an account to perform operations on cloud files." +
+            "This includes accounts for Google Drive, OneDrive, and Dropbox.",
           inputSchema: zodToJsonSchema(GetConnectedAccountArgsSchema) as ToolInput,
         },
       ],
@@ -770,19 +773,22 @@ export const createFsServer = async (allowedDirs: string[]) => {
           if (!sourceProvider) {
             // source is local storage
             const validSourcePath = await validatePath(parsed.data.source);
-            dataToMove = await getFileLocal(validSourcePath);
+            // dataToMove = await getFileLocal(validSourcePath);
+            await triggerGetFileOnRenderer([parsed.data.source]);
           } else {
             // source is cloud storage
             const cloudType = await validateProvider(sourceProvider);
             if (!parsed.data.source_accountId) {
               throw new Error("Source account ID is required for cloud storage operations");
             }
-            dataToMove = await getFile(cloudType, parsed.data.source_accountId, parsed.data.source);
+            console.log(`Fetching file from cloud storage: ${parsed.data.source} on ${sourceProvider}:${parsed.data.source_accountId}`);
+            await triggerGetFileOnRenderer([parsed.data.source], cloudType, parsed.data.source_accountId);
+            // dataToMove = await getFile(cloudType, parsed.data.source_accountId, parsed.data.source);
           }
 
-          if (!dataToMove || !dataToMove.content) {
-            throw new Error(`File not found: ${parsed.data.source}`);
-          }
+          // if (!dataToMove || !dataToMove.content) {
+          //   throw new Error(`File not found: ${parsed.data.source}`);
+          // }
 
           // Now we have the data to move, we can proceed with the destination
           if (!destinationProvider) {
@@ -790,7 +796,9 @@ export const createFsServer = async (allowedDirs: string[]) => {
             const validDestPath = await validatePath(parsed.data.destination);
             const destFolder = path.dirname(validDestPath);
             const destFileName = path.basename(validDestPath);
-            const response = await postFileLocal(destFileName, destFolder, dataToMove.content);
+            // const response = await postFileLocal(destFileName, destFolder, dataToMove.content);
+            await triggerPostFileOnRenderer(destFolder, undefined, undefined, destFileName);
+            await triggerChangeDirectoryOnAccountWindow(destFolder, undefined, undefined);
             if (!sourceProvider) {
               return {
                 content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination}` }],
@@ -810,7 +818,10 @@ export const createFsServer = async (allowedDirs: string[]) => {
             const destFileName = path.basename(parsed.data.destination);
             // post file to the cloud storage
             await createDirectory(cloudType, parsed.data.destination_accountId, destFolder); // Ensure the destination directory exists
-            await postFile(cloudType, parsed.data.destination_accountId, destFileName, destFolder, dataToMove.content);
+            // await postFile(cloudType, parsed.data.destination_accountId, destFileName, destFolder, dataToMove.content);
+            await triggerPostFileOnRenderer(destFolder, cloudType, parsed.data.destination_accountId, destFileName);
+
+            // await triggerChangeDirectoryOnAccountWindow(destFolder, cloudType, parsed.data.destination_accountId);
             if (!sourceProvider) {
               return {
                 content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}` }],

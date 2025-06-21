@@ -73,6 +73,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { toast } from "sonner"
 import { FileItem, getFileIcon, getIconColor } from "@/components/ui/FileItem"
+import { RendererIpcCommandDispatcher } from "@/services/AgentControlService"
 
 /**
  * Props interface for the FileExplorer component
@@ -82,7 +83,7 @@ interface FileExplorerProps {
                                                                                             // (e.g., 'dropbox', 'google', 'onedrive')
     accountId?: string                                                                      // Unique identifier for the cloud account 
     zoomLevel: number                                                                       // Zoom level for the file explorer
-    tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void  // Function to post a file to the cloud
+    tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string, fileName?: string) => void  // Function to post a file to the cloud
     tempGetFile?: (filePaths: string[], cloudType?: CloudType, accountId?: string) => void  // Function to get a file from the cloud
     boxId: number                                                                           // Unique identifier for the box 
     isBoxToBoxTransfer?: boolean                                                            // Whether the transfer is between boxes
@@ -579,6 +580,30 @@ export const FileExplorer = memo(function FileExplorer ({
         }
         updateSelectedItemsColor();
     }
+
+
+    // useEffect(() => {
+    //     const dispatcher = RendererIpcCommandDispatcher.getInstance();
+
+    //     const updateCwd = (toCwd: string, cloudTypeCheck?: CloudType, accountIdCheck?: string) => {
+    //         if (!cloudType && !accountId && !cloudTypeCheck && !accountIdCheck) {
+    //             console.log(`Changing directory to: ${toCwd}`);
+    //             setCwd(toCwd);
+    //             return; // In case of local storage
+    //         }
+    //         if (cloudType !== cloudTypeCheck || accountId !== accountIdCheck) {
+    //             return; // Ignore if this is not the current cloud type/account
+    //         }
+    //         console.log(`Changing directory to: ${toCwd}`);
+    //         setCwd(toCwd);
+    //     }
+
+    //     dispatcher.register('changeDirectoryOnAccountWindow', updateCwd);
+
+    //     return () => {
+    //         dispatcher.unregister('changeDirectoryOnAccountWindow');
+    //     };
+    // }, [cloudType, accountId]);
 
     /**
      * Updates visual selection state for all items

@@ -84,7 +84,7 @@ TODO prompt engineer to return multiple patters in format (e.g. separated by com
 move_file
 cloud source -> cloud destination
 google -> onedrive
-{"source": "/easyAccess/presentation.pdf", "destination": "/presentation_from_google.pdf", "source_provider": "google", "source_accountId": "sohn5312@gmail.com", "destination_provider": "onedrive", "destination_accountId": "sohn5312@gmail.com"}
+{"source": "/easyAccess/interpolation.png", "destination": "/interpolation-from-google.png", "source_provider": "google", "source_accountId": "sohn5312@gmail.com", "destination_provider": "onedrive", "destination_accountId": "sohn5312@gmail.com"}
 "Successfully moved /easyAccess/presentation.pdf from google:sohn5312@gmail.com to /presentation_from_google.pdf on onedrive:sohn5312@gmail.com"
 
 {"source": "/aseem.jpg", "destination": "/temp1/aseem.jpg", "source_provider": "dropbox", "source_accountId": "sohn5312@gmail.com", "destination_provider": "dropbox", "destination_accountId": "sohn5312@gmail.com"}

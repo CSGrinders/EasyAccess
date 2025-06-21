@@ -274,7 +274,7 @@ export class DropboxStorage implements CloudStorage {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${this.AuthToken?.access_token}`,
-                'Dropbox-API-Arg': JSON.stringify({ path: '/' + folderPath + '/' + fileName, mode: 'add', autorename: true, mute: false }),
+                'Dropbox-API-Arg': JSON.stringify({ path: (folderPath !== '' ? '/' + folderPath : '') + '/' + fileName, mode: 'add', autorename: true, mute: false }),
                 'Content-Type': 'application/octet-stream'
             },
             body: data

@@ -24,6 +24,7 @@ export interface MCPStatus {
 }
 
 export interface MCPAPI {
+    mcpRenderer: any;
     processQuery: (query: string) => Promise<string>;
     reinitialize: () => Promise<MCPReinitializeResult>;
     getStatus: () => Promise<MCPStatus>;

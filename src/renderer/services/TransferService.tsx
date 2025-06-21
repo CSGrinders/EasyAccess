@@ -31,7 +31,7 @@ interface TransferServiceReturn {
     handleRetryTransfer: (transferId: string) => void;
     
     // Transfer operations
-    tempPostFile: (parentPath: string, cloudType?: CloudType, accountId?: string) => Promise<void>;
+    tempPostFile: (parentPath: string, cloudType?: CloudType, accountId?: string, fileName?: string) => Promise<void>;
     tempGetFile: (filePaths: string[], cloudType?: CloudType, accountId?: string, showProgress?: boolean) => Promise<void>;
     tempDragDropTransfer: (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => Promise<void>;
     
@@ -238,7 +238,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
         }
     }
 
-    const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string) => {
+    const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string, fileName?: string) => {
         let transfer: TransferItem | null = null;
         
         try {
@@ -280,7 +280,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
             // Mark files as being transferred in the UI
             const transferringFiles = fileContentsCache.map(fileContent => ({
                 path: fileContent.path,
-                name: fileContent.name,
+                name: fileName ? fileName : fileContent.name,
                 sourceCloudType: fileContent.sourceCloudType,
                 sourceAccountId: fileContent.sourceAccountId,
                 targetCloudType: cloudType,
@@ -306,7 +306,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         }
 
                         updateTransfer(transfer.id, {
-                            currentItem: `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${fileContent.name}`
+                            currentItem: `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${fileName ? fileName : fileContent.name}`
                         });
                         
                         try {
@@ -316,14 +316,14 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                 : Buffer.from(fileContent.content || []);
                                 
                             await (window as any).fsApi.postFile(
-                                fileContent.name,
+                                fileName ? fileName : fileContent.name,
                                 parentPath,
                                 contentBuffer
                             );
                             
                             // Track successful file completion
                             updateTransfer(transfer.id, {
-                                completedFiles: [...(getTransfer(transfer.id)?.completedFiles || []), fileContent.name]
+                                completedFiles: [...(getTransfer(transfer.id)?.completedFiles || []), fileName ? fileName : fileContent.name]
                             });
                             
                             // Try to delete from source, but don't fail the transfer if deletion fails
@@ -341,9 +341,9 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             // Track failed file
                             const errorMessage = err instanceof Error ? err.message : 'Unknown error';
                             updateTransfer(transfer.id, {
-                                failedFiles: [...(getTransfer(transfer.id)?.failedFiles || []), { file: fileContent.name, error: errorMessage }]
+                                failedFiles: [...(getTransfer(transfer.id)?.failedFiles || []), { file: fileName ? fileName : fileContent.name, error: errorMessage }]
                             });
-                            throw new Error(`Failed to upload ${fileContent.name}: ${errorMessage}`);
+                            throw new Error(`Failed to upload ${fileName ? fileName : fileContent.name}: ${errorMessage}`);
                         }
                     }
                 } else {
@@ -354,7 +354,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         }
 
                         updateTransfer(transfer.id, {
-                            currentItem: `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${fileContent.name}`
+                            currentItem: `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${fileName ? fileName : fileContent.name}`
                         });
                         
                         try {
@@ -366,14 +366,14 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             await (window as any).cloudFsApi.postFile(
                                 cloudType,
                                 accountId,
-                                fileContent.name,
+                                fileName ? fileName : fileContent.name,
                                 parentPath,
                                 contentBuffer
                             );
                             
                             // Track successful file completion
                             updateTransfer(transfer.id, {
-                                completedFiles: [...(getTransfer(transfer.id)?.completedFiles || []), fileContent.name]
+                                completedFiles: [...(getTransfer(transfer.id)?.completedFiles || []), fileName ? fileName : fileContent.name]
                             });
                             
                             // Try to delete from source, but don't fail the transfer if deletion fails
@@ -391,9 +391,9 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             // Track failed file
                             const errorMessage = err instanceof Error ? err.message : 'Unknown error';
                             updateTransfer(transfer.id, {
-                                failedFiles: [...(getTransfer(transfer.id)?.failedFiles || []), { file: fileContent.name, error: errorMessage }]
+                                failedFiles: [...(getTransfer(transfer.id)?.failedFiles || []), { file: fileName ? fileName : fileContent.name, error: errorMessage }]
                             });
-                            throw new Error(`Failed to upload ${fileContent.name}: ${errorMessage}`);
+                            throw new Error(`Failed to upload ${fileName ? fileName : fileContent.name}: ${errorMessage}`);
                         }
                     }
                 }
@@ -647,7 +647,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
 
                         if (!targetCloudType || !targetAccountId) {
                             await (window as any).fsApi.postFile(
-                                fileContent.name,
+                                fileName,
                                 targetPath || '',
                                 contentBuffer
                             );
@@ -655,7 +655,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             await (window as any).cloudFsApi.postFile(
                                 targetCloudType,
                                 targetAccountId,
-                                fileContent.name,
+                                fileName,
                                 targetPath || '',
                                 contentBuffer
                             );
@@ -663,7 +663,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
 
                         // Track successful file completion
                         updateTransfer(transfer.id, {
-                            completedFiles: [...(getTransfer(transfer.id)?.completedFiles || []), fileContent.name]
+                            completedFiles: [...(getTransfer(transfer.id)?.completedFiles || []), fileName]
                         });
 
                         // Delete from source if not keeping original

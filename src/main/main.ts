@@ -116,7 +116,7 @@ const createWindow = async () => {
                 throw new Error('MCP client not initialized - insufficient permissions');
             }
             console.log("Processing MCP query:", query);
-            return await mcpClient.processQuery(query, win);
+            return await mcpClient.processQuery(query);
         } catch (error) {
             console.error("Error in MCP query:", error);
             throw error;
@@ -279,3 +279,87 @@ ipcMain.handle('mcp-process-query-test', (_e, toolName, toolArgs) => {
     console.log("Processing MCP tool test:", toolName, parsedArgs);
     return mcpClient?.callToolTest(toolName, parsedArgs);
 });
+
+// async function invokeRendererFunction(name: string, ...args: any[]) {
+//   const win = BrowserWindow.getAllWindows()[0];
+//   if (win) {
+//     win.webContents.send('invoke-renderer-function', { name, args });
+//   } else {
+//     console.error('No renderer window available');
+//   }
+// }
+
+// Store pending promises
+const pendingInvocations = new Map<string, { resolve: (value: any) => void; reject: (error: any) => void }>();
+
+async function invokeRendererFunction(name: string, ...args: any[]): Promise<any> {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) {
+    throw new Error('No renderer window available');
+  }
+
+  // Generate unique ID for this invocation
+  const invocationId = uuidv4(); // or crypto.randomUUID()
+  
+  // Create promise and store resolvers
+  const promise = new Promise((resolve, reject) => {
+    pendingInvocations.set(invocationId, { resolve, reject });
+    
+    // Optional: Add timeout to prevent hanging forever
+    setTimeout(() => {
+      if (pendingInvocations.has(invocationId)) {
+        pendingInvocations.delete(invocationId);
+        reject(new Error(`Function "${name}" timed out after 30 seconds`));
+      }
+    }, 30000); // 30 second timeout
+  });
+
+  // Send message with invocation ID
+  win.webContents.send('invoke-renderer-function', { 
+    invocationId, 
+    name, 
+    args 
+  });
+
+  return promise;
+}
+
+// Listen for responses from renderer
+ipcMain.on('renderer-function-response', (event, { invocationId, success, result, error }) => {
+  const pending = pendingInvocations.get(invocationId);
+  if (pending) {
+    pendingInvocations.delete(invocationId);
+    console.log(`Renderer function response received: ${invocationId}`);
+    if (success) {
+      pending.resolve(result);
+    } else {
+      pending.reject(new Error(error));
+    }
+  }
+});
+
+export async function triggerRefreshAgentMessage(text: string) {
+    return await invokeRendererFunction('refreshAgentMessage', text);
+}
+
+export async function triggerOpenAccountWindow(type: string, title: string, icon?: React.ReactNode, cloudType?: CloudType, accountId?: string) {
+    return await invokeRendererFunction('openAccountWindow', type, title, icon, cloudType, accountId);
+}
+
+export async function triggerReloadAccountWindow(cloudType: string, accountId: string) {
+    return await invokeRendererFunction('reloadAccountWindow', cloudType, accountId);
+}
+
+// (filePaths: string[], cloudType?: CloudType, accountId?: string, showProgress?: boolean) => Promise<void>;
+export async function triggerGetFileOnRenderer(filePaths: string[], cloudType?: CloudType, accountId?: string, showProgress?: boolean) {
+    return await invokeRendererFunction('getFileOnRenderer', filePaths, cloudType, accountId, showProgress);
+}
+
+// tempPostFile: (parentPath: string, cloudType?: CloudType, accountId?: string) => Promise<void>;
+export async function triggerPostFileOnRenderer(parentPath: string, cloudType?: CloudType, accountId?: string, fileName?: string) {
+    return await invokeRendererFunction('postFileOnRenderer', parentPath, cloudType, accountId, fileName);
+}
+
+export async function triggerChangeDirectoryOnAccountWindow(dir: string, cloudType?: CloudType, accountId?: string | undefined) {
+    return await invokeRendererFunction('changeDirectoryOnAccountWindow', dir, cloudType, accountId);
+}

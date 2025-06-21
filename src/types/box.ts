@@ -62,8 +62,8 @@ export interface StorageBoxProps {
     setIsMaximized: (isMaximized: boolean) => void;
     
     /** Optional file upload handler for cloud storage */
-    tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string) => void;
-    
+    tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string, fileName?: string) => void;
+
     /** Optional file download handler for cloud storage */
     tempGetFile?: (filePaths: string[], cloudType?: CloudType, accountId?: string) => void;
     

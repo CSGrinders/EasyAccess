@@ -10,6 +10,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport";
 
 import dotenv from "dotenv";
+import { triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerRefreshAgentMessage } from "../main";
+import { CloudType } from "../../types/cloudType";
 dotenv.config();
 
 
@@ -55,7 +57,7 @@ class MCPClient {
     }
 
     // Process query
-    async processQuery(query: string, mainWindow: Electron.BrowserWindow | null = null): Promise<string> {
+    async processQuery(query: string): Promise<string> {
         // call th llm
         const messages: MessageParam[] = [
             {
@@ -131,9 +133,8 @@ class MCPClient {
                     });
                 }
             }
-            if (mainWindow) {
-                mainWindow.webContents.send('reload-agent-message', texts.join("\n") + "\n");
-            }
+            triggerRefreshAgentMessage(texts.join("\n") + "\n");
+            //type: string, title: string, icon?: React.ReactNode, cloudType?: CloudType, accountId?: string
             if (!tool_used) {
                 break; // no more tool calls, exit loop
             }
@@ -144,6 +145,8 @@ class MCPClient {
 
     async callToolTest(toolName: string, args: { [x: string]: unknown }) {
         // Call the tool with the given query
+        // triggerOpenAccountWindow("cloud", "agent opened", undefined, CloudType.GoogleDrive, "sohn5312@gmail.com");
+        // triggerChangeDirectoryOnAccountWindow(CloudType.GoogleDrive, "sohn5312@gmail.com", "/easyAccess");
         if (!this.tools.some(tool => tool.name === toolName)) {
             throw new Error(`Tool ${toolName} not found`);
         }
