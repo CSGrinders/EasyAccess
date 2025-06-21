@@ -247,17 +247,20 @@ export const FileItem = memo<FileItemProps>(function FileItem({
                 ) : isDraggingOverFile ? (
                     // When dragging over a file, disable hover effects and show "not allowed" cursor
                     "cursor-not-allowed border border-transparent"
+                ) : BoxDrag.target?.boxId === boxId ? (
+                    // When this box is a drop target, disable hover effects to let green overlay show through
+                    "cursor-pointer border border-transparent"
                 ) : (
                     // Normal interactive state
                     "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
                 ),
                 
-                // Basic hover styles when not in box-to-box transfer mode and not transferring
-                !isBoxToBoxTransfer && !isTransferring
+                // Basic hover styles when not in box-to-box transfer mode and not transferring and not dragging over file
+                !isBoxToBoxTransfer && !isTransferring && !isDraggingOverFile && BoxDrag.target?.boxId !== boxId
                         ? "hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent"
                         : "border border-transparent",
-                // Add hover effect when dragging (only if not transferring)
-                !isTransferring && BoxDrag.isDragging && !draggedItemsRef.current.includes(item.id) && BoxDrag.sourceBoxId == boxId && item.isDirectory &&
+                // Add hover effect when dragging (only if not transferring and not in a drop zone)
+                !isTransferring && BoxDrag.isDragging && !draggedItemsRef.current.includes(item.id) && BoxDrag.sourceBoxId == boxId && item.isDirectory && BoxDrag.target?.boxId !== boxId &&
                     "hover:ring-2 hover:ring-green-500 hover:bg-green-100 dark:hover:bg-green-900/30",
                 
                 // Dragged items opacity (only if not transferring)
