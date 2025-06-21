@@ -70,8 +70,44 @@ declare global {
             /** Read directory contents and return file/folder items */
             readDirectory: (dir: string) => Promise<FileSystemItem[]>;
             
+            /** Calculate the total size of a directory in bytes */
+            calculateFolderSize: (dirPath: string) => Promise<number>;
+            
             /** Read file content as string */
             readFile: (file: string) => Promise<string>;
+        };
+
+        /** Cloud file system API exposed by Electron preload script */
+        cloudFsApi: {
+            /** Connect to a new cloud account */
+            connectNewCloudAccount: (cloudType: CloudType) => Promise<string | null>;
+            
+            /** Get connected cloud accounts for a service */
+            getConnectedCloudAccounts: (cloudType: CloudType) => Promise<string[] | null>;
+            
+            /** Read directory contents from cloud storage */
+            readDirectory: (cloudType: CloudType, accountId: string, dir: string) => Promise<FileSystemItem[]>;
+            
+            /** Get file content from cloud storage */
+            getFile: (cloudType: CloudType, accountId: string, filePath: string) => Promise<FileContent>;
+            
+            /** Upload file to cloud storage */
+            postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer) => Promise<void>;
+            
+            /** Delete file from cloud storage */
+            deleteFile: (cloudType: CloudType, accountId: string, filePath: string) => Promise<void>;
+            
+            /** Calculate the total size of a cloud directory in bytes */
+            calculateFolderSize: (cloudType: CloudType, accountId: string, folderPath: string) => Promise<number>;
+            
+            /** Remove cloud account */
+            removeAccount: (cloudType: CloudType, accountId: string) => Promise<boolean>;
+            
+            /** Cancel cloud authentication */
+            cancelAuthentication: (cloudType: CloudType) => Promise<boolean>;
+            
+            /** Clear all cloud data */
+            clearData: () => Promise<boolean>;
         };
     }
 }

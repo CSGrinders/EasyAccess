@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
         ipcRenderer.invoke('cloud-post-file', cloudType, accountId, fileName, folderPath, data) as Promise<void>,
     deleteFile: (cloudType: CloudType, accountId: string, filePath: string) =>
         ipcRenderer.invoke('cloud-delete-file', cloudType, accountId, filePath) as Promise<void>,
+    calculateFolderSize: (cloudType: CloudType, accountId: string, folderPath: string) =>
+        ipcRenderer.invoke('cloud-calculate-folder-size', cloudType, accountId, folderPath) as Promise<number>,
     removeAccount: (cloudType: CloudType, accountId: string) =>
         ipcRenderer.invoke('remove-cloud-account', cloudType, accountId) as Promise<boolean>,
     cancelAuthentication: (cloudType: CloudType) =>
@@ -32,6 +34,8 @@ contextBridge.exposeInMainWorld('fsApi', {
     },
     readDirectory: (dir: string) =>
         ipcRenderer.invoke('read-directory', dir) as Promise<FileSystemItem[]>,
+    calculateFolderSize: (dirPath: string) =>
+        ipcRenderer.invoke('calculate-folder-size', dirPath) as Promise<number>,
     getFile: (filePath: string) =>
         ipcRenderer.invoke('get-file', filePath) as Promise<FileContent>,
     postFile: (fileName: string, folderPath: string, data: Buffer) =>

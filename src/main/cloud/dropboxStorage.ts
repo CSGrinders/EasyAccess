@@ -302,4 +302,52 @@ export class DropboxStorage implements CloudStorage {
             throw error;
         }
     }
+
+    async calculateFolderSize(folderPath: string): Promise<number> {
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            throw new Error('Dropbox client is not initialized');
+        }
+
+        try {
+            return await this.calculateFolderSizeRecursive(folderPath);
+        } catch (error) {
+            console.error('Error calculating folder size for Dropbox:', error);
+            throw error;
+        }
+    }
+
+    private async calculateFolderSizeRecursive(folderPath: string): Promise<number> {
+        try {
+            let path = folderPath;
+            if (path === '/') {
+                path = '';
+            }
+
+            console.log(`Calculating size for Dropbox folder: ${path}`);
+            
+            const response = await this.client!.filesListFolder({ path: path });
+            const entries = response.result.entries;
+
+            let totalSize = 0;
+
+            for (const entry of entries) {
+                if (entry['.tag'] === 'folder') {
+                    // Recursively calculate size for subdirectories
+                    const subFolderSize = await this.calculateFolderSizeRecursive(entry.path_lower!);
+                    totalSize += subFolderSize;
+                } else if (entry['.tag'] === 'file') {
+                    // Add file size 
+                    const fileSize = (entry as any).size || 0;
+                    totalSize += fileSize;
+                }
+            }
+
+            return totalSize;
+        } catch (error) {
+            console.error('Error calculating Dropbox folder size:', error);
+            throw error;
+        }
+    }
 }

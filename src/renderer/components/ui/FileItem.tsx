@@ -184,6 +184,7 @@ interface FileItemProps {
     draggedItemsRef: React.RefObject<string[]>;
     handleItemClick: (e: React.MouseEvent, item: FileSystemItem) => void;
     handleItemMouseDown: (e: React.MouseEvent, item: FileSystemItem) => void;
+    handleItemRightClick?: (e: React.MouseEvent, item: FileSystemItem) => void;
     itemRefs: React.RefObject<Map<string, HTMLDivElement>>;
     isTransferring?: boolean;
     transferInfo?: { isMove: boolean } | null;
@@ -197,6 +198,7 @@ export const FileItem = memo<FileItemProps>(function FileItem({
     draggedItemsRef, 
     handleItemClick, 
     handleItemMouseDown, 
+    handleItemRightClick,
     itemRefs,
     isTransferring = false,
     transferInfo = null
@@ -220,6 +222,13 @@ export const FileItem = memo<FileItemProps>(function FileItem({
                 if (!isTransferring) {
                     e.stopPropagation()
                     handleItemMouseDown(e, item)
+                }
+            }}
+            onContextMenu={(e) => {
+                if (!isTransferring && handleItemRightClick) {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleItemRightClick(e, item)
                 }
             }}
             className={cn(
