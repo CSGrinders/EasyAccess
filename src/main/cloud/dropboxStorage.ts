@@ -303,6 +303,35 @@ export class DropboxStorage implements CloudStorage {
         }
     }
 
+    async createDirectory(dirPath: string): Promise<void> {
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            throw new Error('Dropbox client is not initialized');
+        }
+
+        try {
+            const normalizedPath = dirPath.startsWith('/') ? dirPath : `/${dirPath}`;
+            
+            const response = await this.client.filesCreateFolderV2({ 
+                path: normalizedPath,
+                autorename: false // Don't auto-rename if folder exists
+            });
+            
+            console.log(`Dropbox folder "${normalizedPath}" created successfully:`, response);
+        } catch (error: any) {
+            // Check if the error is because the folder already exists
+            if (error?.error?.error?.['.tag'] === 'path' && 
+                error?.error?.error?.path?.['.tag'] === 'conflict') {
+                console.log(`Dropbox folder "${dirPath}" already exists`);
+                return; 
+            }
+            
+            console.error('Failed to create Dropbox folder:', error);
+            throw error;
+        }
+    }
+
     async calculateFolderSize(folderPath: string): Promise<number> {
         await this.initClient();
         if (!this.client) {

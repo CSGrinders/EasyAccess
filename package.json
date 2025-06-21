@@ -71,6 +71,7 @@
     "buffer": "^6.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "crypto-browserify": "^3.12.1",
     "diff": "^8.0.2",
     "dotenv": "^16.5.0",
     "dropbox": "^10.34.0",

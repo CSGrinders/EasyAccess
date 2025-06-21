@@ -567,6 +567,48 @@ export class GoogleDriveStorage implements CloudStorage {
     }
   }
 
+  async createDirectory(dirPath: string): Promise<void> {
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+    
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+    
+    const pathParts = dirPath.split('/').filter(part => part !== '');
+    let currentParentId = 'root';
+    
+    for (const folderName of pathParts) {
+      try {
+        // Check if folder already exists
+        const existingRes = await drive.files.list({
+          q: `'${currentParentId}' in parents and name='${folderName}' and mimeType='application/vnd.google-apps.folder'`,
+          fields: 'files(id)',
+        });
+        
+        if (existingRes.data.files && existingRes.data.files.length > 0) {
+          // Folder exists, use its ID as parent for next iteration
+          currentParentId = existingRes.data.files[0].id || '';
+        } else {
+          // Create new folder
+          const res = await drive.files.create({
+            requestBody: {
+              name: folderName,
+              mimeType: 'application/vnd.google-apps.folder',
+              parents: [currentParentId],
+            },
+          });
+          
+          currentParentId = res.data.id || '';
+          console.log(`Created Google Drive folder: ${folderName} with ID: ${currentParentId}`);
+        }
+      } catch (error) {
+        console.error(`Error creating folder ${folderName}:`, error);
+        throw error;
+      }
+    }
+  }
+
   async calculateFolderSize(folderPath: string): Promise<number> {
     await this.refreshOAuthClientIfNeeded();
     if (!this.oauth2Client) {
