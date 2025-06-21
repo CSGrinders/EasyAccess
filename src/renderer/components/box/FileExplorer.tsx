@@ -1007,19 +1007,23 @@ export const FileExplorer = memo(function FileExplorer ({
                     if (relativeX >= itemLeft && relativeX <= itemRight &&
                         relativeY >= itemTop && relativeY <= itemBottom) {
                         
-                        // Set this item as the drop target
-                        BoxDrag.setTarget({
-                            boxId: boxId,
-                            targetPath: item.path,
-                            targetId: item.id
-                        });
-                        localTargetRef.current = {
-                            boxId: boxId,
-                            targetPath: item.path,
-                            targetId: item.id
-                        };
-                        foundDropTarget = true
-                        break
+                        if (item.isDirectory) {
+                            // Set this item as the drop target
+                            BoxDrag.setTarget({
+                                boxId: boxId,
+                                targetPath: item.path,
+                                targetId: item.id
+                            });
+                            localTargetRef.current = {
+                                boxId: boxId,
+                                targetPath: item.path,
+                                targetId: item.id
+                            };
+                            foundDropTarget = true
+                            break
+                        } else {
+                            resetTarget();
+                        }
                     }
                 }
                 
