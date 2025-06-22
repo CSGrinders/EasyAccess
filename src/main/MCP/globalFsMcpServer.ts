@@ -13,12 +13,13 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { diffLines, createTwoFilesPatch } from 'diff';
 import { minimatch } from 'minimatch';
-import { getFile, readDirectory, getConnectedCloudAccounts, searchFilesFromStorageAccount, createDirectory, postFile } from "../cloud/cloudManager"
+import { getFile, readDirectory, getConnectedCloudAccounts, searchFilesFromStorageAccount, createDirectory, postFile, getFileInfo, getDirectoryTree, readFile } from "../cloud/cloudManager"
 import { CloudType } from "../../types/cloudType";
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { createServerMemory } from "./serverMemory";
-import { createDirectoryLocal, getFileLocal, postFileLocal } from "../local/localFileSystem";
+import { createDirectoryLocal, getFileLocal, postFileLocal, readFileLocal } from "../local/localFileSystem";
 import { triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerPostFileOnRenderer } from "../main";
+import { CLOUD_HOME } from "../../types/cloudType";
 
 
 export const createFsServer = async (allowedDirs: string[]) => {
@@ -415,7 +416,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
           description:
             "Make line-based edits to a text file. Each edit replaces exact line sequences " +
             "with new content. Returns a git-style diff showing the changes made. " +
-            "Only works within allowed directories.",
+            "Only works within allowed directories. Only supports local storage.",
           inputSchema: zodToJsonSchema(EditFileArgsSchema) as ToolInput,
         },
         {
@@ -517,7 +518,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
           // local storage
           if (!provider || !accountId) {
             const validPath = await validatePath(parsed.data.path);
-            const content = await fs.readFile(validPath, "utf-8");
+            const content = await readFileLocal(validPath);
             return {
               content: [{ type: "text", text: content }],
             };
@@ -532,15 +533,20 @@ export const createFsServer = async (allowedDirs: string[]) => {
           const cloudType = await validateProvider(provider);
 
           // read file from the cloud storage
-          const response = await getFile(cloudType, accountId, filePath);
+          try {
+            const content = await readFile(cloudType, accountId, filePath);
 
-          if (!response) {
-            throw new Error(`File not found: ${filePath}`);
-          }
+            if (!content) {
+              throw new Error(`File not found: ${filePath}`);
+            }
           
-          return {
-            content: [{ type: "text", text: response.content?.toString('utf-8') || '' }],
-          };
+            return {
+              content: [{ type: "text", text: content || '' }],
+            };
+          } catch (error) {
+            console.error('Error reading file from cloud storage:', error);
+            throw new Error(`Failed to read file ${filePath} from cloud storage: ${error instanceof Error ? error.message : String(error)}`);
+          }
         }
         // TODO: implement read_multiple_files for cloud storage
         case "read_multiple_files": {
@@ -557,7 +563,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
               parsed.data.paths.map(async (filePath: string) => {
                 try {
                   const validPath = await validatePath(filePath);
-                  const content = await fs.readFile(validPath, "utf-8");
+                  const content = await readFileLocal(validPath);
                   return `${filePath}:\n${content}\n`;
                 } catch (error) {
                   const errorMessage = error instanceof Error ? error.message : String(error);
@@ -578,28 +584,22 @@ export const createFsServer = async (allowedDirs: string[]) => {
           // convert provider to cloud type
           const cloudType = await validateProvider(provider);
           // read multiple files from the cloud storage
-          const fileContents: FileContent[] = await Promise.all(
+          const fileContents: string[] = await Promise.all(
             filePaths.map(async (filePath) => {
-              const response = await getFile(cloudType, accountId, filePath);
-              if (!response) {
-                throw new Error(`File not found: ${filePath}`);
-              }
-              return {
-                name: response.name,
-                content: response.content,
-                type: response.type,
-                url: response.url,
-                path: filePath,
-                sourceCloudType: cloudType,
-                sourceAccountId: accountId,
-              };
+              try {
+                const content = await readFile(cloudType, accountId, filePath);
+                if (!content) {
+                  throw new Error(`File not found: ${filePath}`);
+                }
+                return content;
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                return `${filePath}: Error - ${errorMessage}`;              }
             })
           );
 
           return {
-            content: [{ type: "text", text: (fileContents.map(file =>
-              `${file.name}:\n${file.content?.toString('utf-8') || ''}\n`
-            )).join("\n---\n") }],
+            content: [{ type: "text", text: fileContents.join("\n---\n") }],
           };
         }
 
@@ -609,11 +609,39 @@ export const createFsServer = async (allowedDirs: string[]) => {
           if (!parsed.success) {
             throw new Error(`Invalid arguments for write_file: ${parsed.error}`);
           }
-          const validPath = await validatePath(parsed.data.path);
-          await fs.writeFile(validPath, parsed.data.content, "utf-8");
-          return {
-            content: [{ type: "text", text: `Successfully wrote to ${parsed.data.path}` }],
-          };
+          
+          const provider = parsed.data.provider;
+          const accountId = parsed.data.accountId;
+          
+          // local storage
+          if (!provider || !accountId) {
+            const validPath = await validatePath(parsed.data.path);
+            await fs.writeFile(validPath, parsed.data.content, "utf-8");
+            return {
+              content: [{ type: "text", text: `Successfully wrote to ${parsed.data.path}` }],
+            };
+          }
+
+          // cloud storage
+          const filePath = parsed.data.path;
+          if (!filePath) {
+            throw new Error("File path is required for cloud storage operations");
+          }
+          
+          const cloudType = await validateProvider(provider);
+          const fileName = path.basename(filePath);
+          const folderPath = path.dirname(filePath);
+          const data = Buffer.from(parsed.data.content, 'utf-8');
+          
+          try {
+            await postFile(cloudType, accountId, fileName, folderPath, data);
+            return {
+              content: [{ type: "text", text: `Successfully wrote to ${filePath} in cloud storage` }],
+            };
+          } catch (error) {
+            console.error('Error writing file to cloud storage:', error);
+            throw new Error(`Failed to write file ${filePath} to cloud storage: ${error instanceof Error ? error.message : String(error)}`);
+          }
         }
 
         case "edit_file": {
@@ -714,35 +742,118 @@ export const createFsServer = async (allowedDirs: string[]) => {
             throw new Error(`Invalid arguments for directory_tree: ${parsed.error}`);
           }
 
+          const provider = parsed.data.provider;
+          const accountId = parsed.data.accountId;
+
+          // local storage
+          if (!provider || !accountId) {
+            interface TreeEntry {
+              name: string;
+              type: 'file' | 'directory';
+              children?: TreeEntry[];
+            }
+
+            async function buildTree(currentPath: string): Promise<TreeEntry[]> {
+              const validPath = await validatePath(currentPath);
+              const entries = await fs.readdir(validPath, { withFileTypes: true });
+              const result: TreeEntry[] = [];
+
+              for (const entry of entries) {
+                const entryData: TreeEntry = {
+                  name: entry.name,
+                  type: entry.isDirectory() ? 'directory' : 'file'
+                };
+
+                if (entry.isDirectory()) {
+                  const subPath = path.join(currentPath, entry.name);
+                  entryData.children = await buildTree(subPath);
+                }
+
+                result.push(entryData);
+              }
+
+              return result;
+            }
+
+            const treeData = await buildTree(parsed.data.path);
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify(treeData, null, 2)
+              }],
+            };
+          }
+
+          // cloud storage
+          const directoryPath = parsed.data.path;
+          if (!directoryPath) {
+            throw new Error("Directory path is required for cloud storage operations");
+          }
+          
+          const cloudType = await validateProvider(provider);
+          const fileSystemItems: FileSystemItem[] = await getDirectoryTree(cloudType, accountId, directoryPath);
+
+          if (!fileSystemItems) {
+            throw new Error(`Directory not found or empty: ${directoryPath}`);
+          }
+
+          console.log("fileSystemItems", fileSystemItems);
+
+          // Convert FileSystemItem[] to tree structure
           interface TreeEntry {
             name: string;
             type: 'file' | 'directory';
             children?: TreeEntry[];
           }
 
-          async function buildTree(currentPath: string): Promise<TreeEntry[]> {
-            const validPath = await validatePath(currentPath);
-            const entries = await fs.readdir(validPath, { withFileTypes: true });
-            const result: TreeEntry[] = [];
+          function buildTreeFromItems(items: FileSystemItem[], basePath: string): TreeEntry[] {
+            const tree: TreeEntry[] = [];
+            const itemMap = new Map<string, FileSystemItem>();
 
-            for (const entry of entries) {
-              const entryData: TreeEntry = {
-                name: entry.name,
-                type: entry.isDirectory() ? 'directory' : 'file'
-              };
-
-              if (entry.isDirectory()) {
-                const subPath = path.join(currentPath, entry.name);
-                entryData.children = await buildTree(subPath);
+            // Create a map of items by their full path
+            for (const item of items) {
+              const relativePath = item.path.replace(CLOUD_HOME + basePath, '').replace(/^\//, '');
+              if (relativePath) {
+                itemMap.set(relativePath, item);
               }
-
-              result.push(entryData);
             }
 
-            return result;
+            // Build tree structure
+            for (const item of items) {
+              const relativePath = item.path.replace(CLOUD_HOME + basePath, '').replace(/^\//, '');
+              if (!relativePath) continue;
+
+              const pathParts = relativePath.split('/');
+              let currentLevel = tree;
+              let currentPath = '';
+
+              for (let i = 0; i < pathParts.length; i++) {
+                const part = pathParts[i];
+                currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+                let existingNode = currentLevel.find(node => node.name === part);
+                if (!existingNode) {
+                  const item = itemMap.get(currentPath);
+                  if (item) {
+                    existingNode = {
+                      name: part,
+                      type: item.isDirectory ? 'directory' : 'file',
+                      children: item.isDirectory ? [] : undefined
+                    };
+                    currentLevel.push(existingNode);
+                  }
+                }
+
+                if (existingNode && existingNode.children && i < pathParts.length - 1) {
+                  currentLevel = existingNode.children;
+                }
+              }
+            }
+
+            return tree;
           }
 
-          const treeData = await buildTree(parsed.data.path);
+          const treeData = buildTreeFromItems(fileSystemItems, directoryPath);
           return {
             content: [{
               type: "text",
@@ -882,13 +993,50 @@ export const createFsServer = async (allowedDirs: string[]) => {
           if (!parsed.success) {
             throw new Error(`Invalid arguments for get_file_info: ${parsed.error}`);
           }
-          const validPath = await validatePath(parsed.data.path);
-          const info = await getFileStats(validPath);
+          
+          const provider = parsed.data.provider;
+          const accountId = parsed.data.accountId;
+          
+          // local storage
+          if (!provider || !accountId) {
+            const validPath = await validatePath(parsed.data.path);
+            const info = await getFileStats(validPath);
+            return {
+              content: [{
+                type: "text", text: Object.entries(info)
+                  .map(([key, value]) => `${key}: ${value}`)
+                  .join("\n")
+              }],
+            };
+          }
+
+          // cloud storage
+          const filePath = parsed.data.path;
+          if (!filePath) {
+            throw new Error("File path is required for cloud storage operations");
+          }
+          
+          const cloudType = await validateProvider(provider);
+          const fileInfo: FileSystemItem = await getFileInfo(cloudType, accountId, filePath);
+
+          if (!fileInfo) {
+            throw new Error(`File not found: ${filePath}`);
+          }
+
+          const infoText = Object.entries({
+            name: fileInfo.name,
+            path: fileInfo.path,
+            isDirectory: fileInfo.isDirectory,
+            size: fileInfo.size || 'N/A',
+            modifiedTime: fileInfo.modifiedTime ? new Date(fileInfo.modifiedTime).toISOString() : 'N/A',
+            id: fileInfo.id
+          })
+            .map(([key, value]) => `${key}: ${value}`)
+            .join("\n");
+
           return {
             content: [{
-              type: "text", text: Object.entries(info)
-                .map(([key, value]) => `${key}: ${value}`)
-                .join("\n")
+              type: "text", text: infoText
             }],
           };
         }

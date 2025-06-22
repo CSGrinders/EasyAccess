@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, shell, ipcRenderer } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { config } from 'dotenv';
-import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory } from './cloud/cloudManager';
+import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getFileInfo, getDirectoryTree } from './cloud/cloudManager';
 import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal } from './local/localFileSystem';
 // Load environment variables
 // In development, load from project root; in production, load from app Contents directory
@@ -153,6 +153,12 @@ ipcMain.handle('cloud-calculate-folder-size', async (_e, cloudType: CloudType, a
 });
 ipcMain.handle('cloud-create-directory', async (_e, cloudType: CloudType, accountId: string, dirPath: string) => {
     return createDirectory(cloudType, accountId, dirPath);
+});
+ipcMain.handle('cloud-get-file-info', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
+    return getFileInfo(cloudType, accountId, filePath);
+});
+ipcMain.handle('cloud-get-directory-tree', async (_e, cloudType: CloudType, accountId: string, dirPath: string) => {
+    return getDirectoryTree(cloudType, accountId, dirPath);
 });
 ipcMain.handle('remove-cloud-account', async (_e, cloudType: CloudType, accountId: string) => {
     return removeCloudAccount(cloudType, accountId);

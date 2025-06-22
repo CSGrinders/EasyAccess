@@ -51,7 +51,7 @@ export const readDirectoryLocal = async (dirPath: string): Promise<FileSystemIte
 };
 
 export const getFileLocal = async (filePath: string) => {
-   console.log('Reading file:', filePath);
+   console.log('Getting file:', filePath);
 
     const permissionManager = PermissionManager.getInstance();
     
@@ -123,6 +123,37 @@ export const getFileLocal = async (filePath: string) => {
     };
 
     return fileContent;
+};
+
+// read the file content as utf-8 string from the local file system
+// used for reading the text content of the file
+export const readFileLocal = async (filePath: string): Promise<string> => {
+    try {
+        console.log('Reading file:', filePath);
+        const permissionManager = PermissionManager.getInstance();
+        
+        // Check if we have permission for this path
+        if (!permissionManager.hasPermissionForPath(filePath)) {
+            throw new Error(`Access denied to ${filePath}. Insufficient permissions.`);
+        }
+
+        // check if the file or directory exists
+        try {
+            await fs.promises.access(filePath, fs.constants.R_OK);
+        } catch (error: any) {
+            if (error.code === 'EPERM' || error.code === 'EACCES') {
+                throw new Error(`Permission denied accessing ${filePath}. `);
+            }
+            console.error('File or directory does not exist:', filePath, error);
+            throw new Error(`File or directory does not exist: ${filePath}`);
+        }
+
+        const data = await fs.promises.readFile(filePath, 'utf-8');
+        return data;
+    } catch (error: any) {
+        console.error('Error reading file:', error);
+        throw error;
+    }
 };
 
 // Handle opening external URLs

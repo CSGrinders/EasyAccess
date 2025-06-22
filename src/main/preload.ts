@@ -19,6 +19,10 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
         ipcRenderer.invoke('cloud-delete-file', cloudType, accountId, filePath) as Promise<void>,
     createDirectory: (cloudType: CloudType, accountId: string, folderPath: string, folderName: string) =>
         ipcRenderer.invoke('cloud-create-directory', cloudType, accountId, folderPath, folderName) as Promise<void>,
+    getFileInfo: (cloudType: CloudType, accountId: string, filePath: string) =>
+        ipcRenderer.invoke('cloud-get-file-info', cloudType, accountId, filePath) as Promise<FileSystemItem>,
+    getDirectoryTree: (cloudType: CloudType, accountId: string, dirPath: string) =>
+        ipcRenderer.invoke('cloud-get-directory-tree', cloudType, accountId, dirPath) as Promise<FileSystemItem[]>,
     calculateFolderSize: (cloudType: CloudType, accountId: string, folderPath: string) =>
         ipcRenderer.invoke('cloud-calculate-folder-size', cloudType, accountId, folderPath) as Promise<number>,
     removeAccount: (cloudType: CloudType, accountId: string) =>

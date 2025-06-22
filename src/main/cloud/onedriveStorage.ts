@@ -599,12 +599,124 @@ export class OneDriveStorage implements CloudStorage {
   }
 
   async getFileInfo(filePath: string): Promise<FileSystemItem> {
-    // Not implemented for Dropbox yet
-    throw new Error('getFileInfo is not implemented for DropboxStorage');
+    if (!this.graphClient) {
+      await this.initAccount();
+    }
+
+    if (!this.graphClient) {
+      console.error('Graph client is not initialized');
+      throw new Error('Graph client is not initialized');
+    }
+
+    const apiPath = `/me/drive/root:/${filePath.replace(/^\//, '')}`;
+
+    try {
+      const response = await this.graphClient.api(apiPath).get();
+      
+      if (!response) {
+        throw new Error('File not found');
+      }
+
+      const fileSystemItem: FileSystemItem = {
+        id: response.id || '',
+        name: response.name || '',
+        isDirectory: !!response.folder,
+        path: CLOUD_HOME + filePath,
+        size: response.size || 0,
+        modifiedTime: response.lastModifiedDateTime ? new Date(response.lastModifiedDateTime).getTime() : undefined,
+      };
+
+      return fileSystemItem;
+    } catch (error) {
+      console.error('Error getting file info from OneDrive:', error);
+      throw error;
+    }
   }
 
   async getDirectoryTree(dir: string): Promise<FileSystemItem[]> {
-    // Not implemented for Dropbox yet
-    throw new Error('getDirectoryTree is not implemented for DropboxStorage');
+    if (!this.graphClient) {
+      await this.initAccount();
+    }
+
+    if (!this.graphClient) {
+      console.error('Graph client is not initialized');
+      throw new Error('Graph client is not initialized');
+    }
+
+    const result: FileSystemItem[] = [];
+
+    try {
+      await this.buildDirectoryTreeRecursive(dir, result);
+      return result;
+    } catch (error) {
+      console.error('Error getting directory tree from OneDrive:', error);
+      throw error;
+    }
+  }
+
+  private async buildDirectoryTreeRecursive(currentPath: string, result: FileSystemItem[]): Promise<void> {
+    const apiPath = currentPath === '/' || currentPath === ''
+      ? "/me/drive/root/children"
+      : `/me/drive/root:/${currentPath.replace(/^\//, '')}:/children`;
+
+    try {
+      const response = await this.graphClient.api(apiPath).get();
+
+      if (!response || !response.value || !Array.isArray(response.value)) {
+        return;
+      }
+
+      for (const item of response.value) {
+        let itemPath = '';
+        if (item.parentReference && item.parentReference.path) {
+          const parentPath = item.parentReference.path.replace('/drive/root:', '');
+          itemPath = `${parentPath}/${item.name}`.replace(/^\/?/, '/');
+        } else {
+          itemPath = `/${item.name}`;
+        }
+
+        const fileSystemItem: FileSystemItem = {
+          id: item.id || '',
+          name: item.name || '',
+          isDirectory: !!item.folder,
+          path: CLOUD_HOME + itemPath,
+          size: item.size || 0,
+          modifiedTime: item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime).getTime() : undefined,
+        };
+
+        result.push(fileSystemItem);
+
+        // Recursively process subdirectories
+        if (item.folder) {
+          await this.buildDirectoryTreeRecursive(itemPath, result);
+        }
+      }
+    } catch (error) {
+      console.error('Error building directory tree for OneDrive:', error);
+      throw error;
+    }
+  }
+
+  async readFile(filePath: string): Promise<string> {
+    if (!this.graphClient) {
+      await this.initAccount();
+    }
+
+    if (!this.graphClient) {
+      console.error('Graph client is not initialized');
+      throw new Error('Graph client is not initialized');
+    }
+
+    try {
+      const fileContent = await this.getFile(filePath);
+      if (fileContent.content) {
+        return fileContent.content.toString('utf-8');
+      } else {
+        throw new Error('File content is empty or not available');
+      }
+    } catch (error) {
+      console.error('Error reading file from OneDrive:', error);
+      throw error;
+    }
   }
 }

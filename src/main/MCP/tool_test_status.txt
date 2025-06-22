@@ -114,7 +114,11 @@ check if new directory is created and file is created under there
 
 
 ----------------------------------------------------------------------------------------
-
+directory_tree
+{"path": "/A52-photos", "provider": "google", "accountId": "sohn5312@gmail.com"}
+{"path": "/", "provider": "dropbox", "accountId": "sohn5312@gmail.com"}
+{"path": "/", "provider": "onedrive", "accountId": "sohn5312@gmail.com"}
+{"path": "Users/hojinsohn/Documents/HWs"}
 
 Left to be implemented:
 read_file
