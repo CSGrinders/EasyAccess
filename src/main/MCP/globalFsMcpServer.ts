@@ -821,7 +821,12 @@ export const createFsServer = async (allowedDirs: string[]) => {
             const destFolder = path.dirname(parsed.data.destination);
             const destFileName = path.basename(parsed.data.destination);
             // post file to the cloud storage
-            await createDirectory(cloudType, parsed.data.destination_accountId, destFolder); // Ensure the destination directory exists
+            try {
+              await createDirectory(cloudType, parsed.data.destination_accountId, destFolder); // Ensure the destination directory exists
+            } catch (error) {
+              console.log('Error creating directory in cloud storage:', error);
+              console.log("Directory creation failed, but it might already exist. Continuing with file move.");
+            }
             // await postFile(cloudType, parsed.data.destination_accountId, destFileName, destFolder, dataToMove.content);
             await triggerPostFileOnRenderer(destFolder, cloudType, parsed.data.destination_accountId, destFileName);
             if (!sourceProvider) {

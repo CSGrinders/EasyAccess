@@ -325,31 +325,40 @@ export class DropboxStorage implements CloudStorage {
             console.log('Dropbox search entries:', entries);
 
             for (const entry of entries) {
-                if (entry['.tag'] === 'file') {
-                    const fileName = entry.name;
-                    const filePath = entry.path_lower || '';
-                    // Check if the file matches the pattern and does not match any exclude patterns
-                    if ((fileName.includes(pattern) || pattern.includes("*") && minimatch(fileName, pattern, { dot: true }))
-                        && !excludePatterns.some(exclude => fileName.includes(exclude))) {
-                        result.push({
-                            id: entry.id,
-                            name: fileName,
-                            isDirectory: false,
-                            path: filePath,
-                        });
+                try {
+                    if (entry['.tag'] === 'file') {
+                        const fileName = entry.name;
+                        const filePath = entry.path_lower || '';
+                        const fileNameCheck = fileName.toLowerCase();
+                        const folderNameCheck = filePath.toLowerCase();
+                        // Check if the file matches the pattern and does not match any exclude patterns
+                        if ((fileNameCheck.includes(pattern.toLowerCase()) || 
+                            (pattern.includes("*") && minimatch(fileNameCheck, pattern.toLowerCase(), { dot: true })))
+                            && !excludePatterns.some(exclude => fileNameCheck.includes(exclude.toLowerCase()))) {
+                            result.push({
+                                id: entry.id,
+                                name: fileName,
+                                isDirectory: false,
+                                path: filePath,
+                            });
+                        }
+                    } else if (entry['.tag'] === 'folder') {
+                        const folderPath = entry.path_lower || '';
+                        const folderNameCheck = folderPath.toLowerCase();
+                        // Check if the folder matches the pattern and does not match any exclude patterns
+                        if ((folderNameCheck.includes(pattern.toLowerCase()) || pattern.includes("*") && minimatch(folderNameCheck, pattern.toLowerCase(), { dot: true }))
+                            && !excludePatterns.some(exclude => folderNameCheck.includes(exclude.toLowerCase()))) {
+                            result.push({
+                                id: entry.id,
+                                name: entry.name,
+                                isDirectory: true,
+                                path: folderPath,
+                            });
+                        }
                     }
-                } else if (entry['.tag'] === 'folder') {
-                    const folderPath = entry.path_lower || '';
-                    // Check if the folder matches the pattern and does not match any exclude patterns
-                    if ((folderPath.includes(pattern) || pattern.includes("*") && minimatch(folderPath, pattern, { dot: true }))
-                        && !excludePatterns.some(exclude => folderPath.includes(exclude))) {
-                        result.push({
-                            id: entry.id,
-                            name: entry.name,
-                            isDirectory: true,
-                            path: folderPath,
-                        });
-                    }
+                } catch (error) {
+                    console.error('Error processing entry:', entry, error);
+                    console.log('Skipping entry due to error');
                 }
             }
         } catch (error) {

@@ -580,44 +580,52 @@ export class GoogleDriveStorage implements CloudStorage {
       const result: FileSystemItem[] = [];
 
       const search = async (currentPath: string): Promise<void> => {
-        const folderId = currentPath ? await this.getFolderId(currentPath) : 'root';
-        const res = await drive.files.list({
-          q: `'${folderId}' in parents and trashed = false`,
-        });
-
-        console.log(`Searching in folder: ${currentPath}`);
-        console.log(`Found files:`, res.data.files);
-
-        const files = res.data.files || [];
-        for (const file of files) {
-          // check if the file matches any of the exclude patterns
-          const matchesExclude = excludePatterns.some(excludePattern => {
-            return file.name?.includes(excludePattern) || 
-                    (excludePattern.includes("*") && minimatch(file.name || '', excludePattern, { dot: true }));
+        try {
+          const folderId = currentPath ? await this.getFolderId(currentPath) : 'root';
+          const res = await drive.files.list({
+            q: `'${folderId}' in parents and trashed = false`,
           });
-          if (matchesExclude) {
-            continue; // Skip files that match exclude patterns
-          }
-          // Check if the file matches the search pattern
-          const matchesPattern = file.name?.includes(pattern) || 
-                    (pattern.includes("*") && minimatch(file.name || '', pattern, { dot: true }));
-          if (matchesPattern) {
-            const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
-            // skip if the filePath is empty or undefined
-            if (!filePath || filePath.trim() === '') {
-              continue;
-            }
-            result.push({
-              id: file.id || '',
-              name: file.name || '',
-              isDirectory: file.mimeType === 'application/vnd.google-apps.folder',
-              path: filePath,
+
+          console.log(`Searching in folder: ${currentPath}`);
+          console.log(`Found files:`, res.data.files);
+
+          const files = res.data.files || [];
+          for (const file of files) {
+            // check if the file matches any of the exclude patterns
+            const matchesExclude = excludePatterns.some(excludePattern => {
+              return file.name?.toLowerCase().includes(excludePattern.toLowerCase()) || 
+                      (excludePattern.includes("*") && minimatch(file.name?.toLowerCase() || '', excludePattern.toLowerCase(), { dot: true }));
             });
+            if (matchesExclude) {
+              continue; // Skip files that match exclude patterns
+            }
+            // Check if the file matches the search pattern
+            const matchesPattern = file.name?.toLowerCase().includes(pattern.toLowerCase()) || 
+                      (pattern.includes("*") && minimatch(file.name?.toLowerCase() || '', pattern.toLowerCase(), { dot: true }));
+            if (matchesPattern) {
+              const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
+              // skip if the filePath is empty or undefined
+              if (!filePath || filePath.trim() === '') {
+                continue;
+              }
+              result.push({
+                id: file.id || '',
+                name: file.name || '',
+                isDirectory: file.mimeType === 'application/vnd.google-apps.folder',
+                path: filePath,
+              });
+            }
+            // If it's a directory, search recursively
+            if (file.mimeType === 'application/vnd.google-apps.folder') {
+              if (currentPath === '/') {
+                currentPath = ''; // If root, set currentPath to empty string
+              }
+              await search(currentPath ? `${currentPath}/${file.name ?? ''}` : (file.name ?? ''));
+            }
           }
-          // If it's a directory, search recursively
-          if (file.mimeType === 'application/vnd.google-apps.folder') {
-            await search(currentPath ? `${currentPath}/${file.name ?? ''}` : (file.name ?? ''));
-          }
+        } catch (error) {
+          console.error('Error searching files:', error);
+          console.log('skipping search for path:', currentPath);
         }
       }
 

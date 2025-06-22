@@ -537,6 +537,11 @@ export async function createDirectory(cloudType: CloudType, accountId: string, d
   try {
     dirPath = dirPath.replace(CLOUD_HOME, "");
     console.log('Creating directory in cloud account:', cloudType, accountId, dirPath);
+
+    if (dirPath === '' || dirPath === '/') {
+      console.log('Skipping directory creation for root path');
+      return; // Skip creating root directory
+    }
     
     const accounts = StoredAccounts.get(cloudType);
     if (accounts) {
