@@ -2,7 +2,6 @@ import { CloudStorage, AuthTokens, isValidToken } from './cloudStorage';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
-import { file } from 'googleapis/build/src/apis/file';
 import dotenv from 'dotenv';
 import { minimatch } from 'minimatch';
 import { v4 as uuidv4 } from 'uuid';
@@ -50,36 +49,57 @@ export class OneDriveStorage implements CloudStorage {
 
     let cachePath;
     if (process.platform === 'win32') {
-      cachePath = path.join(process.env.LOCALAPPDATA || '', './msal-cache.json');
+      cachePath = path.join(process.env.LOCALAPPDATA || '', 'EasyAccess', 'msal-cache.json');
     } else if (process.platform === 'darwin') {
-      cachePath = path.join(process.env.HOME || '', './Library/Application Support/EasyAccess/msal-cache.json');
+      cachePath = path.join(process.env.HOME || '', 'Library', 'Application Support', 'EasyAccess', 'msal-cache.json');
     } else {
-      // Linux
-      cachePath = path.join(process.env.HOME || '', './.config/EasyAccess/msal-cache.json');
+      cachePath = path.join(process.env.HOME || '', '.config', 'EasyAccess', 'msal-cache.json');
     }
 
-    const persistenceConfig = {
-      cachePath,
-      dataProtectionScope: DataProtectionScope.CurrentUser,
-      serviceName: "EasyAccess",
-      accountName: "ElectronApp",
-      usePlaintextFileOnLinux: true,
-    };
+    try {
+      const persistenceConfig = {
+        cachePath,
+        dataProtectionScope: DataProtectionScope.CurrentUser,
+        serviceName: "EasyAccess",
+        accountName: "ElectronApp",
+        usePlaintextFileOnLinux: true,
+      };
 
-    // Create a persistence plugin for MSAL
-    const persistence = await PersistenceCreator.createPersistence(persistenceConfig);
+      // https://learn.microsoft.com/en-us/entra/identity-platform/msal-node-extensions
+      // The PersistenceCreator obfuscates a lot of the complexity by doing the following actions for you :-
+      // 1. Detects the environment the application is running on and initializes the right persistence instance for the environment.
+      // 2. Performs persistence validation for you.
+      // 3. Performs any fallbacks if necessary.
+      const persistence = await PersistenceCreator.createPersistence(persistenceConfig);
+      const publicClientConfig = {
+        ...MSAL_CONFIG,
+        // This hooks up the cross-platform cache into MSAL
+        cache: {
+          cachePlugin: new PersistenceCachePlugin(persistence),
+        },
+      };
 
-    // Attach the persistence to MSAL config
-    const msalConfig = {
-      ...MSAL_CONFIG,
-      cache: {
-        cachePlugin: new PersistenceCachePlugin(persistence),
-      },
-    };
+      this.client = new PublicClientApplication(publicClientConfig);
 
-    // Initialize the MSAL client with the configuration and persistence plugin
-    // This will allow the PUBLIC client to access the stored accounts and tokens
-    this.client = new PublicClientApplication(msalConfig);
+      console.log('MSAL client initialized with safeStorage persistence');
+    } catch (error) {
+      console.warn('Failed to initialize MSAL with persistence, falling back to in-memory cache:', error);
+      
+      // Fallback to in-memory cache if persistence fails
+      const msalConfig = {
+        ...MSAL_CONFIG,
+        cache: {
+          cachePlugin: {
+            beforeCacheAccess: async () => {},
+            afterCacheAccess: async () => {},
+            getCache: () => new Map(),
+            setCache: () => {},
+          },
+        },
+      };
+      
+      this.client = new PublicClientApplication(msalConfig);
+    }
   }
 
   // initialize the account if the account id is set (loaded from the local storage ==> initialize the client & account for api calls)

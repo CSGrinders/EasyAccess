@@ -211,6 +211,10 @@ export async function connectNewCloudAccount(cloudType: CloudType) : Promise<str
       } else {
         throw new Error(`Failed to connect to ${cloudType} account - no account ID received`);
       }
+    })
+    .catch((error: any) => {
+      console.error(`Error connecting to ${cloudType}:`, error);
+      throw error;
     });
 
     // Register the active authentication
@@ -219,6 +223,8 @@ export async function connectNewCloudAccount(cloudType: CloudType) : Promise<str
       promise: authPromise,
       cancel: cancelAuth
     });
+
+    console.log('authPromise: ', authPromise);  
 
     const result = await authPromise;
 
@@ -239,6 +245,7 @@ export function cancelCloudAuthentication(cloudType: CloudType): boolean {
   if (activeAuth) {
     activeAuth.cancel();
 
+    // not used anymore?
     if (activeAuth.browserWindow && !activeAuth.browserWindow.isDestroyed()) {
       activeAuth.browserWindow.close();
     }
@@ -325,7 +332,22 @@ export async function readFile(CloudType: CloudType, accountId: string, filePath
             return await account.readFile(filePath);
           } catch (error: any) {
             console.error(`Error reading file from ${CloudType}:`, error);
-            throw error;
+            
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
+              throw new Error('File not found or no longer exists.');
+            } else if (error.message?.includes('too large') || error.message?.includes('size limit')) {
+              throw new Error('File is too large to read.');
+            } else if (error.message?.includes('quota') || error.message?.includes('storage')) {
+              throw new Error('Storage quota exceeded or storage service unavailable.');
+            } else if (error.message?.includes('binary') || error.message?.includes('encoding')) {
+              throw new Error('File is not a text file and cannot be read as text.');
+            } else {
+              throw new Error(`Failed to read file: ${error.message || 'Unknown error'}`);
+            }
           }
         }
       }

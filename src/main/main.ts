@@ -2,8 +2,8 @@ import { app, BrowserWindow, ipcMain, shell, ipcRenderer } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { config } from 'dotenv';
-import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getFileInfo, getDirectoryTree } from './cloud/cloudManager';
-import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal } from './local/localFileSystem';
+import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getFileInfo, getDirectoryTree, readFile } from './cloud/cloudManager';
+import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal } from './local/localFileSystem';
 // Load environment variables
 // In development, load from project root; in production, load from app Contents directory
 const envPath = app.isPackaged 
@@ -14,10 +14,8 @@ console.log('Loading .env from:', envPath);
 config({ path: envPath });
 import { CloudType } from "@Types/cloudType";
 import { FileContent, FileSystemItem } from '@Types/fileSystem';
-import * as mime from 'mime-types';
 import MCPClient from './MCP/mcpClient';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createFileSystemServer } from './MCP/fileSystemMcpServer';
 import { PermissionManager } from './permissions/permissionManager';
 import { createFsServer } from './MCP/globalFsMcpServer';
 import { v4 as uuidv4 } from 'uuid';
@@ -160,6 +158,9 @@ ipcMain.handle('cloud-get-file-info', async (_e, cloudType: CloudType, accountId
 ipcMain.handle('cloud-get-directory-tree', async (_e, cloudType: CloudType, accountId: string, dirPath: string) => {
     return getDirectoryTree(cloudType, accountId, dirPath);
 });
+ipcMain.handle('cloud-read-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
+    return readFile(cloudType, accountId, filePath);
+});
 ipcMain.handle('remove-cloud-account', async (_e, cloudType: CloudType, accountId: string) => {
     return removeCloudAccount(cloudType, accountId);
 });
@@ -285,6 +286,10 @@ ipcMain.handle('read-directory', async (_e, dirPath: string) => {
     return await readDirectoryLocal(dirPath);
 })
 
+ipcMain.handle('read-file', async (_e, filePath: string) => {
+    return await readFileLocal(filePath);
+})
+
 ipcMain.handle('search-file', async (_e, 
     rootPath: string,
     pattern: string,
@@ -348,15 +353,6 @@ ipcMain.handle('mcp-process-query-test', (_e, toolName, toolArgs) => {
     console.log("Processing MCP tool test:", toolName, parsedArgs);
     return mcpClient?.callToolTest(toolName, parsedArgs);
 });
-
-// async function invokeRendererFunction(name: string, ...args: any[]) {
-//   const win = BrowserWindow.getAllWindows()[0];
-//   if (win) {
-//     win.webContents.send('invoke-renderer-function', { name, args });
-//   } else {
-//     console.error('No renderer window available');
-//   }
-// }
 
 // Store pending promises
 const pendingInvocations = new Map<string, { resolve: (value: any) => void; reject: (error: any) => void }>();

@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
         ipcRenderer.invoke('get-connected-cloud-accounts', cloudType) as Promise<string[] | null>,
     readDirectory: (cloudType: CloudType, accountId: string, dir: string) =>
         ipcRenderer.invoke('cloud-read-directory', cloudType, accountId, dir) as Promise<FileSystemItem[]>,
+    readFile: (cloudType: CloudType, accountId: string, filePath: string) =>
+        ipcRenderer.invoke('cloud-read-file', cloudType, accountId, filePath) as Promise<string>,
     getFile: (cloudType: CloudType, accountId: string, filePath: string) =>
         ipcRenderer.invoke('cloud-get-file', cloudType, accountId, filePath) as Promise<FileContent>,
     postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer) =>
@@ -40,6 +42,8 @@ contextBridge.exposeInMainWorld('fsApi', {
     },
     readDirectory: (dir: string) =>
         ipcRenderer.invoke('read-directory', dir) as Promise<FileSystemItem[]>,
+    readFile: (filePath: string) =>
+        ipcRenderer.invoke('read-file', filePath) as Promise<string>,
     calculateFolderSize: (dirPath: string) =>
         ipcRenderer.invoke('calculate-folder-size', dirPath) as Promise<number>,
     getFile: (filePath: string) =>

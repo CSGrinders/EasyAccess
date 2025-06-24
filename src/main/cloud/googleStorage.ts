@@ -31,7 +31,8 @@ const GOOGLE_SCOPE = [
 /**
  * Temporary redirect URL for OAuth2
  */
-const SUCCESS_REDIRECT_URL = 'http://localhost:53682';
+const PORT = 53684; // Default port for the local server
+const SUCCESS_REDIRECT_URL = `http://localhost:${PORT}`;
 
 export class GoogleDriveStorage implements CloudStorage {
   accountId?: string | undefined;
@@ -40,6 +41,7 @@ export class GoogleDriveStorage implements CloudStorage {
   private currentOAuthInstance: any = null; 
   private currentAuthUrl: string | null = null; // Store the current auth URL to prevent multiple instances
   private oauth2Client: OAuth2Client | null = null;
+  private currentAuthServer: http.Server | null = null;
 
   async connect(): Promise<void | any> {
     try {
@@ -85,6 +87,10 @@ export class GoogleDriveStorage implements CloudStorage {
   cancelAuthentication(): void {
     console.log('Cancelling Google Drive authentication');
     this.authCancelled = true;
+
+    if (this.currentAuthServer) {
+      this.currentAuthServer.close();
+    }
     
     if (this.currentOAuthInstance) {
       try {
@@ -245,30 +251,53 @@ export class GoogleDriveStorage implements CloudStorage {
     return this.AuthToken || null;
   }
 
-
   // local server to handle the OAuth redirect
   // This server listens for the redirect from Google after the user authorizes the app
   private async startAuthServer(): Promise<string> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       const server = http.createServer((req, res) => {
-        const reqUrl = new URL(req.url || '', `http://localhost:53682`);
+        const reqUrl = new URL(req.url || '', SUCCESS_REDIRECT_URL);
         const code = reqUrl.searchParams.get('code');
 
         if (code) {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
           res.end('Authorization successful! You can close this window.');
           server.close();
           resolve(code);
         } else {
+          res.writeHead(400, { 'Content-Type': 'text/html' });
           res.end('Authorization failed. No code received.');
           server.close();
           reject(new Error('No authorization code found'));
         }
       });
 
+      this.currentAuthServer = server as any;
+
       // redirect URI for OAuth2...
-      server.listen(53682, () => {
-        console.log('Listening for auth redirect on http://localhost:53682');
+      server.listen(PORT, () => {
+        console.log(`Listening for auth redirect on http://localhost:${PORT}`);
       });
+
+      // Handle server errors
+      server.on('error', (error: any) => {
+        if (error.code === 'EADDRINUSE') {
+          console.error('Port is already in use. Trying alternative port...');
+          // TODO
+          // Implement logic to try a different port
+          server.close();
+        } else {
+          console.error('Auth server error:', error);
+          server.close();
+          reject(new Error(`Server error: ${error.message}`));
+        }
+      });
+
+      // Add timeout to prevent hanging
+      setTimeout(() => {
+        server.close();
+        reject(new Error('Authentication timeout - no response received'));
+      }, 300000); // 5 minute timeout
     });
   }
 
