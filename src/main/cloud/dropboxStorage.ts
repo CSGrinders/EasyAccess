@@ -2,34 +2,96 @@ import { CloudStorage,AuthTokens, isValidToken, generateCodes } from './cloudSto
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, shell } from 'electron';
 import { Dropbox } from 'dropbox';
 import { v4 as uuidv4 } from 'uuid';
+import * as http from 'http';
 
 const mime = require('mime-types');
+import { minimatch } from 'minimatch';
 
 const DROPBOX_APP_KEY = process.env.DROPBOX_KEY;
 // const DROPBOX_APP_SECRET = process.env.DROPBOX_SECRET;
-const REDIRECT_URI = 'http://localhost';
+const PORT = 53685; // Port for the local server to handle Dropbox OAuth redirect
+const REDIRECT_URI = 'http://localhost:' + PORT;
 
 export class DropboxStorage implements CloudStorage {
     accountId?: string | undefined;
     AuthToken?: AuthTokens | null | undefined;
+    currentAuthServer?: http.Server | null = null;
 
     client?: Dropbox | null = null;
 
-    // https://dropbox.tech/developers/pkce--what-and-why-
+  cancelAuthentication(): void {
+    console.log('Cancelling Dropbox authentication');
 
+    if (this.currentAuthServer) {
+      this.currentAuthServer.close();
+    }
+
+    this.currentAuthServer = null;
+    this.AuthToken = null;
+    this.client = null;
+    this.accountId = undefined;
+    console.log('Dropbox authentication cancelled');
+  }
+  
+    // https://dropbox.tech/developers/pkce--what-and-why-
+  // local server to handle the OAuth redirect
+  // This server listens for the redirect from Google after the user authorizes the app
+  private async startAuthServer(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const server = http.createServer((req, res) => {
+        const reqUrl = new URL(req.url || '', `http://localhost:53683`);
+        const code = reqUrl.searchParams.get('code');
+
+        if (code) {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('Authorization successful! You can close this window.');
+          server.close();
+          resolve(code);
+        } else {
+          res.writeHead(400, { 'Content-Type': 'text/html' });
+          res.end('Authorization failed. No code received.');
+          server.close();
+          reject(new Error('No authorization code found'));
+        }
+      });
+
+      this.currentAuthServer = server;
+
+      // redirect URI for OAuth2...
+      server.listen(PORT, () => {
+        console.log('Listening for auth redirect on' + REDIRECT_URI);
+      });
+
+      // Handle server errors
+      server.on('error', (error: any) => {
+        if (error.code === 'EADDRINUSE') {
+          console.error(`Port ${PORT} is already in use. Trying alternative port...`);
+          server.close();
+          // TODO
+          // Implement logic to try another port
+        } else {
+          console.error('Auth server error:', error);
+          server.close();
+          reject(new Error(`Server error: ${error.message}`));
+        }
+      });
+
+      // Add timeout to prevent hanging
+      setTimeout(() => {
+        server.close();
+        reject(new Error('Authentication timeout - no response received'));
+      }, 300000); // 5 minute timeout
+    });
+  }
 
     async connect(): Promise<void | any> {
         return new Promise(async (resolve, reject) => {
-            // window for Dropbox authentication
-            const authWindow = new BrowserWindow({
-                width: 500,
-                height: 600,
-                show: true,
-                webPreferences: { nodeIntegration: false }
-            });
+            if (!DROPBOX_APP_KEY) {
+                throw new Error('DROPBOX_APP_KEY is not set');
+            }
 
             let handled = false;
 
@@ -38,69 +100,45 @@ export class DropboxStorage implements CloudStorage {
 
             // https://www.dropbox.com/oauth2/authorize?client_id=<APP_KEY>&response_type=code&code_challenge=<CHALLENGE>&code_challenge_method=<METHOD>
             const authUrl = `https://www.dropbox.com/oauth2/authorize?client_id=${DROPBOX_APP_KEY}&response_type=code&code_challenge=${codeChallenge}&code_challenge_method=S256&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&token_access_type=offline`;
-            authWindow.loadURL(authUrl);
-        
-            // Handle the redirect to extract the authorization code
-            authWindow.webContents.on('will-redirect', async (event, url) => {
-                const matched = url.match(/[?&]code=([^&]+)/);
-                if (matched) {
-                    handled = true;
-                    const code = matched[1];
-                    authWindow.close();
-            
-                    // Exchange code for access token
-                    try {
-                        if (!code || !DROPBOX_APP_KEY) {
-                        throw new Error('Missing required parameters');
-                        }
+            shell.openExternal(authUrl);
 
-                        // Exchange the authorization code for an access token
-                        const tokenResponse = await fetch('https://api.dropboxapi.com/oauth2/token', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                            body: new URLSearchParams({
-                                code: code,
-                                grant_type: 'authorization_code',
-                                client_id: DROPBOX_APP_KEY,
-                                redirect_uri: REDIRECT_URI,
-                                code_verifier: codeVerifier, // Include the code verifier
-                            }).toString()
-                        });
-                
-                        const tokenData = await tokenResponse.json();
+            const code = await this.startAuthServer(); // Get code from redirect
+            console.log('Authorization code received:', code);
 
-                        console.log('Token Data:', tokenData);
-
-                        // parse the token data and initialize AuthToken and client
-                        this.AuthToken = {
-                            access_token: tokenData.access_token,
-                            refresh_token: tokenData.refresh_token,
-                            expiry_date: Date.now() + tokenData.expires_in * 1000
-                        };
-                        this.client = new Dropbox({ accessToken: tokenData.access_token, fetch });
-                        console.log('AuthToken Initialized:', this.AuthToken);
-
-                        // Get the current account information
-                        const accountInfo = await this.client.usersGetCurrentAccount();
-
-                        this.accountId = accountInfo.result.email;
-
-                        console.log(accountInfo.result.email);
-
-                        resolve(this.accountId);
-                    } catch (error) {
-                        console.error('Error exchanging code for token:', error);
-                        reject('Dropbox client is not initialized');
-                    }
-                }
+            // Exchange the authorization code for an access token
+            const tokenResponse = await fetch('https://api.dropboxapi.com/oauth2/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    code: code,
+                    grant_type: 'authorization_code',
+                    client_id: DROPBOX_APP_KEY,
+                    redirect_uri: REDIRECT_URI,
+                    code_verifier: codeVerifier, // Include the code verifier
+                }).toString()
             });
-        
-            authWindow.on('closed', () => {
-                if (!handled) {
-                    handled = true;
-                    reject('User closed window');
-                }
-            });
+    
+            const tokenData = await tokenResponse.json();
+
+            console.log('Token Data:', tokenData);
+
+            // parse the token data and initialize AuthToken and client
+            this.AuthToken = {
+                access_token: tokenData.access_token,
+                refresh_token: tokenData.refresh_token,
+                expiry_date: Date.now() + tokenData.expires_in * 1000
+            };
+            this.client = new Dropbox({ accessToken: tokenData.access_token, fetch });
+            console.log('AuthToken Initialized:', this.AuthToken);
+
+            // Get the current account information
+            const accountInfo = await this.client.usersGetCurrentAccount();
+
+            this.accountId = accountInfo.result.email;
+
+            console.log(accountInfo.result.email);
+
+            resolve(this.accountId);
         });
     }
 
@@ -113,30 +151,39 @@ export class DropboxStorage implements CloudStorage {
 
         // if the token is not valid, refresh it and reinitialize the client
         if (this.AuthToken.expiry_date < Date.now()) {
-            console.log('AuthToken is expired');
-            // TODO: refresh token
-            this.AuthToken.refresh_token
-            if (!this.AuthToken.refresh_token || !DROPBOX_APP_KEY) {
-              throw new Error('Missing required parameters');
+            console.log('AuthToken is expired, refreshing...');
+            try {
+                if (!this.AuthToken.refresh_token || !DROPBOX_APP_KEY) {
+                    throw new Error('Missing required parameters for token refresh');
+                }
+                
+                const tokenResponse = await fetch('https://api.dropboxapi.com/oauth2/token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({
+                        grant_type: 'refresh_token',
+                        client_id: DROPBOX_APP_KEY,
+                        refresh_token: this.AuthToken.refresh_token
+                    }).toString()
+                });
+                
+                if (!tokenResponse.ok) {
+                    throw new Error(`Token refresh failed: ${tokenResponse.status}`);
+                }
+                
+                const tokenData = await tokenResponse.json();
+                this.AuthToken = {
+                    access_token: tokenData.access_token,
+                    refresh_token: tokenData.refresh_token || this.AuthToken.refresh_token, // Keep old refresh token if new one not provided
+                    expiry_date: Date.now() + (tokenData.expires_in * 1000)
+                };
+                this.client = new Dropbox({ accessToken: this.AuthToken.access_token, fetch });
+                console.log('AuthToken refreshed:', this.AuthToken);
+                return;
+            } catch (error) {
+                console.error('Failed to refresh token:', error);
+                throw new Error('Authentication expired. Please reconnect your account.');
             }
-            const tokenResponse = await fetch('https://api.dropboxapi.com/oauth2/token', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({
-                    grant_type: 'refresh_token',
-                    client_id: DROPBOX_APP_KEY,
-                    refresh_token: this.AuthToken.refresh_token
-                }).toString()
-            });
-            const tokenData = await tokenResponse.json();
-            this.AuthToken = {
-                access_token: tokenData.access_token,
-                refresh_token: tokenData.refresh_token,
-                expiry_date: Date.now() + tokenData.expires_in * 1000
-            };
-            this.client = new Dropbox({ accessToken: this.AuthToken.access_token, fetch });
-            console.log('AuthToken refreshed:', this.AuthToken);
-            return;
         }
 
         // check if the client is already initialized, otherwise create a new client
@@ -166,8 +213,8 @@ export class DropboxStorage implements CloudStorage {
                 name: entry.name,
                 isDirectory: entry['.tag'] === 'folder',
                 path: CLOUD_HOME + entry.path_lower,
-                size: 0, // TODO: Set size if available
-                modifiedTime: undefined // TODO: Set modified time if available
+                size: entry['.tag'] === 'file' ? (entry as any).size || 0 : 0,
+                modifiedTime: (entry as any).server_modified ? new Date((entry as any).server_modified).getTime() : undefined
             }));
             return fileSystemItems;
         } catch (err) {
@@ -182,7 +229,18 @@ export class DropboxStorage implements CloudStorage {
             console.error('Dropbox client is not initialized');
             return '';
         }
-        throw new Error('Not implemented');
+        
+        try {
+            const fileContent = await this.getFile(filePath);
+            if (fileContent.content) {
+                return fileContent.content.toString('utf-8');
+            } else {
+                throw new Error('File content is empty or not available');
+            }
+        } catch (error) {
+            console.error('Error reading file from Dropbox:', error);
+            throw error;
+        }
     }
     getAccountId(): string {
         return this.accountId || '';
@@ -273,7 +331,7 @@ export class DropboxStorage implements CloudStorage {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${this.AuthToken?.access_token}`,
-                'Dropbox-API-Arg': JSON.stringify({ path: folderPath + '/' + fileName, mode: 'add', autorename: true, mute: false }),
+                'Dropbox-API-Arg': JSON.stringify({ path: (folderPath !== '' ? '/' + folderPath : '') + '/' + fileName, mode: 'add', autorename: true, mute: false }),
                 'Content-Type': 'application/octet-stream'
             },
             body: data
@@ -299,6 +357,158 @@ export class DropboxStorage implements CloudStorage {
             console.log(`File "${filePath}" deleted successfully`);
         } catch (error) {
             console.error('Failed to delete file:', error);
+            throw error;
+        }
+    }
+
+    async searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]> {
+        // Not implemented for Dropbox yet
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            return Promise.reject('Dropbox client is not initialized');
+        }
+
+        const result: FileSystemItem[] = [];
+
+        try {
+            if (rootPath === '/') {
+                rootPath = '';
+            } // DROPBOX API HOME
+            const response = await this.client.filesListFolder({ path: rootPath, recursive: true, include_media_info: false, include_deleted: false }); 
+            const entries = response.result.entries;
+
+            console.log('Dropbox search response:', response);
+            console.log('Dropbox search entries:', entries);
+
+            for (const entry of entries) {
+                try {
+                    if (entry['.tag'] === 'file') {
+                        const fileName = entry.name;
+                        const filePath = entry.path_lower || '';
+                        const fileNameCheck = fileName.toLowerCase();
+                        const folderNameCheck = filePath.toLowerCase();
+                        // Check if the file matches the pattern and does not match any exclude patterns
+                        if ((fileNameCheck.includes(pattern.toLowerCase()) || 
+                            (pattern.includes("*") && minimatch(fileNameCheck, pattern.toLowerCase(), { dot: true })))
+                            && !excludePatterns.some(exclude => fileNameCheck.includes(exclude.toLowerCase()))) {
+                            result.push({
+                                id: entry.id,
+                                name: fileName,
+                                isDirectory: false,
+                                path: filePath,
+                            });
+                        }
+                    } else if (entry['.tag'] === 'folder') {
+                        const folderPath = entry.path_lower || '';
+                        const folderNameCheck = folderPath.toLowerCase();
+                        // Check if the folder matches the pattern and does not match any exclude patterns
+                        if ((folderNameCheck.includes(pattern.toLowerCase()) || pattern.includes("*") && minimatch(folderNameCheck, pattern.toLowerCase(), { dot: true }))
+                            && !excludePatterns.some(exclude => folderNameCheck.includes(exclude.toLowerCase()))) {
+                            result.push({
+                                id: entry.id,
+                                name: entry.name,
+                                isDirectory: true,
+                                path: folderPath,
+                            });
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error processing entry:', entry, error);
+                    console.log('Skipping entry due to error');
+                }
+            }
+        } catch (error) {
+            console.error('Error searching Dropbox folder:', error);
+        }
+        return result;
+    }
+
+    async getFileInfo(filePath: string): Promise<FileSystemItem> {
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            throw new Error('Dropbox client is not initialized');
+        }
+
+        try {
+            const response = await this.client.filesGetMetadata({ path: filePath });
+            const metadata = response.result;
+
+            // Check if file is deleted
+            if (metadata['.tag'] === 'deleted') {
+                throw new Error('File not found or has been deleted');
+            }
+
+            const fileSystemItem: FileSystemItem = {
+                id: (metadata as any).id || '',
+                name: metadata.name || '',
+                isDirectory: metadata['.tag'] === 'folder',
+                path: CLOUD_HOME + filePath,
+                size: (metadata as any).size || 0,
+                modifiedTime: (metadata as any).server_modified ? new Date((metadata as any).server_modified).getTime() : undefined,
+            };
+
+            return fileSystemItem;
+        } catch (error) {
+            console.error('Error getting file info from Dropbox:', error);
+            throw error;
+        }
+    }
+
+    async getDirectoryTree(dir: string): Promise<FileSystemItem[]> {
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            throw new Error('Dropbox client is not initialized');
+        }
+
+        const result: FileSystemItem[] = [];
+
+        try {
+            await this.buildDirectoryTreeRecursive(dir, result);
+            return result;
+        } catch (error) {
+            console.error('Error getting directory tree from Dropbox:', error);
+            throw error;
+        }
+    }
+
+    private async buildDirectoryTreeRecursive(currentPath: string, result: FileSystemItem[]): Promise<void> {
+        try {
+            let path = currentPath;
+            if (path === '/') {
+                path = '';
+            }
+
+            const response = await this.client!.filesListFolder({ 
+                path: path,
+                recursive: true,
+                include_media_info: false,
+                include_deleted: false
+            });
+            
+            const entries = response.result.entries;
+
+            for (const entry of entries) {
+                // Skip deleted files
+                if (entry['.tag'] === 'deleted') {
+                    continue;
+                }
+
+                const fileSystemItem: FileSystemItem = {
+                    id: (entry as any).id || '',
+                    name: entry.name || '',
+                    isDirectory: entry['.tag'] === 'folder',
+                    path: CLOUD_HOME + (entry.path_lower || ''),
+                    size: (entry as any).size || 0,
+                    modifiedTime: (entry as any).server_modified ? new Date((entry as any).server_modified).getTime() : undefined,
+                };
+
+                result.push(fileSystemItem);
+            }
+        } catch (error) {
+            console.error('Error building directory tree for Dropbox:', error);
             throw error;
         }
     }

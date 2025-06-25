@@ -24,14 +24,19 @@ export interface CloudStorage {
 
     // auth token and accountId are set after connect
     connect(): Promise<void | any>;
-    readDir(dir: string): Promise<FileSystemItem[]>; //TODO
-    // readFile(filePath: string): Promise<string>
-    getFile(filePath: string): Promise<FileContent>; //TODO
-    postFile(fileName: string, folderPath: string, type: string, data: Buffer): Promise<void>; //TODO
+    readDir(dir: string): Promise<FileSystemItem[]>;
+    readFile(filePath: string): Promise<string>;
+    getFile(filePath: string): Promise<FileContent>;
+    postFile(fileName: string, folderPath: string, type: string, data: Buffer): Promise<void>;
     createDirectory(dirPath: string): Promise<void>; // Create a new directory
     getAccountId(): string;
     getAuthToken(): AuthTokens | null;
-    deleteFile(filePath: string): Promise<void>; //TODO
+    deleteFile(filePath: string): Promise<void>;
+
+
+    searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]>;
+    getFileInfo(filePath: string): Promise<FileSystemItem>;
+    getDirectoryTree(dir: string): Promise<FileSystemItem[]>;
     calculateFolderSize(folderPath: string): Promise<number>; // Calculate total size of a folder recursively
 }
 

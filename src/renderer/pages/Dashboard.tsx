@@ -15,6 +15,7 @@ import { TransferManager } from '@/components/transactions/TransferManager';
 import { TransferDetailPanel } from '@/pages/TransferDetailPanel';
 import { UploadConfirmationDialog } from '@/components/transactions/UploadConfirmationDialog';
 import { useTransferService } from '@/services/TransferService';
+import { RendererIpcCommandDispatcher } from '@/services/AgentControlService';
 
 
 const Dashboard = () => {
@@ -74,6 +75,7 @@ const Dashboard = () => {
         handleUploadDialogCancel,
     } = useTransferService({ boxRefs, storageBoxesRef });
 
+
     const toggleShowSideWindow = () => {
         setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
     };
@@ -113,7 +115,8 @@ const Dashboard = () => {
         };
     }, [canvasVwpRef.current]);
 
-    const addStorageBox = (type: string, title: string, icon: React.ReactNode, cloudType?: CloudType, accountId?: string) => {
+    const addStorageBox = (type: string, title: string, icon?: React.ReactNode, cloudType?: CloudType, accountId?: string) => {
+        console.log(`Adding storage box: type=${type}, title=${title}, icon=${icon}, cloudType=${cloudType}, accountId=${accountId}`);
         const newStorageBox: StorageBoxData = {
             id: nextBoxId,
             title: title,
@@ -201,6 +204,21 @@ const Dashboard = () => {
         }
         setAction(newAction);
     };
+
+
+    useEffect(() => {
+        const dispatcher = RendererIpcCommandDispatcher.getInstance();
+
+        dispatcher.register('openAccountWindow', addStorageBox);
+        dispatcher.register('getFileOnRenderer', tempGetFile);
+        dispatcher.register('postFileOnRenderer', tempPostFile);
+
+        return () => {
+            dispatcher.unregister('openAccountWindow');
+            dispatcher.unregister('getFileOnRenderer');
+            dispatcher.unregister('postFileOnRenderer');
+        };
+    }, [tempPostFile, tempGetFile, addStorageBox]);
 
     return (
         <div className="flex flex-col h-screen bg-white dark:bg-gray-900 text-black dark:text-white">

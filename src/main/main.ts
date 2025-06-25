@@ -1,9 +1,9 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, ipcRenderer } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { config } from 'dotenv';
-import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory } from './cloud/cloudManager';
-
+import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getFileInfo, getDirectoryTree, readFile } from './cloud/cloudManager';
+import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal } from './local/localFileSystem';
 // Load environment variables
 // In development, load from project root; in production, load from app Contents directory
 const envPath = app.isPackaged 
@@ -14,14 +14,14 @@ console.log('Loading .env from:', envPath);
 config({ path: envPath });
 import { CloudType } from "@Types/cloudType";
 import { FileContent, FileSystemItem } from '@Types/fileSystem';
-import * as mime from 'mime-types';
 import MCPClient from './MCP/mcpClient';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createFileSystemServer } from './MCP/fileSystemMcpServer';
 import { PermissionManager } from './permissions/permissionManager';
+import { createFsServer } from './MCP/globalFsMcpServer';
 import { v4 as uuidv4 } from 'uuid';
 
 let mcpClient: MCPClient | null = null;
+let mainWindow: BrowserWindow | null = null;
 
 const setUpMCP = async () => {
     const mcpClient = new MCPClient();
@@ -47,7 +47,8 @@ const setUpMCP = async () => {
     }
     
     try {
-        const fsServer = await createFileSystemServer(allowedDirs);
+        // const fsServer = await createFileSystemServer(allowedDirs); // temporarily disabled due to issues with MCP SDK
+        const fsServer = await createFsServer(allowedDirs);
         fsServer.connect(fsServerTransport);
         
         await mcpClient.connectToServer([fsClientTransport]);
@@ -73,6 +74,7 @@ const createWindow = async () => {
         }
 
     });
+    mainWindow = win; // Store reference to main window globally
     console.log('window created');
 
     // Initialize permission manager and check permissions
@@ -149,6 +151,15 @@ ipcMain.handle('cloud-calculate-folder-size', async (_e, cloudType: CloudType, a
 });
 ipcMain.handle('cloud-create-directory', async (_e, cloudType: CloudType, accountId: string, dirPath: string) => {
     return createDirectory(cloudType, accountId, dirPath);
+});
+ipcMain.handle('cloud-get-file-info', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
+    return getFileInfo(cloudType, accountId, filePath);
+});
+ipcMain.handle('cloud-get-directory-tree', async (_e, cloudType: CloudType, accountId: string, dirPath: string) => {
+    return getDirectoryTree(cloudType, accountId, dirPath);
+});
+ipcMain.handle('cloud-read-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
+    return readFile(cloudType, accountId, filePath);
 });
 ipcMain.handle('remove-cloud-account', async (_e, cloudType: CloudType, accountId: string) => {
     return removeCloudAccount(cloudType, accountId);
@@ -272,44 +283,19 @@ async function calculateDirectorySize(
 }
 
 ipcMain.handle('read-directory', async (_e, dirPath: string) => {
-    const permissionManager = PermissionManager.getInstance();
-    
-    // Check if we fhave permission for this path
-    if (!permissionManager.hasPermissionForPath(dirPath)) {
-        const permissions = permissionManager.getPermissions();
-        if (permissions.rememberChoice && !permissions.filesystemAccess) {
-            throw new Error(`Access denied to ${dirPath}. Please grant permissions in app settings.`);
-        }
-        
-        throw new Error(`Access denied to ${dirPath}. Insufficient permissions.`);
-    }
+    return await readDirectoryLocal(dirPath);
+})
 
-    try {
-        const items = await fs.promises.readdir(dirPath, { withFileTypes: true })
-        return Promise.all(items.map(async item => {
-            const itemPath = path.join(dirPath, item.name);
-            const stats = await fs.promises.stat(itemPath);
-            
-            // For files, use actual size. For directories, use 0 initially (will be calculated on demand)
-            const size = item.isDirectory() ? 0 : stats.size;
-            
-            return {
-                id: uuidv4(), // Generate unique UUID for each item
-                name: item.name,
-                isDirectory: item.isDirectory(),
-                path: itemPath,
-                size: size,
-                modifiedTime: stats.mtimeMs
-            };
-        }));
-    } catch (error: any) {
-        // Handle permission errors specifically
-        if (error.code === 'EPERM' || error.code === 'EACCES') {
-            const permissionManager = PermissionManager.getInstance();
-            throw new Error(`Permission denied accessing ${dirPath}.`);
-        }
-        throw error;
-    }
+ipcMain.handle('read-file', async (_e, filePath: string) => {
+    return await readFileLocal(filePath);
+})
+
+ipcMain.handle('search-file', async (_e, 
+    rootPath: string,
+    pattern: string,
+    excludePatterns: string[] = []) => {
+        // not fully implemented yet
+    return await searchFilesLocal(rootPath, pattern, excludePatterns);
 })
 
 // Handler for calculating folder size on demand
@@ -330,184 +316,120 @@ ipcMain.handle('calculate-folder-size', async (_e, dirPath: string) => {
 })
 
 ipcMain.handle('get-file', async (_e, filePath: string) => {
-    console.log('Reading file:', filePath);
-
-    const permissionManager = PermissionManager.getInstance();
-    
-    // Check if we have permission for this path
-    if (!permissionManager.hasPermissionForPath(filePath)) {
-        throw new Error(`Access denied to ${filePath}. Insufficient permissions.`);
-    }
-
-    // check if the file or directory exists
-    try {
-        await fs.promises.access(filePath, fs.constants.R_OK);
-    } catch (error: any) {
-        if (error.code === 'EPERM' || error.code === 'EACCES') {
-            throw new Error(`Permission denied accessing ${filePath}. `);
-        }
-        console.error('File or directory does not exist:', filePath, error);
-        throw new Error(`File or directory does not exist: ${filePath}`);
-    }
-    // if the file is a directory, zip it and return the zip file
-    const stat = await fs.promises.stat(filePath);
-    let data: Buffer;
-    if (stat.isDirectory()) {
-        try {
-            const archiver = require('archiver');
-            const tempFilePath = path.join(app.getPath('temp'), `${path.basename(filePath)}.zip`);
-            
-            await new Promise<void>((resolve, reject) => {
-                const output = fs.createWriteStream(tempFilePath);
-                const archive = archiver('zip', { 
-                    zlib: { level: 9 },
-                    statConcurrency: 1 
-                });
-            
-                output.on('close', () => resolve());
-                output.on('error', (err) => reject(err));
-                archive.on('error', (err: any) => reject(err));
-                archive.on('warning', (err: any) => {
-                    if (err.code === 'ENOENT') {
-                        console.warn('Archive warning:', err);
-                    } else {
-                        reject(err);
-                    }
-                });
-            
-                archive.pipe(output);
-                archive.directory(filePath, false);
-                archive.finalize();
-            });
-            
-            data = await fs.promises.readFile(tempFilePath);
-            filePath = tempFilePath; // Update filePath to the zip file path
-        } catch (error) {
-            console.error('Error creating zip archive:', error);
-            throw new Error(`Failed to create archive: ${error}`);
-        }
-    } else {
-        data = await fs.promises.readFile(filePath);
-    }
-
-    const mimeType = mime.lookup(filePath) || 'application/octet-stream'; // Fallback to generic binary
-
-    const fileContent: FileContent = {
-        name: filePath.split(path.sep).pop() || '', // Get the file name from the path
-        content: data, 
-        type: mimeType, // Get the file extension or default to 'txt'
-        path: filePath, // Full path to the file
-        sourceAccountId: null, // No cloud source for local files
-        sourceCloudType: null // No cloud source for local files
-    };
-
-    return fileContent;
-})
+    return await getFileLocal(filePath);
+});
 
 // Handle opening external URLs
 ipcMain.handle('open-external-url', async (event, url) => {
-    try {
-        await shell.openExternal(url);
-        return { success: true };
-    } catch (error: any) {
-        console.error('Failed to open external URL:', error);
-        return { success: false, error: error };
-    }
+    return await openExternalUrl(url);
 });
 
 ipcMain.handle('open-file', async (event, fileContent: FileContent) => {
-    try {
-      if (fileContent.sourceCloudType) {
-        // If the file is from a cloud source, we need to download it first
-        const tempFilePath = path.join(app.getPath('temp'), fileContent.name);
-        if (fileContent.content) {
-            fs.writeFileSync(tempFilePath, fileContent.content);
-        } else {
-            throw new Error("File content is undefined");
-        }
-        await shell.openPath(tempFilePath);
-        return { success: true };
-      }
-      await shell.openPath(fileContent.path);
-      return { success: true };
-    } catch (err) {
-      console.error("Error opening Python file:", err);
-      return { success: false };
-    }
-  });
+    return await openFileLocal(fileContent);
+});
 
-ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, data: Buffer | any) => {
-    console.log('Posting file:', fileName, folderPath, data);
-    
-    // Ensure data is a Buffer (handle IPC serialization issues)
-    const bufferData = Buffer.isBuffer(data) ? data : Buffer.from(data.data || data);
-    
-    const filePath = path.join(folderPath, fileName);
-    
-    const permissionManager = PermissionManager.getInstance();
-    
-    // Check if we have permission for this path
-    if (!permissionManager.hasPermissionForPath(folderPath)) {
-        throw new Error(`Access denied to ${folderPath}. Insufficient permissions.`);
-    }
-
-    try {
-        fs.writeFileSync(filePath, bufferData);
-        console.log('File posted successfully:', filePath);
-    } catch (error: any) {
-        if (error.code === 'EPERM' || error.code === 'EACCES') {
-            throw new Error(`Permission denied writing to ${filePath}.`);
-        }
-        console.error('Error posting file:', error);
-        throw error; 
-    }
-})
+ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, data: Buffer) => {
+    return await postFileLocal(fileName, folderPath, data);
+});
 
 ipcMain.handle('delete-file', async (_e, filePath: string)  => {
-    console.log('deleting file:', filePath);
-    
-    const permissionManager = PermissionManager.getInstance();
-    
-    // Check if we have permission for this path
-    if (!permissionManager.hasPermissionForPath(filePath)) {
-        throw new Error(`Access denied to ${filePath}. Insufficient permissions.`);
+    return await deleteFileLocal(filePath);
+});
+
+ipcMain.handle('mcp-process-query-test', (_e, toolName, toolArgs) => {
+    console.log("Processing MCP tool test:", toolName, toolArgs);
+    let parsedArgs: { [x: string]: unknown };
+  
+    if (typeof toolArgs === "string") {
+        try {
+        parsedArgs = JSON.parse(toolArgs);
+        } catch (e) {
+        throw new Error("Invalid JSON passed as tool arguments");
+        }
+    } else {
+        parsedArgs = toolArgs;
     }
 
-    try {
-        await fs.promises.unlink(filePath);
-        console.log('File deleted successfully:', filePath);
-    } catch (error: any) {
-        if (error.code === 'EPERM' || error.code === 'EACCES') {
-            throw new Error(`Permission denied deleting ${filePath}.`);
-        }
-        console.error('Error deleting file:', error);
-        throw error; 
+    console.log("Processing MCP tool test:", toolName, parsedArgs);
+    return mcpClient?.callToolTest(toolName, parsedArgs);
+});
+
+// Store pending promises
+const pendingInvocations = new Map<string, { resolve: (value: any) => void; reject: (error: any) => void }>();
+
+async function invokeRendererFunction(name: string, ...args: any[]): Promise<any> {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) {
+    throw new Error('No renderer window available');
+  }
+
+  // Generate unique ID for this invocation
+  const invocationId = uuidv4(); // or crypto.randomUUID()
+  
+  // Create promise and store resolvers
+  const promise = new Promise((resolve, reject) => {
+    pendingInvocations.set(invocationId, { resolve, reject });
+    
+    // Optional: Add timeout to prevent hanging forever
+    setTimeout(() => {
+      if (pendingInvocations.has(invocationId)) {
+        pendingInvocations.delete(invocationId);
+        reject(new Error(`Function "${name}" timed out after 30 seconds`));
+      }
+    }, 30000); // 30 second timeout
+  });
+
+  // Send message with invocation ID
+  win.webContents.send('invoke-renderer-function', { 
+    invocationId, 
+    name, 
+    args 
+  });
+
+  return promise;
+}
+
+// Listen for responses from renderer
+ipcMain.on('renderer-function-response', (event, { invocationId, success, result, error }) => {
+  const pending = pendingInvocations.get(invocationId);
+  if (pending) {
+    pendingInvocations.delete(invocationId);
+    console.log(`Renderer function response received: ${invocationId}`);
+    if (success) {
+      pending.resolve(result);
+    } else {
+      pending.reject(new Error(error));
     }
-})
+  }
+});
+
+export async function triggerRefreshAgentMessage(text: string) {
+    return await invokeRendererFunction('refreshAgentMessage', text);
+}
+
+export async function triggerOpenAccountWindow(type: string, title: string, icon?: React.ReactNode, cloudType?: CloudType, accountId?: string) {
+    return await invokeRendererFunction('openAccountWindow', type, title, icon, cloudType, accountId);
+}
+
+export async function triggerReloadAccountWindow(cloudType: string, accountId: string) {
+    return await invokeRendererFunction('reloadAccountWindow', cloudType, accountId);
+}
+
+// (filePaths: string[], cloudType?: CloudType, accountId?: string, showProgress?: boolean) => Promise<void>;
+export async function triggerGetFileOnRenderer(filePaths: string[], cloudType?: CloudType, accountId?: string, showProgress?: boolean) {
+    return await invokeRendererFunction('getFileOnRenderer', filePaths, cloudType, accountId, showProgress);
+}
+
+// tempPostFile: (parentPath: string, cloudType?: CloudType, accountId?: string) => Promise<void>;
+export async function triggerPostFileOnRenderer(parentPath: string, cloudType?: CloudType, accountId?: string, fileName?: string) {
+    return await invokeRendererFunction('postFileOnRenderer', parentPath, cloudType, accountId, fileName);
+}
+
+export async function triggerChangeDirectoryOnAccountWindow(dir: string, cloudType?: CloudType, accountId?: string | undefined) {
+    return await invokeRendererFunction('changeDirectoryOnAccountWindow', dir, cloudType, accountId);
+}
 
 // Handler for creating new directories in local file system
 ipcMain.handle('create-directory', async (_e, dirPath: string) => {
-    console.log('Creating directory:', dirPath);
-    
-    const permissionManager = PermissionManager.getInstance();
-    const parentDir = path.dirname(dirPath);
-    
-    // Check if we have permission for the parent directory
-    if (!permissionManager.hasPermissionForPath(parentDir)) {
-        throw new Error(`Access denied to ${parentDir}. Insufficient permissions.`);
-    }
-
-    try {
-        await fs.promises.mkdir(dirPath, { recursive: true });
-        console.log('Directory created successfully:', dirPath);
-        return { success: true, path: dirPath };
-    } catch (error: any) {
-        if (error.code === 'EPERM' || error.code === 'EACCES') {
-            throw new Error(`Permission denied creating directory ${dirPath}.`);
-        } else if (error.code === 'EEXIST') {
-            throw new Error(`Directory already exists: ${dirPath}`);
-        }
-        console.error('Error creating directory:', error);
-        throw error; 
-    }
+    return await createDirectoryLocal(dirPath);
 })

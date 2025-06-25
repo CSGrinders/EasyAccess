@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
         ipcRenderer.invoke('get-connected-cloud-accounts', cloudType) as Promise<string[] | null>,
     readDirectory: (cloudType: CloudType, accountId: string, dir: string) =>
         ipcRenderer.invoke('cloud-read-directory', cloudType, accountId, dir) as Promise<FileSystemItem[]>,
+    readFile: (cloudType: CloudType, accountId: string, filePath: string) =>
+        ipcRenderer.invoke('cloud-read-file', cloudType, accountId, filePath) as Promise<string>,
     getFile: (cloudType: CloudType, accountId: string, filePath: string) =>
         ipcRenderer.invoke('cloud-get-file', cloudType, accountId, filePath) as Promise<FileContent>,
     postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer) =>
@@ -19,6 +21,10 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
         ipcRenderer.invoke('cloud-delete-file', cloudType, accountId, filePath) as Promise<void>,
     createDirectory: (cloudType: CloudType, accountId: string, folderPath: string, folderName: string) =>
         ipcRenderer.invoke('cloud-create-directory', cloudType, accountId, folderPath, folderName) as Promise<void>,
+    getFileInfo: (cloudType: CloudType, accountId: string, filePath: string) =>
+        ipcRenderer.invoke('cloud-get-file-info', cloudType, accountId, filePath) as Promise<FileSystemItem>,
+    getDirectoryTree: (cloudType: CloudType, accountId: string, dirPath: string) =>
+        ipcRenderer.invoke('cloud-get-directory-tree', cloudType, accountId, dirPath) as Promise<FileSystemItem[]>,
     calculateFolderSize: (cloudType: CloudType, accountId: string, folderPath: string) =>
         ipcRenderer.invoke('cloud-calculate-folder-size', cloudType, accountId, folderPath) as Promise<number>,
     removeAccount: (cloudType: CloudType, accountId: string) =>
@@ -36,6 +42,8 @@ contextBridge.exposeInMainWorld('fsApi', {
     },
     readDirectory: (dir: string) =>
         ipcRenderer.invoke('read-directory', dir) as Promise<FileSystemItem[]>,
+    readFile: (filePath: string) =>
+        ipcRenderer.invoke('read-file', filePath) as Promise<string>,
     calculateFolderSize: (dirPath: string) =>
         ipcRenderer.invoke('calculate-folder-size', dirPath) as Promise<number>,
     getFile: (filePath: string) =>
@@ -55,8 +63,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
 contextBridge.exposeInMainWorld('mcpApi', {
     processQuery: (query: string) => ipcRenderer.invoke('mcp-process-query', query),
+    processQueryTest: (toolName: string, toolArgs: { [x: string]: unknown }) => ipcRenderer.invoke('mcp-process-query-test', toolName, toolArgs),
     reinitialize: () => ipcRenderer.invoke('reinitialize-mcp'),
-    getStatus: () => ipcRenderer.invoke('get-mcp-status')
+    getStatus: () => ipcRenderer.invoke('get-mcp-status'),
+    onReloadAgentMessage: (callback: (event: Electron.IpcRendererEvent, ...args: any[]) => void) => {
+        // Remove any existing listeners first to prevent duplicates
+        ipcRenderer.removeAllListeners('reload-agent-message');
+        ipcRenderer.on('reload-agent-message', callback);
+    },
+    
+    // Method to remove the listener when component unmounts
+    removeReloadAgentMessageListener: () => {
+        ipcRenderer.removeAllListeners('reload-agent-message');
+    },
+    mcpRenderer: {
+        on: (channel: string, callback: (event: Electron.IpcRendererEvent, ...args: any[]) => void) => {
+            ipcRenderer.on(channel, (event, ...args) => callback(event, ...args));
+        },
+        send: (channel: string, ...args: any[]) => {
+            ipcRenderer.send(channel, ...args);
+        }
+    }
 });
 
 contextBridge.exposeInMainWorld('permissionApi', {

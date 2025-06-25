@@ -211,6 +211,10 @@ export async function connectNewCloudAccount(cloudType: CloudType) : Promise<str
       } else {
         throw new Error(`Failed to connect to ${cloudType} account - no account ID received`);
       }
+    })
+    .catch((error: any) => {
+      console.error(`Error connecting to ${cloudType}:`, error);
+      throw error;
     });
 
     // Register the active authentication
@@ -219,6 +223,8 @@ export async function connectNewCloudAccount(cloudType: CloudType) : Promise<str
       promise: authPromise,
       cancel: cancelAuth
     });
+
+    console.log('authPromise: ', authPromise);  
 
     const result = await authPromise;
 
@@ -239,6 +245,7 @@ export function cancelCloudAuthentication(cloudType: CloudType): boolean {
   if (activeAuth) {
     activeAuth.cancel();
 
+    // not used anymore?
     if (activeAuth.browserWindow && !activeAuth.browserWindow.isDestroyed()) {
       activeAuth.browserWindow.close();
     }
@@ -306,6 +313,49 @@ export async function readDirectory(CloudType: CloudType, accountId: string, dir
     throw new Error(`No ${CloudType} account found with ID: ${accountId}`);
   } catch (error: any) {
     console.error(`Cloud directory read error for ${CloudType}:`, error);
+    throw error; 
+  }
+}
+
+// read the file content as utf-8 string from the cloud storage
+// used for reading the text content of the file
+export async function readFile(CloudType: CloudType, accountId: string, filePath: string): Promise<string> {
+  try {
+    filePath = filePath.replace(CLOUD_HOME, "");
+    console.log('Reading file from cloud account:', CloudType, accountId, filePath);
+    
+    const accounts = StoredAccounts.get(CloudType);
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            return await account.readFile(filePath);
+          } catch (error: any) {
+            console.error(`Error reading file from ${CloudType}:`, error);
+            
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
+              throw new Error('File not found or no longer exists.');
+            } else if (error.message?.includes('too large') || error.message?.includes('size limit')) {
+              throw new Error('File is too large to read.');
+            } else if (error.message?.includes('quota') || error.message?.includes('storage')) {
+              throw new Error('Storage quota exceeded or storage service unavailable.');
+            } else if (error.message?.includes('binary') || error.message?.includes('encoding')) {
+              throw new Error('File is not a text file and cannot be read as text.');
+            } else {
+              throw new Error(`Failed to read file: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
+      }
+    }
+    
+    throw new Error(`No ${CloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud file read error for ${CloudType}:`, error);
     throw error; 
   }
 }
@@ -454,6 +504,45 @@ export async function deleteFile(cloudType: CloudType, accountId: string, filePa
   }
 }
 
+export async function searchFilesFromStorageAccount(cloudType: CloudType, accountId: string, rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]> {
+  try {
+    rootPath = rootPath.replace(CLOUD_HOME, "");
+    console.log('Searching files in cloud account:', cloudType, accountId, rootPath, pattern, excludePatterns);
+    const accounts = StoredAccounts.get(cloudType);
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            return await account.searchFiles(rootPath, pattern, excludePatterns);
+          } catch (error: any) {
+            console.error(`Error searching files in ${cloudType}:`, error);
+            // Categorize and re-throw with user-friendly messages
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
+              throw new Error('Root path not found or no longer exists.');
+            } else if (error.message?.includes('quota') || error.message?.includes('storage')) {
+              throw new Error('Storage quota exceeded or storage service unavailable.');
+            } else if (error.message?.includes('invalid pattern') || error.message?.includes('syntax error')) {
+              throw new Error('Invalid search pattern. Please check your search criteria.');
+            } else if (error.message?.includes('permission') || error.message?.includes('forbidden')) {
+              throw new Error('Permission denied. You may not have access to search in this location.');
+            } else {
+              throw new Error(`Failed to search files: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
+      }
+    }
+    throw new Error(`No ${cloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud file search error for ${cloudType}:`, error);
+    throw error;
+  }
+}
+
 // Calculate the total size of a folder recursively for cloud storage
 export async function calculateFolderSize(cloudType: CloudType, accountId: string, folderPath: string): Promise<number> {
   try {
@@ -498,6 +587,11 @@ export async function createDirectory(cloudType: CloudType, accountId: string, d
   try {
     dirPath = dirPath.replace(CLOUD_HOME, "");
     console.log('Creating directory in cloud account:', cloudType, accountId, dirPath);
+
+    if (dirPath === '' || dirPath === '/') {
+      console.log('Skipping directory creation for root path');
+      return; // Skip creating root directory
+    }
     
     const accounts = StoredAccounts.get(cloudType);
     if (accounts) {
@@ -587,4 +681,82 @@ function encodeAccountId(key: string): string {
 // to avoid conflict with dot in accountId
 function decodeAccountId(key: string): string {
   return key.replace(/__dot__/g, '.');
+}
+
+// Get file info from cloud storage
+export async function getFileInfo(cloudType: CloudType, accountId: string, filePath: string): Promise<FileSystemItem> {
+  try {
+    filePath = filePath.replace(CLOUD_HOME, "");
+    console.log('Getting file info from cloud account:', cloudType, accountId, filePath);
+    
+    const accounts = StoredAccounts.get(cloudType);
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            return await account.getFileInfo(filePath);
+          } catch (error: any) {
+            console.error(`Error getting file info from ${cloudType}:`, error);
+            
+            // Categorize and re-throw with user-friendly messages
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
+              throw new Error('File not found or no longer exists.');
+            } else if (error.message?.includes('quota') || error.message?.includes('storage')) {
+              throw new Error('Storage quota exceeded or storage service unavailable.');
+            } else {
+              throw new Error(`Failed to get file info: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
+      }
+    }
+    
+    throw new Error(`No ${cloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud file info error for ${cloudType}:`, error);
+    throw error; 
+  }
+}
+
+// Get directory tree from cloud storage
+export async function getDirectoryTree(cloudType: CloudType, accountId: string, dirPath: string): Promise<FileSystemItem[]> {
+  try {
+    dirPath = dirPath.replace(CLOUD_HOME, "");
+    console.log('Getting directory tree from cloud account:', cloudType, accountId, dirPath);
+    
+    const accounts = StoredAccounts.get(cloudType);
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            return await account.getDirectoryTree(dirPath);
+          } catch (error: any) {
+            console.error(`Error getting directory tree from ${cloudType}:`, error);
+            
+            // Categorize and re-throw with user-friendly messages
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
+              throw new Error('Directory not found or no longer exists.');
+            } else if (error.message?.includes('quota') || error.message?.includes('storage')) {
+              throw new Error('Storage quota exceeded or storage service unavailable.');
+            } else {
+              throw new Error(`Failed to get directory tree: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
+      }
+    }
+    
+    throw new Error(`No ${cloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud directory tree error for ${cloudType}:`, error);
+    throw error; 
+  }
 }

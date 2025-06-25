@@ -10,6 +10,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport";
 
 import dotenv from "dotenv";
+import { triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerRefreshAgentMessage } from "../main";
+import { CloudType } from "../../types/cloudType";
 dotenv.config();
 
 
@@ -55,7 +57,7 @@ class MCPClient {
     }
 
     // Process query
-    async processQuery(query: string) {
+    async processQuery(query: string): Promise<string> {
         // call th llm
         const messages: MessageParam[] = [
             {
@@ -65,7 +67,7 @@ class MCPClient {
         ];
 
 
-        
+
         const texts: any[] = [];
         const toolCalls: { name: string; arguments: { [x: string]: unknown } }[] = [];
 
@@ -77,7 +79,9 @@ class MCPClient {
                 messages,
                 tools: this.tools,
                 tool_choice: { type: 'auto' },
-                system: "You are a smart assistant that can answer questions and use tools to help users.",
+                system: "You are an assistant that answers questions and uses tools to help. " +
+                        "Our app connects Google Drive, OneDrive, Dropbox, and local files in one view." +
+                        "Always reply in a way that is simple, short, and straight to the point.",
             });
 
             // add the llm response to messages for next iteration
@@ -129,12 +133,29 @@ class MCPClient {
                     });
                 }
             }
+            triggerRefreshAgentMessage(texts.join("\n") + "\n");
+            //type: string, title: string, icon?: React.ReactNode, cloudType?: CloudType, accountId?: string
             if (!tool_used) {
                 break; // no more tool calls, exit loop
             }
         }
 
         return texts.join("\n") + "\n";
+    }
+
+    async callToolTest(toolName: string, args: { [x: string]: unknown }) {
+        // Call the tool with the given query
+        // triggerOpenAccountWindow("cloud", "agent opened", undefined, CloudType.GoogleDrive, "sohn5312@gmail.com");
+        // triggerChangeDirectoryOnAccountWindow(CloudType.GoogleDrive, "sohn5312@gmail.com", "/easyAccess");
+        if (!this.tools.some(tool => tool.name === toolName)) {
+            throw new Error(`Tool ${toolName} not found`);
+        }
+        console.log(`Calling tool: ${toolName} with args:`, args);
+        const result = await this.mcp.callTool({
+            name: toolName,
+            arguments: args as { [x: string]: unknown },
+        });
+        return result;
     }
 
     async cleanup() {

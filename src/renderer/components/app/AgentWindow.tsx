@@ -10,10 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, ArrowUp } from "lucide-react";
 import { MCPStatus } from "@Types/permissions";
+import { RendererIpcCommandDispatcher } from '@/services/AgentControlService';
 
 export default function AgentWindow({ show }: { show: boolean }) {
     
     const [query, setQuery] = useState('');
+    const [testToolName, setTestToolName] = useState('');
+    const [testToolArgs, setTestToolArgs] = useState('');
 
     /** The agent's response to the user's question */
     const [response, setResponse] = useState('');
@@ -31,11 +34,32 @@ export default function AgentWindow({ show }: { show: boolean }) {
     const resizeStartRef = useRef({ x: 0, y: 0 }); // Stores where the mouse was when resize started
     const resizeStartSizeRef = useRef({ width: 560, height: 320 }); // Stores what size the window was when resize started
     const windowRef = useRef<HTMLDivElement>(null); // Reference to the main window HTML element
+    const responseRef = useRef<HTMLDivElement>(null); // Reference to the response display area
 
     /** Window size constraints and layout constants */
     const MIN_WIDTH = 320;
     const MIN_HEIGHT = 240;
     const ACTION_BAR_WIDTH = 80; 
+
+    useEffect(() => {
+        const handleReloadAgentMessage = (text: string) => {
+            console.log('Received message from MCP:', text);
+            setResponse(text);
+        };
+        const dispatcher = RendererIpcCommandDispatcher.getInstance();
+
+        dispatcher.register('refreshAgentMessage', handleReloadAgentMessage);
+
+        return () => {
+            dispatcher.unregister('refreshAgentMessage');
+        };
+    }, []);
+
+    useEffect(() => {
+        if (responseRef.current) {
+            responseRef.current.scrollTop = responseRef.current.scrollHeight;
+        }
+    }, [response]);
 
     /** 
      * Gets the current status of the MCP agent from the main process
@@ -82,6 +106,36 @@ export default function AgentWindow({ show }: { show: boolean }) {
             // Show the agent's response and clear the input field
             setResponse(result);
             setQuery('');
+        } catch (err) {
+            // If something goes wrong, show an error message to the user
+            setError(err instanceof Error ? err.message : 'Failed to process query');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    /** 
+     * Handles what happens when the user submits their question
+     * This function manages the entire process of sending a query and getting a response
+     */
+    const handleTestSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        // Show loading spinner and clear any previous errors
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            console.log('Test Tool Name:', testToolName);
+            console.log('Test Tool Args:', testToolArgs);
+            // Send the user's question to the agent and wait for response
+            const result = await (window as any).mcpApi.processQueryTest(testToolName, testToolArgs);
+
+            console.log('Test Result:', result);
+            // Show the agent's response and clear the input field
+            setResponse("happy path");
+            setTestToolName('');
+            setTestToolArgs('');
         } catch (err) {
             // If something goes wrong, show an error message to the user
             setError(err instanceof Error ? err.message : 'Failed to process query');
@@ -190,7 +244,7 @@ export default function AgentWindow({ show }: { show: boolean }) {
                 {/* TOP SECTION: Message display area where agent responses appear */}
                 <div className="flex-1 overflow-hidden">
                     <div className="h-full p-4 pb-2">
-                        <div className="h-full bg-white/80 dark:bg-black/30 rounded-lg border border-blue-500/20 dark:border-blue-400/20 p-3 overflow-y-auto backdrop-blur-sm">
+                        <div ref={responseRef} className="h-full bg-white/80 dark:bg-black/30 rounded-lg border border-blue-500/20 dark:border-blue-400/20 p-3 overflow-y-auto backdrop-blur-sm">
                             
                             {/* Agent status indicator - shows if agent is working */}
                             <div className="flex items-center gap-2 mb-2">
@@ -214,7 +268,7 @@ export default function AgentWindow({ show }: { show: boolean }) {
                             {/* Main content area - shows different things based on agent state */}
                             <div className="text-gray-800 dark:text-gray-100 text-sm font-mono leading-relaxed">
                                 {mcpInfo && mcpInfo.isEnabled ? (
-                                isLoading ? (
+                                isLoading && !response ? (
                                     <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
                                         <Loader2 className="animate-spin w-4 h-4" />
                                         <span>Processing query...</span>
@@ -260,6 +314,54 @@ export default function AgentWindow({ show }: { show: boolean }) {
                             <Button
                                 onClick={handleSubmit}
                                 disabled={isLoading || !query.trim()}
+                                size="sm"
+                                className="bg-blue-500/90 hover:bg-blue-600/90 dark:bg-blue-500/80 dark:hover:bg-blue-400/80 text-white font-medium px-3 transition-all duration-200 disabled:opacity-50"
+                            >
+                                {isLoading ? (
+                                    <Loader2 className="animate-spin w-4 h-4" />
+                                ) : (
+                                    <ArrowUp className="w-4 h-4" />
+                                )}
+                            </Button>
+                        </div>
+
+                        <div className="flex gap-2 bg-white/70 h-30 dark:bg-black/30 rounded-lg border border-blue-500/30 dark:border-blue-400/30 p-2 backdrop-blur-sm">
+                            
+                            <Input
+                                value={testToolName}
+                                onChange={(e) => setTestToolName(e.target.value)}
+                                placeholder="Tool name"
+                                className="flex-1 bg-transparent text-gray-800 h-10 px-3 py-2 leading-tight dark:text-white border-none placeholder-gray-500 dark:placeholder-gray-400 focus:ring-1 focus:ring-blue-500/40 dark:focus:ring-blue-400/40 text-sm"
+                                disabled={isLoading}
+                                autoComplete="off"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleTestSubmit(e);
+                                    }
+                                }}
+                            />
+
+                            <Input
+                                value={testToolArgs}
+                                onChange={(e) => setTestToolArgs(e.target.value)}
+                                placeholder='Tool args, e.g., {"path": "/"}'
+                                className="flex-1 bg-transparent text-gray-800 h-10 px-3 py-2 leading-tight dark:text-white border-none placeholder-gray-500 dark:placeholder-gray-400 focus:ring-1 focus:ring-blue-500/40 dark:focus:ring-blue-400/40 text-sm"
+                                disabled={isLoading}
+                                autoComplete="off"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleTestSubmit(e);
+                                    }
+                                }}
+                            />
+
+
+                            {/* Submit button */}
+                            <Button
+                                onClick={handleTestSubmit}
+                                disabled={isLoading || !testToolName.trim() || !testToolArgs.trim()}
                                 size="sm"
                                 className="bg-blue-500/90 hover:bg-blue-600/90 dark:bg-blue-500/80 dark:hover:bg-blue-400/80 text-white font-medium px-3 transition-all duration-200 disabled:opacity-50"
                             >
