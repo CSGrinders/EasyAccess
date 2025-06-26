@@ -406,7 +406,7 @@ export async function getFile(CloudType: CloudType, accountId: string, filePath:
 // post the file content (Buffer) to the cloud
 // filePath: /HOME/dir/temp.txt
 // data: Buffer
-export async function postFile(CloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer): Promise<void> {
+export async function postFile(CloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer, progressCallback?: (uploaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<void> {
   try {
     folderPath = folderPath.replace(CLOUD_HOME, "");
     console.log('Posting file to cloud account:', CloudType, accountId, fileName, folderPath);
@@ -417,7 +417,7 @@ export async function postFile(CloudType: CloudType, accountId: string, fileName
         if (account.getAccountId() === accountId) {
           try {
             const type = mime.lookup(fileName) || 'application/octet-stream'; // default to binary if no mime type found
-            return await account.postFile(fileName, folderPath, type, data);
+            return await account.postFile(fileName, folderPath, type, data, progressCallback, abortSignal);
           } catch (error: any) {
             console.error(`Error posting file to ${CloudType}:`, error);
             

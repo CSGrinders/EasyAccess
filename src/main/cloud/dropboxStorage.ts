@@ -307,12 +307,19 @@ export class DropboxStorage implements CloudStorage {
         return fileContent;
     }
 
-    async postFile(fileName: string, folderPath: string, type: string, data: Buffer): Promise<void> {
+    async postFile(fileName: string, folderPath: string, type: string, data: Buffer, progressCallback?: (uploaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<void> {
         await this.initClient();
         if (!this.client) {
             console.error('Dropbox client is not initialized');
             return Promise.reject('Dropbox client is not initialized');
         }
+        
+        // Check for cancellation before upload
+        if (abortSignal?.aborted) {
+            console.log('Upload cancelled by user');
+            throw new Error('Upload cancelled by user');
+        }
+        
         console.log('folderPath: ', folderPath);
         if (folderPath.startsWith('/')) {
             folderPath = folderPath.substring(1); // Remove leading slash if present
@@ -334,12 +341,18 @@ export class DropboxStorage implements CloudStorage {
                 'Dropbox-API-Arg': JSON.stringify({ path: (folderPath !== '' ? '/' + folderPath : '') + '/' + fileName, mode: 'add', autorename: true, mute: false }),
                 'Content-Type': 'application/octet-stream'
             },
-            body: data
+            body: data,
+            signal: abortSignal
         });
         
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(`Dropbox API error: ${response.status} - ${errorText}`);
+        }
+        
+        // Report progress completion
+        if (progressCallback) {
+            progressCallback(data.length, data.length);
         }
     
         console.log(`File "${fileName}" uploaded successfully to "${folderPath}"`);

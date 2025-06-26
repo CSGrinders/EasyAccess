@@ -143,18 +143,24 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
         return transferQueue.transfers.find(transfer => transfer.id === transferId);
     };
 
-    const handleCancelTransfer = (transferId: string) => {
+    const handleCancelTransfer = async (transferId: string) => {
         try {
             const transfer = getTransfer(transferId);
             if (transfer && !transfer.isCancelling) {
                 updateTransfer(transferId, { isCancelling: true });
-                transfer.abortController.abort();
                 
-                // Update the transfer to show it was cancelled
+                // Cancel the upload in the main process
+                const cancelled = await (window as any).cloudFsApi.cancelUpload(transferId);
+                
+                // Update the transfer 
                 setTimeout(() => {
+                    const currentTransfer = getTransfer(transferId);
                     updateTransfer(transferId, {
                         error: "Transfer cancelled by user",
-                        isCancelling: false
+                        isCancelling: false,
+                        endTime: Date.now(),
+                        completedFiles: currentTransfer?.completedFiles || [],
+                        failedFiles: currentTransfer?.failedFiles || []
                     });
                 }, 100);
             }
@@ -163,7 +169,10 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
             if (transfer) {
                 updateTransfer(transferId, {
                     error: "Transfer cancelled",
-                    isCancelling: false
+                    isCancelling: false,
+                    endTime: Date.now(),
+                    completedFiles: transfer.completedFiles || [],
+                    failedFiles: transfer.failedFiles || []
                 });
             }
         }
@@ -362,14 +371,39 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             const contentBuffer = Buffer.isBuffer(fileContent.content) 
                                 ? fileContent.content 
                                 : Buffer.from(fileContent.content || []);
-                                
-                            await (window as any).cloudFsApi.postFile(
-                                cloudType,
-                                accountId,
-                                fileName ? fileName : fileContent.name,
-                                parentPath,
-                                contentBuffer
-                            );
+                            
+                            // Set up progress tracking for this file
+                            const currentFileName = fileName ? fileName : fileContent.name;
+                            let progressListener: any = null;
+                            
+                            if (contentBuffer.length > 5 * 1024 * 1024) { // Only for large files (>5MB)
+                                progressListener = (window as any).cloudFsApi.onUploadProgress((data: { fileName: string; uploaded: number; total: number }) => {
+                                    if (data.fileName === currentFileName && transfer) {
+                                        // Calculate file specific progress within overall transfer progress
+                                        const fileProgress = (data.uploaded / data.total) * (100 / totalFiles);
+                                        const overallProgress = (completedFiles / totalFiles) * 100 + fileProgress;
+                                        updateTransfer(transfer.id, {
+                                            progress: Math.min(overallProgress, 100)
+                                        });
+                                    }
+                                });
+                            }
+                            
+                            try {
+                                await (window as any).cloudFsApi.postFile(
+                                    cloudType,
+                                    accountId,
+                                    currentFileName,
+                                    parentPath,
+                                    contentBuffer,
+                                    transfer.id 
+                                );
+                            } finally {
+                                // Clean up progress listener
+                                if (progressListener) {
+                                    (window as any).cloudFsApi.removeUploadProgressListener(progressListener);
+                                }
+                            }
                             
                             // Track successful file completion
                             updateTransfer(transfer.id, {
@@ -645,20 +679,44 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             ? fileContent.content 
                             : Buffer.from(fileContent.content || []);
 
-                        if (!targetCloudType || !targetAccountId) {
-                            await (window as any).fsApi.postFile(
-                                fileName,
-                                targetPath || '',
-                                contentBuffer
-                            );
-                        } else {
-                            await (window as any).cloudFsApi.postFile(
-                                targetCloudType,
-                                targetAccountId,
-                                fileName,
-                                targetPath || '',
-                                contentBuffer
-                            );
+                        // Set up progress tracking for large files
+                        let progressListener: any = null;
+                        
+                        if (contentBuffer.length > 5 * 1024 * 1024) { // Only for large files (>5MB)
+                            progressListener = (window as any).cloudFsApi.onUploadProgress((data: { fileName: string; uploaded: number; total: number }) => {
+                                if (data.fileName === fileName && transfer) {
+                                    // Calculate file-specific progress within overall transfer progress
+                                    const fileProgress = (data.uploaded / data.total) * (100 / totalFiles);
+                                    const overallProgress = (processedFiles / totalFiles) * 100 + fileProgress;
+                                    updateTransfer(transfer.id, {
+                                        progress: Math.min(overallProgress, 100)
+                                    });
+                                }
+                            });
+                        }
+
+                        try {
+                            if (!targetCloudType || !targetAccountId) {
+                                await (window as any).fsApi.postFile(
+                                    fileName,
+                                    targetPath || '',
+                                    contentBuffer
+                                );
+                            } else {
+                                await (window as any).cloudFsApi.postFile(
+                                    targetCloudType,
+                                    targetAccountId,
+                                    fileName,
+                                    targetPath || '',
+                                    contentBuffer,
+                                    transfer.id // Pass transfer ID instead of abort signal
+                                );
+                            }
+                        } finally {
+                            // Clean up progress listener
+                            if (progressListener) {
+                                (window as any).cloudFsApi.removeUploadProgressListener(progressListener);
+                            }
                         }
 
                         // Track successful file completion

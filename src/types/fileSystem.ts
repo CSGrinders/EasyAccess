@@ -92,7 +92,13 @@ declare global {
             getFile: (cloudType: CloudType, accountId: string, filePath: string) => Promise<FileContent>;
             
             /** Upload file to cloud storage */
-            postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer) => Promise<void>;
+            postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer, abortSignal?: AbortSignal) => Promise<void>;
+            
+            /** Listen for upload progress updates */
+            onUploadProgress: (callback: (data: { fileName: string; uploaded: number; total: number }) => void) => any;
+            
+            /** Remove upload progress listener */
+            removeUploadProgressListener: (wrappedCallback: any) => void;
             
             /** Delete file from cloud storage */
             deleteFile: (cloudType: CloudType, accountId: string, filePath: string) => Promise<void>;

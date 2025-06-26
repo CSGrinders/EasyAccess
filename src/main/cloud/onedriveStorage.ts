@@ -375,7 +375,7 @@ export class OneDriveStorage implements CloudStorage {
     }
   }
 
-  async postFile(fileName: string, folderPath: string, type: string, data: Buffer): Promise<void> {
+  async postFile(fileName: string, folderPath: string, type: string, data: Buffer, progressCallback?: (uploaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<void> {
     if (!this.graphClient) {
       await this.initAccount();
     }
@@ -385,6 +385,12 @@ export class OneDriveStorage implements CloudStorage {
       return Promise.reject(new Error('Graph client is not initialized'));
     }
 
+    // Check for cancellation before upload
+    if (abortSignal?.aborted) {
+      console.log('Upload cancelled by user');
+      throw new Error('Upload cancelled by user');
+    }
+
     const apiPath = `/me/drive/root:/${folderPath.replace(/^\//, '')}/${fileName}:/content`; // remove leading slash if exists, to avoid double slashes
 
     console.log(`Querying OneDrive API path: ${apiPath}`);
@@ -392,6 +398,11 @@ export class OneDriveStorage implements CloudStorage {
     try {
       const response = await this.graphClient.api(apiPath).put(data);
       console.log('Response from OneDrive API (upload):', response);
+      
+      // Report progress completion
+      if (progressCallback) {
+        progressCallback(data.length, data.length);
+      }
     } catch (error) {
       console.error('Error getting file from OneDrive:', error);
       throw error;

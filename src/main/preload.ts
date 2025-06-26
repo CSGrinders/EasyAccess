@@ -15,8 +15,18 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
         ipcRenderer.invoke('cloud-read-file', cloudType, accountId, filePath) as Promise<string>,
     getFile: (cloudType: CloudType, accountId: string, filePath: string) =>
         ipcRenderer.invoke('cloud-get-file', cloudType, accountId, filePath) as Promise<FileContent>,
-    postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer) =>
-        ipcRenderer.invoke('cloud-post-file', cloudType, accountId, fileName, folderPath, data) as Promise<void>,
+    postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer, transferId?: string) =>
+        ipcRenderer.invoke('cloud-post-file', cloudType, accountId, fileName, folderPath, data, transferId) as Promise<void>,
+    cancelUpload: (transferId: string) =>
+        ipcRenderer.invoke('cloud-cancel-upload', transferId) as Promise<boolean>,
+    onUploadProgress: (callback: (data: { fileName: string; uploaded: number; total: number }) => void) => {
+        const wrappedCallback = (event: any, data: { fileName: string; uploaded: number; total: number }) => callback(data);
+        ipcRenderer.on('cloud-upload-progress', wrappedCallback);
+        return wrappedCallback;
+    },
+    removeUploadProgressListener: (wrappedCallback: any) => {
+        ipcRenderer.removeListener('cloud-upload-progress', wrappedCallback);
+    },
     deleteFile: (cloudType: CloudType, accountId: string, filePath: string) =>
         ipcRenderer.invoke('cloud-delete-file', cloudType, accountId, filePath) as Promise<void>,
     createDirectory: (cloudType: CloudType, accountId: string, folderPath: string, folderName: string) =>

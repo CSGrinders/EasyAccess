@@ -166,12 +166,32 @@ export function TransferManager({
     };
 
     const getStatusText = () => {
-      if (transfer.error) return "Failed";
+      if (transfer.error) {
+        // Show a more informative status for partial failures
+        if (transfer.completedFiles && transfer.completedFiles.length > 0) {
+          return `Partial (${transfer.completedFiles.length}/${transfer.itemCount})`;
+        }
+        return "Failed";
+      }
       if (transfer.isCompleted) return "Completed";
       if (transfer.isCancelling) return "Cancelling...";
       return `${Math.round(transfer.progress)}%`;
     };    const getProgressText = () => {
-      if (transfer.error) return transfer.error;
+      if (transfer.error) {
+        // For cancelled/failed transfers with some completed files, show partial completion status
+        if (transfer.completedFiles && transfer.completedFiles.length > 0) {
+          const completed = transfer.completedFiles.length;
+          const failed = transfer.failedFiles?.length || 0;
+          const total = transfer.itemCount;
+          
+          if (transfer.error.includes("cancelled")) {
+            return `Cancelled (${completed}/${total} completed${failed > 0 ? `, ${failed} failed` : ''})`;
+          } else {
+            return `Failed (${completed}/${total} completed${failed > 0 ? `, ${failed} failed` : ''})`;
+          }
+        }
+        return transfer.error;
+      }
       if (transfer.isCompleted) {
         const successMsg = `${transfer.keepOriginal ? 'Copied' : 'Moved'} ${transfer.itemCount} file${transfer.itemCount > 1 ? 's' : ''} successfully`;
         if (transfer.itemCount > 1 && transfer.failedFiles?.length) {
@@ -254,20 +274,27 @@ export function TransferManager({
           </div>
         </div>
 
-        {!transfer.error && !transfer.isCompleted && transfer.progress > 0 && (
+        {(!transfer.isCompleted || (transfer.error && transfer.completedFiles && transfer.completedFiles.length > 0)) && transfer.progress > 0 && (
           <div className="space-y-1">
             <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
               <div 
-                className="bg-gradient-to-r from-blue-500 to-blue-600 h-1.5 rounded-full transition-all duration-300 ease-out"
+                className={cn(
+                  "h-1.5 rounded-full transition-all duration-300 ease-out",
+                  transfer.error ? 
+                    "bg-gradient-to-r from-red-500 to-red-600" : 
+                    "bg-gradient-to-r from-blue-500 to-blue-600"
+                )}
                 style={{ width: `${Math.min(100, Math.max(0, transfer.progress))}%` }}
               />
             </div>
             <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400">
               <div className="flex items-center gap-2">
                 {transfer.itemCount > 1 && (
-                  <span>{Math.round((transfer.progress / 100) * transfer.itemCount)} of {transfer.itemCount} files</span>
+                  <span>
+                    {transfer.completedFiles?.length || Math.round((transfer.progress / 100) * transfer.itemCount)} of {transfer.itemCount} files
+                  </span>
                 )}
-                {estimatedTimes[transfer.id] && (
+                {estimatedTimes[transfer.id] && !transfer.error && (
                   <>
                     {transfer.itemCount > 1 && <span>•</span>}
                     <div className="flex items-center gap-1">

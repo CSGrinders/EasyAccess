@@ -198,9 +198,10 @@ export function TransferDetailPanel({
       <div
         key={transfer.id}
         className={cn(
-          "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4 space-y-3",
-          transfer.error && "border-red-200 dark:border-red-800 bg-red-50/30 dark:bg-red-900/10",
-          transfer.isCompleted && "border-green-200 dark:border-green-800 bg-green-50/30 dark:bg-green-900/10"
+          "bg-white dark:bg-slate-800 border rounded-xl p-5 space-y-4 shadow-sm hover:shadow-md transition-all duration-200",
+          transfer.error && "border-red-200 dark:border-red-800 bg-gradient-to-br from-red-50/50 to-white dark:from-red-900/10 dark:to-slate-800",
+          transfer.isCompleted && "border-green-200 dark:border-green-800 bg-gradient-to-br from-green-50/50 to-white dark:from-green-900/10 dark:to-slate-800",
+          !transfer.error && !transfer.isCompleted && "border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50/50 to-white dark:from-blue-900/10 dark:to-slate-800"
         )}
       >
         {/* Header */}
@@ -281,74 +282,85 @@ export function TransferDetailPanel({
           </div>
         </div>
 
-        {/* Current Item */}
-        {transfer.currentItem && !transfer.isCompleted && (
-          <div className="bg-slate-50 dark:bg-slate-900/50 rounded p-2">
-            <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 mb-1">
-              <FileText className="h-3 w-3" />
-              <span>Current file:</span>
+        {/* Simplified File List for Multi-file Transfers */}
+        {transfer.itemCount > 1 && transfer.fileList && transfer.fileList.length > 0 && (
+          <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-3">
+              <FileText className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+              <span className="text-sm text-slate-600 dark:text-slate-400 font-medium">
+                Files ({transfer.fileList.length})
+              </span>
             </div>
-            <p className="text-sm text-slate-700 dark:text-slate-300 truncate">
-              {transfer.currentItem}
-            </p>
-          </div>
-        )}
-
-        {/* File Lists for Multi-file Transfers */}
-        {transfer.itemCount > 1 && (transfer.isCompleted || transfer.error) && (
-          <div className="space-y-2">
-
-            {/* All Files List (for reference) */}
-            {transfer.fileList && transfer.fileList.length > 0 && (
-              <details className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded">
-                <summary className="p-2 cursor-pointer text-xs text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
-                  View all files ({transfer.fileList.length})
-                </summary>
-                <div className="p-2 pt-0 max-h-32 overflow-y-auto space-y-1 border-t border-slate-200 dark:border-slate-700">
-                  {transfer.fileList.map((file, index) => (
-                    <div key={index} className="text-xs text-slate-600 dark:text-slate-400 truncate">
-                      {file}
+            <div className="max-h-32 overflow-y-auto">
+              <div className="grid grid-cols-1 gap-1">
+                {transfer.fileList.map((file, index) => {
+                  const isCompleted = transfer.completedFiles?.includes(file);
+                  const isFailed = transfer.failedFiles?.some(f => f.file === file);
+                  
+                  return (
+                    <div key={index} className="flex items-center gap-2 px-2 py-1 rounded">
+                      {isCompleted && <div className="h-2 w-2 bg-green-500 rounded-full flex-shrink-0" />}
+                      {isFailed && <div className="h-2 w-2 bg-red-500 rounded-full flex-shrink-0" />}
+                      {!isCompleted && !isFailed && <div className="h-2 w-2 bg-slate-400 rounded-full flex-shrink-0" />}
+                      <span className={cn(
+                        "text-xs truncate font-medium",
+                        isCompleted && "text-green-700 dark:text-green-300",
+                        isFailed && "text-red-700 dark:text-red-300",
+                        !isCompleted && !isFailed && "text-slate-600 dark:text-slate-400"
+                      )}>
+                        {file}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              </details>
-            )}
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
         {/* Progress Bar */}
         {!transfer.error && !transfer.isCompleted && transfer.progress > 0 && (
-          <div className="space-y-2">
-            <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+          <div className="space-y-3">
+            <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden shadow-inner">
               <div 
-                className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+                className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 h-3 rounded-full transition-all duration-500 ease-out relative overflow-hidden"
                 style={{ width: `${Math.min(100, Math.max(0, transfer.progress))}%` }}
-              />
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse"></div>
+              </div>
             </div>
-            <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400">
-              <span>{Math.round(transfer.progress)}% complete</span>
+            <div className="flex justify-between items-center text-sm text-slate-600 dark:text-slate-400">
+              <span className="font-medium">{Math.round(transfer.progress)}% complete</span>
               {transfer.itemCount > 1 && (
-                <span>{Math.round((transfer.progress / 100) * transfer.itemCount)} of {transfer.itemCount} files</span>
+                <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700">
+                  {Math.round((transfer.progress / 100) * transfer.itemCount)} of {transfer.itemCount} files
+                </span>
               )}
             </div>
           </div>
         )}
 
-        {/* Error Message */}
+        {/* Simple Error Message */}
         {transfer.error && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-2">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3">
             <p className="text-sm text-red-700 dark:text-red-300">{transfer.error}</p>
           </div>
         )}
 
         {/* Timing Information */}
-        <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-1">
+        <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400 pt-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 rounded-lg p-3 -m-1 mt-3">
+          <div className="flex items-center gap-2">
             <Clock className="h-3 w-3" />
-            <span>Started: {formatTime(transfer.startTime)}</span>
+            <span className="font-medium">Started:</span>
+            <span>{formatTime(transfer.startTime)}</span>
           </div>
           {(transfer.isCompleted || transfer.error) && (
-            <span>Duration: {formatDuration(transfer.startTime, transfer.endTime)}</span>
+            <div className="flex items-center gap-2">
+              <span className="font-medium">Duration:</span>
+              <span className="bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded text-xs">
+                {formatDuration(transfer.startTime, transfer.endTime)}
+              </span>
+            </div>
           )}
         </div>
       </div>

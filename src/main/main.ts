@@ -138,10 +138,45 @@ ipcMain.handle('cloud-read-directory', async (_e, cloudType: CloudType, accountI
 ipcMain.handle('cloud-get-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return getFile(cloudType, accountId, filePath);
 });
-ipcMain.handle('cloud-post-file', async (_e, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer | any) => {
+// Map to store active upload abort controllers by transfer ID
+const activeUploads = new Map<string, AbortController>();
+
+ipcMain.handle('cloud-post-file', async (event, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer | any, transferId?: string) => {
     // Ensure data is a Buffer (handle IPC serialization issues)
     const bufferData = Buffer.isBuffer(data) ? data : Buffer.from(data.data || data);
-    return postFile(cloudType, accountId, fileName, folderPath, bufferData);
+    
+    // Create abort controller for this upload if transferId is provided
+    let abortController: AbortController | undefined;
+    if (transferId) {
+        abortController = new AbortController();
+        activeUploads.set(transferId, abortController);
+    }
+    
+    // Create progress callback that sends updates to renderer
+    const progressCallback = (uploaded: number, total: number) => {
+        event.sender.send('cloud-upload-progress', { fileName, uploaded, total });
+    };
+    
+    try {
+        const result = await postFile(cloudType, accountId, fileName, folderPath, bufferData, progressCallback, abortController?.signal);
+        return result;
+    } finally {
+        // Clean up abort controller
+        if (transferId) {
+            activeUploads.delete(transferId);
+        }
+    }
+});
+
+// Handle upload cancellation
+ipcMain.handle('cloud-cancel-upload', async (_e, transferId: string) => {
+    const abortController = activeUploads.get(transferId);
+    if (abortController) {
+        abortController.abort();
+        activeUploads.delete(transferId);
+        return true;
+    }
+    return false;
 });
 ipcMain.handle('cloud-delete-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return deleteFile(cloudType, accountId, filePath);
