@@ -33,7 +33,7 @@ export interface CloudStorage {
     getAuthToken(): AuthTokens | null;
     deleteFile(filePath: string): Promise<void>;
 
-
+    getDirectoryInfo(dirPath: string): Promise<FileSystemItem>; // Get information about a directory
     searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]>;
     getFileInfo(filePath: string): Promise<FileSystemItem>;
     getDirectoryTree(dir: string): Promise<FileSystemItem[]>;

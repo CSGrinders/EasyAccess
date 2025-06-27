@@ -476,6 +476,64 @@ export class GoogleDriveStorage implements CloudStorage {
       });
       const mimeType = result.data.mimeType; 
 
+      if (mimeType?.includes('application/vnd.google-apps')) {
+        // If it's a Google Docs/Sheets/Slides file, we need to handle it differently
+        console.log('Google Docs/Sheets/Slides file detected, downloading as binary content');
+        try {
+          let file = null;
+          let exportMimeType = '';
+          let fileUrl = '';
+          if (mimeType === 'application/vnd.google-apps.document' ||
+              mimeType === 'application/vnd.google-apps.presentation') {
+            // Export Google Docs as PDF
+            console.log('Exporting Google Docs file as PDF');
+            exportMimeType = 'application/pdf';
+            fileUrl = `https://docs.google.com/document/d/${fileId}/edit`;
+          } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+            // Export Google Sheets as PDF
+            console.log('Exporting Google Sheets file as csv');
+            exportMimeType = 'text/csv'; // Use CSV for Sheets
+            fileUrl = `https://docs.google.com/spreadsheets/d/${fileId}/edit`;
+          } else if (mimeType === 'application/vnd.google-apps.drawing' ||
+                     mimeType === 'application/vnd.google-apps.photo') {
+            // Export Google Drawings as PNG
+            console.log('Exporting Google Drawings file as PNG');
+            exportMimeType = 'image/png';
+            fileUrl = `https://docs.google.com/drawings/d/${fileId}/edit`;
+          } else {
+            // For other Google file types, we can export as text
+            console.log('Exporting Google file as text');
+            exportMimeType = 'text/plain';
+            fileUrl = `https://docs.google.com/document/d/${fileId}/edit`;
+          }
+          file = await drive.files.export({
+            fileId: fileId,
+            mimeType: exportMimeType
+          }, { responseType: 'arraybuffer' });
+          if (!file || !file.data) {
+            throw new Error('Failed to export Google file');
+          }
+          console.log('Exported Google file:', file);
+          const data = Buffer.from(file.data as ArrayBuffer);
+          if (!data) {
+            throw new Error('Exported file data is empty');
+          }
+          const fileContent: FileContent = {
+            name: filePath.split('/').pop() || '',
+            content: data,
+            type: exportMimeType, 
+            path: CLOUD_HOME + filePath, // prepend the cloud home path
+            sourceCloudType: CloudType.GoogleDrive,
+            sourceAccountId: this.accountId || null, // Optional cloud type if the file is from a cloud storage
+            url: fileUrl
+          };
+          return fileContent;
+        } catch (err) {
+          console.error('Error exporting Google file:', err);
+          throw new Error('Failed to export Google file');
+        }
+      }
+
       try {
         const file = await drive.files.get(
           {
@@ -500,29 +558,8 @@ export class GoogleDriveStorage implements CloudStorage {
         };
         return fileContent;
       } catch (err) {
-        console.warn('Binary content download failed, returning file URL:', err);
-        let fileUrl = `https://drive.google.com/uc?id=${fileId}`;
-        if (mimeType === 'application/vnd.google-apps.document') {
-          fileUrl = `https://docs.google.com/document/d/${fileId}/edit`;
-        } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
-            fileUrl = `https://docs.google.com/spreadsheets/d/${fileId}/edit`;
-        }
-        console.log('File URL:', fileUrl);
-        if (!fileUrl) {
-          throw new Error('File URL not found');
-        }
-
-        const fileContent: FileContent = {
-          name: filePath.split('/').pop() || '',
-          url: fileUrl,
-          type: mimeType || 'application/octet-stream', // default to binary if no mime type found
-          path: CLOUD_HOME + filePath, // Path to the file in the source file system
-          sourceCloudType: CloudType.GoogleDrive,
-          sourceAccountId: this.accountId || null, // Optional cloud type if the file is from a cloud storage
-        };
-        
-        // Return the file content with URL
-        return fileContent;
+        console.error('Error downloading Google file:', err);
+        throw new Error('Failed to download Google file');
       }
     } catch (err) {
       throw err;
@@ -792,9 +829,49 @@ export class GoogleDriveStorage implements CloudStorage {
     
     try {
       const folderId = await this.getFolderId(folderPath);
-      return await this.calculateFolderSizeRecursive(drive, folderId);
+      console.log('Calculating size for folder ID:', folderId);
+      const size = await this.calculateFolderSizeRecursive(drive, folderId);
+      return size;
     } catch (error) {
       console.error('Error calculating folder size for Google Drive:', error);
+      return 0; // Return 0 if there's an error
+    }
+  }
+
+  async getDirectoryInfo(dirPath: string): Promise<FileSystemItem> {
+    
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+    
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+    try {
+      const folderId = await this.getFolderId(dirPath);
+      const response = await drive.files.get({
+        fileId: folderId,
+        fields: 'id,name,mimeType,size,modifiedTime'
+      });
+      
+      const folder = response.data;
+      if (!folder) {
+        console.error('Folder not found');
+        throw new Error('Folder not found');
+      }
+
+      const folderSize = await this.calculateFolderSizeRecursive(drive, folderId);
+      
+      const fileSystemItem: FileSystemItem = {
+        id: folder.id || '',
+        name: folder.name || '',
+        isDirectory: true,
+        path: dirPath || '',
+        size: folderSize || 0,
+        modifiedTime: folder.modifiedTime ? new Date(folder.modifiedTime).getTime() : undefined,
+      };
+      return fileSystemItem;
+    } catch (error) {
+      console.error('Error getting directory info for Google Drive:', error);
       throw error;
     }
   }
@@ -807,11 +884,14 @@ export class GoogleDriveStorage implements CloudStorage {
       const res: { data: drive_v3.Schema$FileList } = await drive.files.list({
         q: `'${folderId}' in parents and trashed = false`,
         pageSize: 1000,
-        fields: 'nextPageToken, files(id, name, mimeType, size)',
+        fields: 'nextPageToken, files(id, mimeType, size)',
         pageToken: nextPageToken,
       });
 
       const files = res.data.files || [];
+
+      console.log(`Calculating size for folder ID: ${folderId}, found ${files.length} items`);
+      console.log('Files:', files);
       
       for (const file of files) {
         if (file.mimeType === 'application/vnd.google-apps.folder') {

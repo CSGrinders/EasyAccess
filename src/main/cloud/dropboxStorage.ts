@@ -557,6 +557,57 @@ export class DropboxStorage implements CloudStorage {
         }
     }
 
+    async getDirectoryInfo(dirPath: string): Promise<FileSystemItem> {
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            throw new Error('Dropbox client is not initialized');
+        }
+
+        try {
+            if (dirPath === '/') {
+                dirPath = '';
+                const folderSize = await this.calculateFolderSizeRecursive(dirPath);
+                return {
+                    id: 'home',
+                    name: 'home',
+                    isDirectory: true,
+                    path: '/',
+                    size: folderSize || 0,
+                    modifiedTime: undefined,
+                };
+            } // DROPBOX API HOME
+            // Dropbox does not allow reading root directory directly, so we need to handle it separately
+            const response = await this.client.filesGetMetadata({ path: dirPath });
+            const metadata = response.result;
+
+            // Check if directory is deleted
+            if (metadata['.tag'] === 'deleted') {
+                throw new Error('Directory not found or has been deleted');
+            }
+
+            if (metadata['.tag'] !== 'folder') {
+                throw new Error('Path is not a directory');
+            }
+
+            const folderSize = await this.calculateFolderSizeRecursive(dirPath);
+
+            const fileSystemItem: FileSystemItem = {
+                id: (metadata as any).id || '',
+                name: metadata.name || '',
+                isDirectory: metadata['.tag'] === 'folder',
+                path: (metadata.path_lower || ''),
+                size: folderSize || 0,
+                modifiedTime: (metadata as any).server_modified ? new Date((metadata as any).server_modified).getTime() : undefined,
+            };
+
+            return fileSystemItem;
+        } catch (error) {
+            console.error('Error getting directory info for Dropbox:', error);
+            throw error;
+        }
+    }
+
     private async calculateFolderSizeRecursive(folderPath: string): Promise<number> {
         try {
             let path = folderPath;

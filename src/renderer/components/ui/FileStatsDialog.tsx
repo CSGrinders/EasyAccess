@@ -30,6 +30,7 @@ import {
 import { getFileIcon, getIconColor } from '@/components/ui/FileItem';
 import type { FileSystemItem } from '@Types/fileSystem';
 import type { CloudType } from '@Types/cloudType';
+import { on } from 'events';
 
 interface FileStatsDialogProps {
     /** Whether the dialog is open */
@@ -93,25 +94,53 @@ export const FileStatsDialog: React.FC<FileStatsDialogProps> = ({
         return `${size.toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`;
     }, []);
 
-    /** Gets the size display  */
-    const getItemSize = useCallback(() => {
-        if (!currentFile) return "Unknown";
+    const [currentFileSize, setCurrentFileSize] = useState<string>("Unknown");
 
+    useEffect(() => {
+        if (!currentFile) {
+            setCurrentFileSize("Unknown");
+            return;
+        }
+
+        let size = "Unknown";
         // For directories, check if we have a calculated size first
         if (currentFile.isDirectory) {
             const calculatedSize = folderSizes.get(currentFile.path);
             if (calculatedSize !== undefined) {
-                return formatFileSize(calculatedSize);
+                size = formatFileSize(calculatedSize);
+            } else if (calculatingPaths.has(currentFile.path)) {
+                // If we're calculating, show a loading state
+                size = "Calculating...";
+            } else if (currentFile.size) {
+                // Use the directory's own size if available
+                size = formatFileSize(currentFile.size);
             }
-            // If we're calculating, show a loading state
-            if (calculatingPaths.has(currentFile.path)) {
-                return "Calculating...";
-            }
-            return currentFile.size ? formatFileSize(currentFile.size) : "Unknown";
+        } else {
+            // For files, just use the item size
+            size = currentFile.size ? formatFileSize(currentFile.size) : "Unknown";
         }
-        // For files, just use the item size
-        return formatFileSize(currentFile.size);
+        setCurrentFileSize(size);
     }, [currentFile, folderSizes, calculatingPaths, formatFileSize]);
+
+    // /** Gets the size display  */
+    // const getItemSize = useCallback(() => {
+    //     if (!currentFile) return "Unknown";
+
+    //     // For directories, check if we have a calculated size first
+    //     if (currentFile.isDirectory) {
+    //         const calculatedSize = folderSizes.get(currentFile.path);
+    //         if (calculatedSize !== undefined) {
+    //             return formatFileSize(calculatedSize);
+    //         }
+    //         // If we're calculating, show a loading state
+    //         if (calculatingPaths.has(currentFile.path)) {
+    //             return "Calculating...";
+    //         }
+    //         return currentFile.size ? formatFileSize(currentFile.size) : "Unknown";
+    //     }
+    //     // For files, just use the item size
+    //     return formatFileSize(currentFile.size);
+    // }, [currentFile, folderSizes, calculatingPaths, formatFileSize]);
 
     /** Trigger folder size calculation */
     const triggerFolderSizeCalculation = useCallback(async () => {
@@ -509,7 +538,7 @@ export const FileStatsDialog: React.FC<FileStatsDialogProps> = ({
                                         <p className="select-none text-sm font-medium text-blue-900 dark:text-blue-100">Size</p>
                                         <div className="flex items-center gap-2">
                                             <p className="text-lg font-bold text-blue-800 dark:text-blue-200 truncate">
-                                                {getItemSize()}
+                                                {currentFileSize}
                                             </p>
                                             {item.isDirectory && calculatingPaths.has(item.path) && (
                                                 <div className="flex-shrink-0">

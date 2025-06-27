@@ -722,6 +722,44 @@ export async function getFileInfo(cloudType: CloudType, accountId: string, fileP
   }
 }
 
+export async function getDirectoryInfo(cloudType: CloudType, accountId: string, dirPath: string): Promise<FileSystemItem> {
+  try {
+    dirPath = dirPath.replace(CLOUD_HOME, "");
+    console.log('Getting directory info from cloud account:', cloudType, accountId, dirPath);
+
+    const accounts = StoredAccounts.get(cloudType);
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            return await account.getDirectoryInfo(dirPath);
+          } catch (error: any) {
+            console.error(`Error getting directory info from ${cloudType}:`, error);
+
+            // Categorize and re-throw with user-friendly messages
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
+              throw new Error('Directory not found or no longer exists.');
+            } else if (error.message?.includes('quota') || error.message?.includes('storage')) {
+              throw new Error('Storage quota exceeded or storage service unavailable.');
+            } else {
+              throw new Error(`Failed to get directory info: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
+      }
+    }
+    
+    throw new Error(`No ${cloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud directory tree error for ${cloudType}:`, error);
+    throw error; 
+  }
+}
+
 // Get directory tree from cloud storage
 export async function getDirectoryTree(cloudType: CloudType, accountId: string, dirPath: string): Promise<FileSystemItem[]> {
   try {

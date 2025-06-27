@@ -3,7 +3,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { config } from 'dotenv';
 import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getFileInfo, getDirectoryTree, readFile } from './cloud/cloudManager';
-import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal } from './local/localFileSystem';
+import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal, calculateDirectorySize } from './local/localFileSystem';
 // Load environment variables
 // In development, load from project root; in production, load from app Contents directory
 const envPath = app.isPackaged 
@@ -221,66 +221,7 @@ ipcMain.handle('get-mcp-status', async (_e) => {
 });
 
 
-/**
- * Recursively calculates the total size of a directory.
- * This version calculates size based on blocks allocated on disk.
- */
-async function calculateDirectorySize(
-    dirPath: string, 
-    processedInodes: Set<string> = new Set(),
-    depth: number = 0
-): Promise<number> {
 
-    // Prevent infinite recursion 
-    if (depth > 100) {
-        console.warn(`Max recursion depth reached at ${dirPath}`);
-        return 0;
-    }
-
-    let stats;
-    try {
-        // Use lstat to get file info without following symlinks.
-        stats = await fs.promises.lstat(dirPath);
-    } catch (error: any) {
-        if (error.code !== 'ENOENT' && error.code !== 'EPERM' && error.code !== 'EACCES') {
-            console.warn(`Cannot lstat ${dirPath}: ${error.code}`);
-        }
-        return 0;
-    }
-
-    //  if we've seen this inode, don't count it again.
-    const inodeKey = `${stats.dev}-${stats.ino}`;
-    if (processedInodes.has(inodeKey)) {
-        return 0;
-    }
-    processedInodes.add(inodeKey);
-
-    // If it's a directory, sum the sizes of its children recursively.
-    // If it's a file, return its allocated size on disk.
-    if (stats.isDirectory()) {
-        let totalSize = 0;
-        try {
-            const items = await fs.promises.readdir(dirPath, { withFileTypes: true });
-            
-            // Use Promise.all for concurrent recursion.
-            const childSizes = await Promise.all(items.map(item => {
-                const itemPath = path.join(dirPath, item.name);
-                return calculateDirectorySize(itemPath, processedInodes, depth + 1);
-            }));
-
-            totalSize = childSizes.reduce((sum, size) => sum + size, 0);
-
-        } catch (error: any) {
-            if (error.code !== 'EPERM' && error.code !== 'EACCES') {
-                console.warn(`Cannot read directory ${dirPath}: ${error.code}`);
-            }
-        }
-        return totalSize;
-    }
-
-    // For files and symlinks, return their allocated size.
-    return (stats.blocks || 0) * 512;
-}
 
 ipcMain.handle('read-directory', async (_e, dirPath: string) => {
     return await readDirectoryLocal(dirPath);

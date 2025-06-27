@@ -169,7 +169,7 @@ const Dashboard = () => {
             if (boxRef && boxRef.current) {
                 // Set higher z-index for clicked box, lower for others
                 boxRef?.current?.setStyle({
-                    zIndex: box.id === id ? newZIndex : (box.zIndex || 1) - 1,
+                    zIndex: box.id === id ? newZIndex : (box.zIndex ? (box.zIndex > 2 ? box.zIndex - 1 : 2) : 2),
                 });
             }
         });
@@ -220,6 +220,7 @@ const Dashboard = () => {
         };
     }, [tempPostFile, tempGetFile, addStorageBox]);
 
+
     return (
         <div className="flex flex-col h-screen bg-white dark:bg-gray-900 text-black dark:text-white">
             <header className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-md">
@@ -253,21 +254,23 @@ const Dashboard = () => {
                     <div className="relative flex flex-1">
                         <StorageSideWindow show={showStorageWindow} addStorage={addStorageBox} onAccountDeleted={closeStorageBoxesForAccount} />
                         <div className="relative flex flex-col flex-1">
-                            {action === "settings" ? (
+                            <div className={`absolute inset-0 ${action === "settings" ? 'block' : 'hidden'}`}>
                                 <SettingsPanel onAccountsCleared={handleAccountsCleared} />
-                            ) : action === "transfers" ? (
+                            </div>
+                            <div className={`absolute inset-0 ${action === "transfers" ? 'block' : 'hidden'}`}>
                                 <TransferDetailPanel 
                                     transfers={transferQueue.transfers}
                                     onCancelTransfer={handleCancelTransfer}
                                     onCloseTransfer={handleCloseTransfer}
                                     onRetryTransfer={handleRetryTransfer}
                                 />
-                            ) : canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
+                            </div>
+                            {canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
                                 <CanvasContainer
                                     zoomLevel={zoomLevel}
                                     setZoomLevel={setZoomLevel}
                                     isPanMode={isPanMode}
-                                    className="relative"
+                                    className={`absolute inset-0 ${action !== "settings" && action !== "transfers" ? 'block' : 'hidden'}`}
                                     position={position}
                                     setPosition={setPosition}
                                     boxMaximized={anyBoxMaximized}
@@ -293,8 +296,8 @@ const Dashboard = () => {
                                 </CanvasContainer>
                             ) : (
                                 <div className="flex-1 flex items-center justify-center">Loading canvas...</div>
-                            )}                      
-                             <AgentWindow show={showMcpTest} />
+                            )}     
+                             <AgentWindow show={showMcpTest} setShow={setShowMcpTest} />
                         </div>
                     </div>
                     <BoxDragPreview zoomLevel={zoomLevel} />

@@ -1,4 +1,4 @@
-import React, {memo} from "react"
+import React, { memo } from "react"
 import {
     FolderIcon,
     FileIcon,
@@ -27,9 +27,16 @@ import {
     Mail,
     Calendar,
     Layers,
+    Trash,
+    Move,
+    Copy,
+    Info,
+    MoreHorizontal,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type {FileSystemItem} from "@Types/fileSystem"
+import type { FileSystemItem } from "@Types/fileSystem"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@radix-ui/react-dropdown-menu";
+import { Button } from "./button";
 
 /**
  * Picks the right icon for a file or folder based on its name
@@ -184,32 +191,42 @@ interface FileItemProps {
     draggedItemsRef: React.RefObject<string[]>;
     handleItemClick: (e: React.MouseEvent, item: FileSystemItem) => void;
     handleItemMouseDown: (e: React.MouseEvent, item: FileSystemItem) => void;
-    handleItemRightClick?: (e: React.MouseEvent, item: FileSystemItem) => void;
+    handleItemRightClick?: (e: React.MouseEvent, item: FileSystemItem, mousePosition: { x: number; y: number }) => void;
     itemRefs: React.RefObject<Map<string, HTMLDivElement>>;
     isTransferring?: boolean;
     transferInfo?: { isMove: boolean } | null;
 }
 
-export const FileItem = memo<FileItemProps>(function FileItem({ 
-    item, 
-    isBoxToBoxTransfer = false, 
-    BoxDrag, 
-    boxId, 
-    draggedItemsRef, 
-    handleItemClick, 
-    handleItemMouseDown, 
+export const FileItem = memo<FileItemProps>(function FileItem({
+    item,
+    isBoxToBoxTransfer = false,
+    BoxDrag,
+    boxId,
+    draggedItemsRef,
+    handleItemClick,
+    handleItemMouseDown,
     handleItemRightClick,
     itemRefs,
     isTransferring = false,
     transferInfo = null
 }) {
     const IconComponent = getFileIcon(item.name, item.isDirectory);
-    const isDropTarget = BoxDrag.target?.targetId === item.id && 
-                         BoxDrag.target?.boxId === boxId && 
-                         item.isDirectory;
+    const isDropTarget = BoxDrag.target?.targetId === item.id &&
+        BoxDrag.target?.boxId === boxId &&
+        item.isDirectory;
     const iconColor = getIconColor(item.name, item.isDirectory, false, isDropTarget);
 
     const isDraggingOverFile = BoxDrag.isDragging && !item.isDirectory && BoxDrag.sourceBoxId === boxId;
+
+    const [showDropdown, setShowDropdown] = React.useState(false);
+    const [dropdownPosition, setDropdownPosition] = React.useState<{ top: number; left: number } | null>(null);
+
+    const handleOnContextMenu = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowDropdown(true);
+        setDropdownPosition({ top: e.clientY, left: e.clientX });
+    }
     return (
         <div
             key={item.id}
@@ -232,16 +249,19 @@ export const FileItem = memo<FileItemProps>(function FileItem({
                 if (!isTransferring && handleItemRightClick) {
                     e.preventDefault()
                     e.stopPropagation()
-                    handleItemRightClick(e, item)
+                    handleItemRightClick(e, item, {
+                        x: e.clientX,
+                        y: e.clientY
+                    });
                 }
             }}
             className={cn(
                 // Base styles for all file items
                 "file-item flex flex-col items-center justify-center w-25 h-25 rounded-md transition-all",
-                
+
                 // Transferring state styling - completely disable interaction
                 isTransferring ? (
-                    transferInfo?.isMove 
+                    transferInfo?.isMove
                         ? "opacity-50 cursor-not-allowed bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 pointer-events-none" // Moving files
                         : "opacity-75 cursor-not-allowed bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 pointer-events-none" // Copying files
                 ) : isDraggingOverFile ? (
@@ -254,24 +274,25 @@ export const FileItem = memo<FileItemProps>(function FileItem({
                     // Normal interactive state
                     "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
                 ),
-                
+
                 // Basic hover styles when not in box-to-box transfer mode and not transferring and not dragging over file
                 !isBoxToBoxTransfer && !isTransferring && !isDraggingOverFile && BoxDrag.target?.boxId !== boxId
-                        ? "hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent"
-                        : "border border-transparent",
+                    ? "hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent"
+                    : "border border-transparent",
                 // Add hover effect when dragging (only if not transferring and not in a drop zone)
                 !isTransferring && BoxDrag.isDragging && !draggedItemsRef.current.includes(item.id) && BoxDrag.sourceBoxId == boxId && item.isDirectory && BoxDrag.target?.boxId !== boxId &&
-                    "hover:ring-2 hover:ring-green-500 hover:bg-green-100 dark:hover:bg-green-900/30",
-                
+                "hover:ring-2 hover:ring-green-500 hover:bg-green-100 dark:hover:bg-green-900/30",
+
                 // Dragged items opacity (only if not transferring)
                 !isTransferring && draggedItemsRef.current.includes(item.id) && BoxDrag.isDragging && "opacity-50",
             )}
         >
+            
             {/* Icon container with transfer status overlay */}
             <div className="w-12 h-12 flex items-center justify-center mb-2 relative">
                 <IconComponent
                     className={cn(
-                        "h-10 w-10", 
+                        "h-10 w-10",
                         iconColor,
                         isTransferring && "opacity-60"
                     )}
@@ -279,10 +300,10 @@ export const FileItem = memo<FileItemProps>(function FileItem({
                 {/* Transfer status indicator */}
                 {isTransferring && (
                     <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold text-white animate-pulse"
-                         style={{
-                             backgroundColor: transferInfo?.isMove ? '#f59e0b' : '#3b82f6' 
-                         }}
-                         title={transferInfo?.isMove ? 'Moving file...' : 'Copying file...'}>
+                        style={{
+                            backgroundColor: transferInfo?.isMove ? '#f59e0b' : '#3b82f6'
+                        }}
+                        title={transferInfo?.isMove ? 'Moving file...' : 'Copying file...'}>
                         {transferInfo?.isMove ? 'M' : 'C'}
                     </div>
                 )}
