@@ -24,6 +24,7 @@ interface TransferServiceReturn {
     // Transfer management functions
     createTransfer: (sourceDescription: string, targetDescription: string, keepOriginal: boolean, itemCount: number, fileList?: string[]) => TransferItem;
     updateTransfer: (transferId: string, updates: Partial<TransferItem>) => void;
+    batchUpdateTransfer: (transferId: string, updates: Partial<TransferItem>) => void;
     removeTransfer: (transferId: string) => void;
     getTransfer: (transferId: string) => TransferItem | undefined;
     handleCancelTransfer: (transferId: string) => void;
@@ -113,21 +114,71 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
         return newTransfer;
     };
 
-    const updateTransfer = (transferId: string, updates: Partial<TransferItem>) => {
-        setTransferQueue(prev => ({
-            ...prev,
-            transfers: prev.transfers.map(transfer =>
-                transfer.id === transferId ? { ...transfer, ...updates } : transfer
-            )
-        }));
+    // Batch update function 
+    const batchUpdateTransfer = useCallback((transferId: string, updates: Partial<TransferItem>) => {
+        setTransferQueue(prev => {
+            const transferIndex = prev.transfers.findIndex(t => t.id === transferId);
+            if (transferIndex === -1) return prev;
+            
+            const updatedTransfers = [...prev.transfers];
+            const currentTransfer = updatedTransfers[transferIndex];
+            
+            // Create the updated transfer 
+            updatedTransfers[transferIndex] = {
+                ...currentTransfer,
+                ...updates,
+                completedFiles: updates.completedFiles ?? currentTransfer.completedFiles,
+                failedFiles: updates.failedFiles ?? currentTransfer.failedFiles,
+            };
+            
+            return {
+                ...prev,
+                transfers: updatedTransfers
+            };
+        });
 
         // Clean up transfer state when transfer completes or fails
         if (updates.isCompleted || updates.error) {
             setTimeout(() => {
                 removeTransferringFiles(transferId);
-            }, 500); // Small delay to ensure UI updates
+            }, 500);
         }
-    };
+    }, [removeTransferringFiles]);
+
+    const updateTransfer = useCallback((transferId: string, updates: Partial<TransferItem>) => {
+        setTransferQueue(prev => {
+            const updatedTransfers = prev.transfers.map(transfer => {
+                if (transfer.id === transferId) {
+                    const updatedTransfer = { ...transfer, ...updates };
+                    
+                    // Ensure completedFiles array is merged
+                    if (updates.completedFiles && Array.isArray(updates.completedFiles)) {
+                        updatedTransfer.completedFiles = [...updates.completedFiles];
+                    }
+                    
+                    // Ensure failedFiles array is merged
+                    if (updates.failedFiles && Array.isArray(updates.failedFiles)) {
+                        updatedTransfer.failedFiles = [...updates.failedFiles];
+                    }
+                    
+                    return updatedTransfer;
+                }
+                return transfer;
+            });
+            
+            return {
+                ...prev,
+                transfers: updatedTransfers
+            };
+        });
+
+        // Clean up transfer state when transfer completes or fails
+        if (updates.isCompleted || updates.error) {
+            setTimeout(() => {
+                removeTransferringFiles(transferId);
+            }, 500); 
+        }
+    }, [removeTransferringFiles]);
 
     const removeTransfer = (transferId: string) => {
         // Remove from transfer state when transfer is removed
@@ -147,7 +198,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
         try {
             const transfer = getTransfer(transferId);
             if (transfer && !transfer.isCancelling) {
-                updateTransfer(transferId, { isCancelling: true });
+                batchUpdateTransfer(transferId, { isCancelling: true });
                 
                 // Cancel the upload in the main process
                 const cancelled = await (window as any).cloudFsApi.cancelUpload(transferId);
@@ -155,7 +206,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                 // Update the transfer 
                 setTimeout(() => {
                     const currentTransfer = getTransfer(transferId);
-                    updateTransfer(transferId, {
+                    batchUpdateTransfer(transferId, {
                         error: "Transfer cancelled by user",
                         isCancelling: false,
                         endTime: Date.now(),
@@ -167,7 +218,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
         } catch (error) {
             const transfer = getTransfer(transferId);
             if (transfer) {
-                updateTransfer(transferId, {
+                batchUpdateTransfer(transferId, {
                     error: "Transfer cancelled",
                     isCancelling: false,
                     endTime: Date.now(),
@@ -304,18 +355,27 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
             const totalFiles = fileContentsCache.length;
             let completedFiles = 0;
             const progressRange = 100;
+            let currentCompletedFiles: string[] = [];
+            let currentFailedFiles: { file: string; error: string }[] = [];
 
             try {
                 // Upload files based on destination type
                 if (!cloudType || !accountId) {
                     // Local file system uploads
-                    for (const fileContent of fileContentsCache) {
+                    for (let i = 0; i < fileContentsCache.length; i++) {
+                        const fileContent = fileContentsCache[i];
+                        
                         if (transfer.abortController.signal.aborted) {
                             throw new Error("Transfer cancelled by user");
                         }
 
-                        updateTransfer(transfer.id, {
-                            currentItem: `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${fileName ? fileName : fileContent.name}`
+                        const currentFileName = fileName ? fileName : fileContent.name;
+                        const fileIndex = i + 1;
+                        
+                        // Update current item and progress 
+                        batchUpdateTransfer(transfer.id, {
+                            currentItem: `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${currentFileName} (${fileIndex}/${totalFiles})`,
+                            progress: (completedFiles / totalFiles) * progressRange
                         });
                         
                         try {
@@ -325,15 +385,14 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                 : Buffer.from(fileContent.content || []);
                                 
                             await (window as any).fsApi.postFile(
-                                fileName ? fileName : fileContent.name,
+                                currentFileName,
                                 parentPath,
                                 contentBuffer
                             );
                             
                             // Track successful file completion
-                            updateTransfer(transfer.id, {
-                                completedFiles: [...(getTransfer(transfer.id)?.completedFiles || []), fileName ? fileName : fileContent.name]
-                            });
+                            currentCompletedFiles.push(currentFileName);
+                            completedFiles++;
                             
                             // Try to delete from source, but don't fail the transfer if deletion fails
                             try {
@@ -342,28 +401,41 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                 // Continue with the transfer - the file was uploaded successfully
                             }
                             
-                            completedFiles++;
-                            updateTransfer(transfer.id, {
-                                progress: (completedFiles / totalFiles) * progressRange
+                            // Update progress and completed files in batch
+                            batchUpdateTransfer(transfer.id, {
+                                completedFiles: [...currentCompletedFiles],
+                                progress: (completedFiles / totalFiles) * progressRange,
+                                currentItem: completedFiles < totalFiles 
+                                    ? `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${currentFileName} (${fileIndex}/${totalFiles})` 
+                                    : `Completed ${completedFiles}/${totalFiles} files`
                             });
                         } catch (err) {
                             // Track failed file
                             const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-                            updateTransfer(transfer.id, {
-                                failedFiles: [...(getTransfer(transfer.id)?.failedFiles || []), { file: fileName ? fileName : fileContent.name, error: errorMessage }]
+                            currentFailedFiles.push({ file: currentFileName, error: errorMessage });
+                            
+                            batchUpdateTransfer(transfer.id, {
+                                failedFiles: [...currentFailedFiles]
                             });
-                            throw new Error(`Failed to upload ${fileName ? fileName : fileContent.name}: ${errorMessage}`);
+                            throw new Error(`Failed to upload ${currentFileName}: ${errorMessage}`);
                         }
                     }
                 } else {
                     // Cloud file system uploads
-                    for (const fileContent of fileContentsCache) {
+                    for (let i = 0; i < fileContentsCache.length; i++) {
+                        const fileContent = fileContentsCache[i];
+                        
                         if (transfer.abortController.signal.aborted) {
                             throw new Error("Transfer cancelled by user");
                         }
 
-                        updateTransfer(transfer.id, {
-                            currentItem: `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${fileName ? fileName : fileContent.name}`
+                        const currentFileName = fileName ? fileName : fileContent.name;
+                        const fileIndex = i + 1;
+                        
+                        // Update current item and progress in a single call
+                        batchUpdateTransfer(transfer.id, {
+                            currentItem: `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${currentFileName} (${fileIndex}/${totalFiles})`,
+                            progress: (completedFiles / totalFiles) * progressRange
                         });
                         
                         try {
@@ -373,7 +445,6 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                 : Buffer.from(fileContent.content || []);
                             
                             // Set up progress tracking for this file
-                            const currentFileName = fileName ? fileName : fileContent.name;
                             let progressListener: any = null;
                             
                             if (contentBuffer.length > 5 * 1024 * 1024) { // Only for large files (>5MB)
@@ -382,7 +453,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                         // Calculate file specific progress within overall transfer progress
                                         const fileProgress = (data.uploaded / data.total) * (100 / totalFiles);
                                         const overallProgress = (completedFiles / totalFiles) * 100 + fileProgress;
-                                        updateTransfer(transfer.id, {
+                                        batchUpdateTransfer(transfer.id, {
                                             progress: Math.min(overallProgress, 100)
                                         });
                                     }
@@ -406,9 +477,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             }
                             
                             // Track successful file completion
-                            updateTransfer(transfer.id, {
-                                completedFiles: [...(getTransfer(transfer.id)?.completedFiles || []), fileName ? fileName : fileContent.name]
-                            });
+                            currentCompletedFiles.push(currentFileName);
+                            completedFiles++;
                             
                             // Try to delete from source, but don't fail the transfer if deletion fails
                             try {
@@ -417,25 +487,32 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                 // Continue with the transfer - the file was uploaded successfully
                             }
                             
-                            completedFiles++;
-                            updateTransfer(transfer.id, {
-                                progress: (completedFiles / totalFiles) * progressRange
+                            // Update progress and completed files in batch
+                            batchUpdateTransfer(transfer.id, {
+                                completedFiles: [...currentCompletedFiles],
+                                progress: (completedFiles / totalFiles) * progressRange,
+                                currentItem: completedFiles < totalFiles 
+                                    ? `Preparing next file...` 
+                                    : `Completed ${completedFiles}/${totalFiles} files`
                             });
                         } catch (err) {
                             // Track failed file
                             const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-                            updateTransfer(transfer.id, {
-                                failedFiles: [...(getTransfer(transfer.id)?.failedFiles || []), { file: fileName ? fileName : fileContent.name, error: errorMessage }]
+                            currentFailedFiles.push({ file: currentFileName, error: errorMessage });
+                            
+                            batchUpdateTransfer(transfer.id, {
+                                failedFiles: [...currentFailedFiles]
                             });
-                            throw new Error(`Failed to upload ${fileName ? fileName : fileContent.name}: ${errorMessage}`);
+                            throw new Error(`Failed to upload ${currentFileName}: ${errorMessage}`);
                         }
                     }
                 }
 
                 // Success
-                updateTransfer(transfer.id, {
+                batchUpdateTransfer(transfer.id, {
                     isCompleted: true,
                     progress: 100,
+                    currentItem: `Completed ${completedFiles}/${totalFiles} files`,
                     endTime: Date.now()
                 });
 
@@ -451,9 +528,12 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     ? "Transfer cancelled" 
                     : errorMessage;
                 
-                updateTransfer(transfer.id, {
+                batchUpdateTransfer(transfer.id, {
                     error: displayError,
-                    isCancelling: false
+                    isCancelling: false,
+                    endTime: Date.now(),
+                    completedFiles: currentCompletedFiles,
+                    failedFiles: currentFailedFiles
                 });
                 
                 // Also refresh UI on error to remove transferring state
@@ -518,13 +598,15 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
             
             if (!cloudType || !accountId) {
                 // local file system
-                for (const filePath of filePaths) {
+                for (let i = 0; i < filePaths.length; i++) {
+                    const filePath = filePaths[i];
                     try {
                         const fileName = filePath.split('/').pop() || filePath;
+                        const fileIndex = i + 1;
                         
                         if (transfer) {
-                            updateTransfer(transfer.id, {
-                                currentItem: `Downloading ${fileName}`,
+                            batchUpdateTransfer(transfer.id, {
+                                currentItem: `Downloading ${fileName} (${fileIndex}/${totalFiles})`,
                                 progress: (downloadedFiles / totalFiles) * 100
                             });
                         }
@@ -535,13 +617,16 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         downloadedFiles++;
                         
                         if (transfer) {
-                            updateTransfer(transfer.id, {
-                                progress: (downloadedFiles / totalFiles) * 100
+                            batchUpdateTransfer(transfer.id, {
+                                progress: (downloadedFiles / totalFiles) * 100,
+                                currentItem: downloadedFiles < totalFiles 
+                                    ? `Downloading ${fileName} (${fileIndex}/${totalFiles})` 
+                                    : `Downloaded ${downloadedFiles}/${totalFiles} files`
                             });
                         }
                     } catch (err: any) {
                         if (transfer) {
-                            updateTransfer(transfer.id, {
+                            batchUpdateTransfer(transfer.id, {
                                 error: `Failed to read ${filePath}: ${err.message || 'Unknown error'}`,
                                 isCancelling: false
                             });
@@ -550,13 +635,15 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     }
                 }
             } else {
-                for (const filePath of filePaths) {
+                for (let i = 0; i < filePaths.length; i++) {
+                    const filePath = filePaths[i];
                     try {
                         const fileName = filePath.split('/').pop() || filePath;
+                        const fileIndex = i + 1;
                         
                         if (transfer) {
-                            updateTransfer(transfer.id, {
-                                currentItem: `Downloading ${fileName}`,
+                            batchUpdateTransfer(transfer.id, {
+                                currentItem: `Downloading ${fileName} (${fileIndex}/${totalFiles})`,
                                 progress: (downloadedFiles / totalFiles) * 100
                             });
                         }
@@ -567,13 +654,16 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         downloadedFiles++;
                         
                         if (transfer) {
-                            updateTransfer(transfer.id, {
-                                progress: (downloadedFiles / totalFiles) * 100
+                            batchUpdateTransfer(transfer.id, {
+                                progress: (downloadedFiles / totalFiles) * 100,
+                                currentItem: downloadedFiles < totalFiles 
+                                    ? `Downloading ${fileName} (${fileIndex}/${totalFiles})` 
+                                    : `Downloaded ${downloadedFiles}/${totalFiles} files`
                             });
                         }
                     } catch (err: any) {
                         if (transfer) {
-                            updateTransfer(transfer.id, {
+                            batchUpdateTransfer(transfer.id, {
                                 error: `Failed to download ${filePath}: ${err.message || 'Unknown error'}`,
                                 isCancelling: false
                             });
@@ -584,7 +674,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
             }
             
             if (transfer) {
-                updateTransfer(transfer.id, {
+                batchUpdateTransfer(transfer.id, {
                     isCompleted: true,
                     progress: 100,
                     currentItem: `Downloaded ${totalFiles} file${totalFiles > 1 ? 's' : ''}`,
@@ -649,19 +739,25 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
 
             const totalFiles = filePaths.length;
             let processedFiles = 0;
+            let currentCompletedFiles: string[] = [];
+            let currentFailedFiles: { file: string; error: string }[] = [];
 
             try {
                 // Process each file: download then upload (but only show upload progress)
-                for (const filePath of filePaths) {
+                for (let i = 0; i < filePaths.length; i++) {
+                    const filePath = filePaths[i];
+                    
                     if (transfer.abortController.signal.aborted) {
                         throw new Error("Transfer cancelled by user");
                     }
 
                     const fileName = filePath.split('/').pop() || filePath;
+                    const fileIndex = i + 1;
                     
                     // Update status to show current file being processed
-                    updateTransfer(transfer.id, {
-                        currentItem: `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${fileName}`
+                    batchUpdateTransfer(transfer.id, {
+                        currentItem: `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${fileName} (${fileIndex}/${totalFiles})`,
+                        progress: (processedFiles / totalFiles) * 100
                     });
 
                     // Download the file silently (without showing in transfer status)
@@ -688,7 +784,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                     // Calculate file-specific progress within overall transfer progress
                                     const fileProgress = (data.uploaded / data.total) * (100 / totalFiles);
                                     const overallProgress = (processedFiles / totalFiles) * 100 + fileProgress;
-                                    updateTransfer(transfer.id, {
+                                    batchUpdateTransfer(transfer.id, {
                                         progress: Math.min(overallProgress, 100)
                                     });
                                 }
@@ -720,9 +816,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         }
 
                         // Track successful file completion
-                        updateTransfer(transfer.id, {
-                            completedFiles: [...(getTransfer(transfer.id)?.completedFiles || []), fileName]
-                        });
+                        currentCompletedFiles.push(fileName);
 
                         // Delete from source if not keeping original
                         if (!confirmation.keepOriginal) {
@@ -735,16 +829,21 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         }
 
                         processedFiles++;
-                        updateTransfer(transfer.id, {
-                            progress: (processedFiles / totalFiles) * 100
+                        batchUpdateTransfer(transfer.id, {
+                            completedFiles: [...currentCompletedFiles],
+                            progress: (processedFiles / totalFiles) * 100,
+                            currentItem: processedFiles < totalFiles 
+                                ? `Preparing next file...` 
+                                : `Completed ${processedFiles}/${totalFiles} files`
                         });
 
                     } catch (err: any) {
                         // Track failed file
-                        const fileName = filePath.split('/').pop() || filePath;
                         const errorMessage = err.message || 'Unknown error';
-                        updateTransfer(transfer.id, {
-                            failedFiles: [...(getTransfer(transfer.id)?.failedFiles || []), { file: fileName, error: errorMessage }]
+                        currentFailedFiles.push({ file: fileName, error: errorMessage });
+                        
+                        batchUpdateTransfer(transfer.id, {
+                            failedFiles: [...currentFailedFiles]
                         });
                         throw err;
                     } finally {
@@ -753,9 +852,10 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                 }
 
                 // Success
-                updateTransfer(transfer.id, {
+                batchUpdateTransfer(transfer.id, {
                     isCompleted: true,
                     progress: 100,
+                    currentItem: `Completed ${processedFiles}/${totalFiles} files`,
                     endTime: Date.now()
                 });
 
@@ -777,9 +877,12 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     ? "Transfer cancelled" 
                     : errorMessage;
                 
-                updateTransfer(transfer.id, {
+                batchUpdateTransfer(transfer.id, {
                     error: displayError,
-                    isCancelling: false
+                    isCancelling: false,
+                    endTime: Date.now(),
+                    completedFiles: currentCompletedFiles,
+                    failedFiles: currentFailedFiles
                 });
 
                 // Also refresh UI on error to remove transferring state
@@ -815,41 +918,42 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
         }
     }
 
-    const handleRetryTransfer = useCallback(async (transferId: string) => {
-        const transfer = transferQueue.transfers.find(t => t.id === transferId);
+    const handleRetryTransfer = useCallback((transferId: string) => {
+        const transfer = getTransfer(transferId);
         if (!transfer) return;
 
         // Reset transfer state for retry
-        setTransferQueue(prev => ({
-            ...prev,
-            transfers: prev.transfers.map(t => 
-                t.id === transferId 
-                    ? { 
-                        ...t, 
-                        error: null, 
-                        progress: 0, 
-                        isCompleted: false,
-                        isCancelling: false,
-                        currentItem: "Preparing retry...",
-                        completedFiles: [],
-                        failedFiles: [],
-                        endTime: undefined,
-                        abortController: new AbortController() // Create new abort controller for retry
-                    }
-                    : t
-            )
-        }));
+        batchUpdateTransfer(transferId, {
+            error: null,
+            isCompleted: false,
+            isCancelling: false,
+            progress: 0,
+            currentItem: "Retrying transfer...",
+            startTime: Date.now(),
+            endTime: undefined,
+            completedFiles: [],
+            failedFiles: [],
+            abortController: new AbortController() // Create new abort controller for retry
+        });
 
         try {
             //TODO: Implement retry logic based on transfer type
+            // For now, we just reset the state - the actual retry implementation
+            // would depend on storing the original transfer parameters
+            console.log(`Retry functionality not yet implemented for transfer ${transferId}`);
+            
+            batchUpdateTransfer(transferId, {
+                error: "Retry functionality not yet implemented",
+                isCancelling: false
+            });
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "Retry failed";
-            updateTransfer(transferId, {
+            batchUpdateTransfer(transferId, {
                 error: `Retry failed: ${errorMessage}`,
                 isCancelling: false
             });
         }
-    }, [transferQueue.transfers]);
+    }, []);
 
     return {
         transferQueue,
@@ -863,6 +967,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
         // Transfer management functions
         createTransfer,
         updateTransfer,
+        batchUpdateTransfer,
         removeTransfer,
         getTransfer,
         handleCancelTransfer,

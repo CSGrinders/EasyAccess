@@ -291,7 +291,7 @@ export function TransferManager({
               <div className="flex items-center gap-2">
                 {transfer.itemCount > 1 && (
                   <span>
-                    {transfer.completedFiles?.length || Math.round((transfer.progress / 100) * transfer.itemCount)} of {transfer.itemCount} files
+                    {transfer.completedFiles?.length || 0} of {transfer.itemCount} files
                   </span>
                 )}
                 {estimatedTimes[transfer.id] && !transfer.error && (
