@@ -2,7 +2,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FileContent, FileSystemItem } from '../types/fileSystem'
 import { CloudType } from '../types/cloudType';
-import { deleteFile } from './cloud/cloudManager';
 
 contextBridge.exposeInMainWorld('cloudFsApi', {
     connectNewCloudAccount: (cloudType: CloudType) =>
@@ -13,19 +12,37 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
         ipcRenderer.invoke('cloud-read-directory', cloudType, accountId, dir) as Promise<FileSystemItem[]>,
     readFile: (cloudType: CloudType, accountId: string, filePath: string) =>
         ipcRenderer.invoke('cloud-read-file', cloudType, accountId, filePath) as Promise<string>,
-    getFile: (cloudType: CloudType, accountId: string, filePath: string) =>
-        ipcRenderer.invoke('cloud-get-file', cloudType, accountId, filePath) as Promise<FileContent>,
+    getFile: (cloudType: CloudType, accountId: string, filePath: string, transferId?: string) =>
+        ipcRenderer.invoke('cloud-get-file', cloudType, accountId, filePath, transferId) as Promise<FileContent>,
     postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer, transferId?: string) =>
         ipcRenderer.invoke('cloud-post-file', cloudType, accountId, fileName, folderPath, data, transferId) as Promise<void>,
     cancelUpload: (transferId: string) =>
         ipcRenderer.invoke('cloud-cancel-upload', transferId) as Promise<boolean>,
+    cancelDownload: (transferId: string) =>
+        ipcRenderer.invoke('cloud-cancel-download', transferId) as Promise<boolean>,
     onUploadProgress: (callback: (data: { fileName: string; uploaded: number; total: number }) => void) => {
-        const wrappedCallback = (event: any, data: { fileName: string; uploaded: number; total: number }) => callback(data);
+        const wrappedCallback = (event: any, data: { fileName: string; uploaded: number; total: number }) => {
+            console.log('Preload received upload progress:', data);
+            callback(data);
+        };
+        console.log('Setting up upload progress listener in preload');
         ipcRenderer.on('cloud-upload-progress', wrappedCallback);
+        return wrappedCallback;
+    },
+    onDownloadProgress: (callback: (data: { fileName: string; downloaded: number; total: number }) => void) => {
+        const wrappedCallback = (event: any, data: { fileName: string; downloaded: number; total: number }) => {
+            console.log('Preload received download progress:', data);
+            callback(data);
+        };
+        console.log('Setting up download progress listener in preload');
+        ipcRenderer.on('cloud-download-progress', wrappedCallback);
         return wrappedCallback;
     },
     removeUploadProgressListener: (wrappedCallback: any) => {
         ipcRenderer.removeListener('cloud-upload-progress', wrappedCallback);
+    },
+    removeDownloadProgressListener: (wrappedCallback: any) => {
+        ipcRenderer.removeListener('cloud-download-progress', wrappedCallback);
     },
     deleteFile: (cloudType: CloudType, accountId: string, filePath: string) =>
         ipcRenderer.invoke('cloud-delete-file', cloudType, accountId, filePath) as Promise<void>,

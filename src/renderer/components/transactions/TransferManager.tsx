@@ -4,8 +4,8 @@
  * Manages a queue of file transfers and displays their status
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { X, AlertCircle, Loader2, CheckCircle, Clock, ChevronDown, ChevronUp, Package, Maximize2, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { X, AlertCircle, Loader2, CheckCircle, Clock, ChevronDown, ChevronUp, Package, Maximize2, RefreshCw, CloudDownload, CloudUpload} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { TransferItem } from '@Types/transfer';
@@ -99,9 +99,7 @@ export function TransferManager({
 
   // Auto-hide completed transfers after delay (but not when transfer panel is open)
   useEffect(() => {
-    // Don't auto-remove transfers if the transfer panel is open - users want to see them there
     if (isTransferPanelOpen) {
-      // Clear any existing timer since we don't want to auto-remove
       if (autoHideTimer) {
         clearTimeout(autoHideTimer);
         setAutoHideTimer(null);
@@ -161,8 +159,10 @@ export function TransferManager({
   const renderTransferItem = (transfer: TransferItem) => {
     const getStatusIcon = () => {
       if (transfer.error) return <AlertCircle className="h-4 w-4 text-red-500" />;
+      if (transfer.isDownloading) return <CloudDownload className="h-4 w-4 text-blue-500 animate-bounce" />;
+      if (transfer.isUploading) return <CloudUpload className="h-4 w-4 text-orange-500 animate-bounce" />;
       if (transfer.isCompleted) return <CheckCircle className="h-4 w-4 text-green-500" />;
-      return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
+      return <Loader2 className="h-4 w-4 text-purple-500 animate-spin" />;
     };
 
     const getStatusText = () => {
@@ -203,7 +203,7 @@ export function TransferManager({
       const truncatedName = transfer.currentItem && transfer.currentItem.length > 25 
         ? `...${transfer.currentItem.slice(-22)}`
         : transfer.currentItem;
-      return truncatedName || "Preparing...";
+      return truncatedName;
     };
 
     return (
@@ -211,7 +211,9 @@ export function TransferManager({
         "border-l-4 pl-3 py-2 space-y-1",
         transfer.error ? "border-red-500 bg-red-50/50 dark:bg-red-900/10" :
         transfer.isCompleted ? "border-green-500 bg-green-50/50 dark:bg-green-900/10" :
-        "border-blue-500 bg-blue-50/50 dark:bg-blue-900/10"
+        transfer.isDownloading ? "border-blue-500 bg-blue-50/50 dark:bg-blue-900/10" :
+        transfer.isUploading ? "border-orange-500 bg-orange-50/50 dark:bg-organge-900/10" :
+        "border-purple-500 bg-purple-50/50 dark:bg-purple-900/10"
       )}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -233,7 +235,11 @@ export function TransferManager({
               "text-xs font-medium px-2 py-1 rounded-full",
               transfer.error ? "text-red-700 bg-red-100 dark:text-red-300 dark:bg-red-900/30" :
               transfer.isCompleted ? "text-green-700 bg-green-100 dark:text-green-300 dark:bg-green-900/30" :
-              "text-blue-700 bg-blue-100 dark:text-blue-300 dark:bg-blue-900/30"
+              transfer.isDownloading ?
+                "text-blue-700 bg-blue-100 dark:text-blue-300 dark:bg-blue-900/30" :
+              transfer.isUploading ?
+                "text-orange-700 bg-orange-100 dark:text-orange-300 dark:bg-orange-900/30" :
+              "text-purple-700 bg-purple-100 dark:text-purple-300 dark:bg-purple-900/30"
             )}>
               {getStatusText()}
             </span>
@@ -282,7 +288,11 @@ export function TransferManager({
                   "h-1.5 rounded-full transition-all duration-300 ease-out",
                   transfer.error ? 
                     "bg-gradient-to-r from-red-500 to-red-600" : 
-                    "bg-gradient-to-r from-blue-500 to-blue-600"
+                  transfer.isUploading ?
+                    "bg-gradient-to-r from-orange-400 to-orange-500" : 
+                  transfer.isDownloading ?
+                    "bg-gradient-to-r from-blue-400 to-blue-500" :  
+                    "bg-gradient-to-r from-purple-500 to-purple-600"
                 )}
                 style={{ width: `${Math.min(100, Math.max(0, transfer.progress))}%` }}
               />
@@ -291,7 +301,7 @@ export function TransferManager({
               <div className="flex items-center gap-2">
                 {transfer.itemCount > 1 && (
                   <span>
-                    {transfer.completedFiles?.length || 0} of {transfer.itemCount} files
+                    {transfer.completedFiles?.length} of {transfer.itemCount} files
                   </span>
                 )}
                 {estimatedTimes[transfer.id] && !transfer.error && (

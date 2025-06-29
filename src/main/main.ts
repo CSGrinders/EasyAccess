@@ -135,8 +135,34 @@ ipcMain.handle('get-connected-cloud-accounts', async (_e, cloudType: CloudType) 
 ipcMain.handle('cloud-read-directory', async (_e, cloudType: CloudType, accountId: string, dir: string) => {
     return readDirectory(cloudType, accountId, dir);
 });
-ipcMain.handle('cloud-get-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
-    return getFile(cloudType, accountId, filePath);
+
+// Map to store active download abort controllers by transfer ID
+const activeDownloads = new Map<string, AbortController>();
+
+ipcMain.handle('cloud-get-file', async (event, cloudType: CloudType, accountId: string, filePath: string, transferId?: string) => {
+    // Create abort controller for this download if transferId is provided
+    let abortController: AbortController | undefined;
+    if (transferId) {
+        abortController = new AbortController();
+        activeDownloads.set(transferId, abortController);
+    }
+    
+    // Create progress callback that sends updates to renderer
+    const progressCallback = (downloaded: number, total: number) => {
+        const fileName = filePath.split('/').pop() || filePath; 
+        console.log('Main process sending download progress:', { fileName, downloaded, total });
+        event.sender.send('cloud-download-progress', { fileName, downloaded, total });
+    };
+    
+    try {
+        const result = await getFile(cloudType, accountId, filePath, progressCallback, abortController?.signal);
+        return result;
+    } finally {
+        // Clean up abort controller
+        if (transferId) {
+            activeDownloads.delete(transferId);
+        }
+    }
 });
 // Map to store active upload abort controllers by transfer ID
 const activeUploads = new Map<string, AbortController>();
@@ -154,6 +180,7 @@ ipcMain.handle('cloud-post-file', async (event, cloudType: CloudType, accountId:
     
     // Create progress callback that sends updates to renderer
     const progressCallback = (uploaded: number, total: number) => {
+        console.log('Main process sending upload progress:', { fileName, uploaded, total });
         event.sender.send('cloud-upload-progress', { fileName, uploaded, total });
     };
     
@@ -178,6 +205,20 @@ ipcMain.handle('cloud-cancel-upload', async (_e, transferId: string) => {
     }
     return false;
 });
+
+
+// Handle download cancellation
+ipcMain.handle('cloud-cancel-download', async (_e, transferId: string) => {
+    const abortController = activeDownloads.get(transferId);
+    if (abortController) {
+        abortController.abort();
+        activeDownloads.delete(transferId);
+        return true;
+    }
+    return false;
+});
+
+
 ipcMain.handle('cloud-delete-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return deleteFile(cloudType, accountId, filePath);
 });

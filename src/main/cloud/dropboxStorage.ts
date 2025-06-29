@@ -248,7 +248,7 @@ export class DropboxStorage implements CloudStorage {
     getAuthToken(): AuthTokens | null {
         return this.AuthToken || null;
     }
-    async getFile(filePath: string): Promise<FileContent> {
+    async getFile(filePath: string, progressCallback?: (downloaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<FileContent> {
         await this.initClient();
         if (!this.client) {
             console.error('Dropbox client is not initialized');
@@ -261,7 +261,8 @@ export class DropboxStorage implements CloudStorage {
             headers: {
                 'Authorization': `Bearer ${this.AuthToken?.access_token}`,
                 'Dropbox-API-Arg': JSON.stringify({ path: filePath })
-            }
+            },
+            signal: abortSignal
         });
 
         const metadataResponse = await fetch('https://api.dropboxapi.com/2/files/get_metadata', {
@@ -294,6 +295,11 @@ export class DropboxStorage implements CloudStorage {
         if (!buffer) {
             console.error('Buffer is empty');
             return Promise.reject('Buffer is empty');
+        }
+
+        // Update progress after completion
+        if (progressCallback) {
+            progressCallback(buffer.length, buffer.length);
         }
 
         const fileContent: FileContent = {

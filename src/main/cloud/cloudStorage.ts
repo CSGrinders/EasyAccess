@@ -26,7 +26,7 @@ export interface CloudStorage {
     connect(): Promise<void | any>;
     readDir(dir: string): Promise<FileSystemItem[]>;
     readFile(filePath: string): Promise<string>;
-    getFile(filePath: string): Promise<FileContent>;
+    getFile(filePath: string, progressCallback?: (downloaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<FileContent>;
     postFile(fileName: string, folderPath: string, type: string, data: Buffer, progressCallback?: (uploaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<void>;
     createDirectory(dirPath: string): Promise<void>; // Create a new directory
     getAccountId(): string;

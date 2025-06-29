@@ -31,6 +31,10 @@ export interface TransferItem {
   abortController: AbortController;
   /** Whether the transfer is currently being cancelled */
   isCancelling: boolean;
+  /** Whether the transfer is currently downloading files */
+  isDownloading?: boolean;
+  /** Whether the transfer is currently uploading files */
+  isUploading?: boolean;
   /** List of all files included in the transfer operation */
   fileList?: string[];
   /** List of files that have been successfully transferred */

@@ -363,7 +363,7 @@ export async function readFile(CloudType: CloudType, accountId: string, filePath
 
   // filePath: /HOME/dir/temp.txt
   // returns the file content in base64 format
-export async function getFile(CloudType: CloudType, accountId: string, filePath: string): Promise<FileContent | null> {
+export async function getFile(CloudType: CloudType, accountId: string, filePath: string, progressCallback?: (downloaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<FileContent | null> {
   try {
     filePath = filePath.replace(CLOUD_HOME, "");
     console.log('Getting file from cloud account:', CloudType, accountId, filePath);
@@ -373,7 +373,7 @@ export async function getFile(CloudType: CloudType, accountId: string, filePath:
       for (const account of accounts) {
         if (account.getAccountId() === accountId) {
           try {
-            return await account.getFile(filePath);
+            return await account.getFile(filePath, progressCallback, abortSignal);
           } catch (error: any) {
             console.error(`Error getting file from ${CloudType}:`, error);
             

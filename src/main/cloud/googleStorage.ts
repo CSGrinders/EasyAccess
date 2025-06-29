@@ -462,67 +462,41 @@ export class GoogleDriveStorage implements CloudStorage {
     }
   }
 
-  async getFile(filePath: string): Promise<FileContent> {
+  async getFile(filePath: string, progressCallback?: (downloaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<FileContent> {
     await this.refreshOAuthClientIfNeeded();
     if (!this.oauth2Client) {
       throw new Error('OAuth2 client is not initialized');
     }
     const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
     const fileId = await this.getFileId(filePath);
+    
     try {
       const result = await drive.files.get({
         fileId: fileId,
-        fields: 'mimeType'
+        fields: 'mimeType, size'
       });
-      const mimeType = result.data.mimeType; 
+      const mimeType = result.data.mimeType;
+      const fileSize = result.data.size ? parseInt(result.data.size) : 0;
 
-      try {
-        const file = await drive.files.get(
-          {
-            fileId: fileId,
-            alt: 'media',
-          }, 
-          { responseType: 'arraybuffer' }
-        );
-        const data = Buffer.from(file.data as ArrayBuffer)
-
-        if (!data || !mimeType) {
-          throw new Error('File not found or empty');
-        }
-
+      // Use resumable download for files larger than 5MB
+      const LARGEFILE_CUTOFF = 5 * 1024 * 1024; // 5MB
+      
+      if (fileSize > LARGEFILE_CUTOFF && progressCallback) {
+        // Use resumable download for large files
+        const data = await this.getFileResumable(fileId, fileSize, progressCallback, abortSignal);
+        
         const fileContent: FileContent = {
           name: filePath.split('/').pop() || '',
           content: data,
-          type: mimeType, // TODO: get the correct mime type
-          path: CLOUD_HOME + filePath, // prepend the cloud home path
+          type: mimeType || 'application/octet-stream',
+          path: CLOUD_HOME + filePath,
           sourceCloudType: CloudType.GoogleDrive,
-          sourceAccountId: this.accountId || null, // Optional cloud type if the file is from a cloud storage
+          sourceAccountId: this.accountId || null,
         };
         return fileContent;
-      } catch (err) {
-        console.warn('Binary content download failed, returning file URL:', err);
-        let fileUrl = `https://drive.google.com/uc?id=${fileId}`;
-        if (mimeType === 'application/vnd.google-apps.document') {
-          fileUrl = `https://docs.google.com/document/d/${fileId}/edit`;
-        } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
-            fileUrl = `https://docs.google.com/spreadsheets/d/${fileId}/edit`;
-        }
-        console.log('File URL:', fileUrl);
-        if (!fileUrl) {
-          throw new Error('File URL not found');
-        }
-
-        const fileContent: FileContent = {
-          name: filePath.split('/').pop() || '',
-          url: fileUrl,
-          type: mimeType || 'application/octet-stream', // default to binary if no mime type found
-          path: CLOUD_HOME + filePath, // Path to the file in the source file system
-          sourceCloudType: CloudType.GoogleDrive,
-          sourceAccountId: this.accountId || null, // Optional cloud type if the file is from a cloud storage
-        };
-        
-        // Return the file content with URL
-        return fileContent;
+      } else {
+        // Use simple download for small files
+        return await this.getFileSimple(fileId, filePath, mimeType, progressCallback);
       }
     } catch (err) {
       throw err;
@@ -1022,5 +996,155 @@ export class GoogleDriveStorage implements CloudStorage {
     } while (nextPageToken);
 
     return totalSize;
+  }
+
+  private async getFileSimple(fileId: string, filePath: string, mimeType: string | null | undefined, progressCallback?: (downloaded: number, total: number) => void): Promise<FileContent> {
+    try {
+      const file = await this.oauth2Client!.request({
+        url: `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+        method: 'GET',
+        responseType: 'arraybuffer'
+      });
+      
+      const data = Buffer.from(file.data as ArrayBuffer);
+
+      if (!data || !mimeType) {
+        throw new Error('File not found or empty');
+      }
+
+      // Update progress after completion
+      if (progressCallback) {
+        progressCallback(data.length, data.length);
+      }
+
+      const fileContent: FileContent = {
+        name: filePath.split('/').pop() || '',
+        content: data,
+        type: mimeType || 'application/octet-stream',
+        path: CLOUD_HOME + filePath,
+        sourceCloudType: CloudType.GoogleDrive,
+        sourceAccountId: this.accountId || null,
+      };
+      return fileContent;
+    } catch (err) {
+      console.warn('Binary content download failed, returning file URL:', err);
+      let fileUrl = `https://drive.google.com/uc?id=${fileId}`;
+      if (mimeType === 'application/vnd.google-apps.document') {
+        fileUrl = `https://docs.google.com/document/d/${fileId}/edit`;
+      } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+        fileUrl = `https://docs.google.com/spreadsheets/d/${fileId}/edit`;
+      }
+      console.log('File URL:', fileUrl);
+      if (!fileUrl) {
+        throw new Error('File URL not found');
+      }
+
+      const fileContent: FileContent = {
+        name: filePath.split('/').pop() || '',
+        url: fileUrl,
+        type: mimeType || 'application/octet-stream',
+        path: CLOUD_HOME + filePath,
+        sourceCloudType: CloudType.GoogleDrive,
+        sourceAccountId: this.accountId || null,
+      };
+      
+      return fileContent;
+    }
+  }
+
+  private async getFileResumable(fileId: string, fileSize: number, progressCallback: (downloaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<Buffer> {
+    console.log('Starting resumable download for file:', fileId, 'Size:', fileSize);
+    
+    try {
+      // Download file in chunks
+      const data = await this.downloadFileInChunks(fileId, fileSize, progressCallback, abortSignal);
+      
+      console.log(`Resumable download completed for file: ${fileId}`);
+      return data;
+    } catch (error) {
+      console.error('Resumable download failed:', error);
+      throw error;
+    }
+  }
+
+  /* download file in chunks, used when large files */
+  private async downloadFileInChunks(fileId: string, totalSize: number, progressCallback: (downloaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<Buffer> {
+    let CHUNK_SIZE: number;
+    
+    if (totalSize < 10 * 1024 * 1024) { // < 10MB
+        CHUNK_SIZE = 512 * 1024; // 512KB
+    } else if (totalSize < 100 * 1024 * 1024) { // < 100MB
+        CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
+    } else if (totalSize < 1024 * 1024 * 1024) { // < 1GB
+        CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
+    } else { // > 1GB
+        CHUNK_SIZE = 32 * 1024 * 1024; // 32MB
+    }
+
+    let downloadedBytes = 0;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+    const chunks: Buffer[] = [];
+
+    console.log(`Starting chunked download. Total size: ${totalSize}, Chunk size: ${CHUNK_SIZE}`);
+
+    while (downloadedBytes < totalSize) {
+      // Check for cancellation before each chunk
+      if (abortSignal?.aborted) {
+        console.log('Download cancelled by user');
+        throw new Error('Download cancelled by user');
+      }
+
+      const chunkStart = downloadedBytes;
+      const chunkEnd = Math.min(downloadedBytes + CHUNK_SIZE, totalSize) - 1;
+      
+      console.log(`Downloading chunk: ${chunkStart}-${chunkEnd}/${totalSize - 1}`);
+
+      try {
+        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${this.oauth2Client!.credentials.access_token}`,
+            'Range': `bytes=${chunkStart}-${chunkEnd}`,
+          },
+          signal: abortSignal 
+        });
+
+        if (response.status === 206 || response.status === 200) {
+          // Partial content or full content received
+          const chunkBuffer = Buffer.from(await response.arrayBuffer());
+          chunks.push(chunkBuffer);
+          
+          downloadedBytes += chunkBuffer.length;
+          
+          // Update progress
+          progressCallback(downloadedBytes, totalSize);
+          
+          retryCount = 0; // Reset retry count on successful chunk
+          
+          if (response.status === 200) {
+            // Full file downloaded in one request
+            break;
+          }
+        } else {
+          throw new Error(`Download chunk failed: ${response.status} ${response.statusText}`);
+        }
+      } catch (error) {
+        retryCount++;
+        console.error(`Chunk download error (attempt ${retryCount}/${MAX_RETRIES}):`, error);
+        
+        if (retryCount >= MAX_RETRIES) {
+          throw new Error(`Download failed after ${MAX_RETRIES} attempts: ${error}`);
+        }
+        
+        // Wait before retry
+        const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    // Combine all chunks into a single buffer
+    return Buffer.concat(chunks);
   }
 }

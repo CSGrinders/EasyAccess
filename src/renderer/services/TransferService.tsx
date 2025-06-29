@@ -198,10 +198,11 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
         try {
             const transfer = getTransfer(transferId);
             if (transfer && !transfer.isCancelling) {
-                batchUpdateTransfer(transferId, { isCancelling: true });
+                batchUpdateTransfer(transferId, { isCancelling: true, isDownloading: false, isUploading: false });
                 
-                // Cancel the upload in the main process
-                const cancelled = await (window as any).cloudFsApi.cancelUpload(transferId);
+                // Cancel both upload and download in the main process
+                const uploadCancelled = await (window as any).cloudFsApi.cancelUpload(transferId);
+                const downloadCancelled = await (window as any).cloudFsApi.cancelDownload(transferId);
                 
                 // Update the transfer 
                 setTimeout(() => {
@@ -374,7 +375,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         
                         // Update current item and progress 
                         batchUpdateTransfer(transfer.id, {
-                            currentItem: `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${currentFileName} (${fileIndex}/${totalFiles})`,
+                            currentItem: `${currentFileName} (${fileIndex}/${totalFiles})`,
                             progress: (completedFiles / totalFiles) * progressRange
                         });
                         
@@ -406,7 +407,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                 completedFiles: [...currentCompletedFiles],
                                 progress: (completedFiles / totalFiles) * progressRange,
                                 currentItem: completedFiles < totalFiles 
-                                    ? `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${currentFileName} (${fileIndex}/${totalFiles})` 
+                                    ? `${currentFileName} (${fileIndex}/${totalFiles})` 
                                     : `Completed ${completedFiles}/${totalFiles} files`
                             });
                         } catch (err) {
@@ -434,7 +435,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         
                         // Update current item and progress in a single call
                         batchUpdateTransfer(transfer.id, {
-                            currentItem: `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${currentFileName} (${fileIndex}/${totalFiles})`,
+                            currentItem: `${currentFileName} (${fileIndex}/${totalFiles})`,
                             progress: (completedFiles / totalFiles) * progressRange
                         });
                         
@@ -583,14 +584,10 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                 transfer = createTransfer(
                     sourceDescription,
                     "Preparing...",
-                    false, // This is just downloading
+                    false,
                     filePaths.length,
                     filePaths.map(path => path.split('/').pop() || path) // Extract file names from paths
                 );
-                
-                updateTransfer(transfer.id, {
-                    currentItem: "Downloading files..."
-                });
             }
             
             const totalFiles = filePaths.length;
@@ -606,7 +603,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         
                         if (transfer) {
                             batchUpdateTransfer(transfer.id, {
-                                currentItem: `Downloading ${fileName} (${fileIndex}/${totalFiles})`,
+                                currentItem: `${fileName} (${fileIndex}/${totalFiles})`,
                                 progress: (downloadedFiles / totalFiles) * 100
                             });
                         }
@@ -620,7 +617,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             batchUpdateTransfer(transfer.id, {
                                 progress: (downloadedFiles / totalFiles) * 100,
                                 currentItem: downloadedFiles < totalFiles 
-                                    ? `Downloading ${fileName} (${fileIndex}/${totalFiles})` 
+                                    ? `${fileName} (${fileIndex}/${totalFiles})` 
                                     : `Downloaded ${downloadedFiles}/${totalFiles} files`
                             });
                         }
@@ -643,23 +640,61 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         
                         if (transfer) {
                             batchUpdateTransfer(transfer.id, {
-                                currentItem: `Downloading ${fileName} (${fileIndex}/${totalFiles})`,
+                                currentItem: `${fileName} (${fileIndex}/${totalFiles})`,
                                 progress: (downloadedFiles / totalFiles) * 100
                             });
                         }
                         
-                        const fileContent: FileContent = await (window as any).cloudFsApi.getFile(cloudType, accountId, filePath);
-                        fileContentsCacheRef.current.push(fileContent); // Update the ref with the new file content
+                        // Set up progress tracking for large files BEFORE starting download
+                        let progressListener: any = null;
                         
-                        downloadedFiles++;
-                        
+                        // For large files, set up download progress tracking
                         if (transfer) {
-                            batchUpdateTransfer(transfer.id, {
-                                progress: (downloadedFiles / totalFiles) * 100,
-                                currentItem: downloadedFiles < totalFiles 
-                                    ? `Downloading ${fileName} (${fileIndex}/${totalFiles})` 
-                                    : `Downloaded ${downloadedFiles}/${totalFiles} files`
+                            console.log('Setting up download progress listener for:', fileName);
+                            progressListener = (window as any).cloudFsApi.onDownloadProgress((data: { fileName: string; downloaded: number; total: number }) => {
+                                console.log('Download progress received:', data, 'Expected fileName:', fileName);
+                                if (data.fileName === fileName && transfer) {
+                                    console.log('Progress match found, updating UI');
+                                    // Calculate file-specific progress within overall transfer progress
+                                    const fileProgress = (data.downloaded / data.total) * (100 / totalFiles);
+                                    const overallProgress = (downloadedFiles / totalFiles) * 100 + fileProgress;
+                                    batchUpdateTransfer(transfer.id, {
+                                        progress: Math.min(overallProgress, 100)
+                                    });
+                                } else {
+                                    console.log('Progress filename mismatch or no transfer:', { 
+                                        received: data.fileName, 
+                                        expected: fileName, 
+                                        hasTransfer: !!transfer 
+                                    });
+                                }
                             });
+                            
+                            // Small delay to ensure the listener is registered before download starts
+                            console.log('Waiting for listener to register...');
+                            await new Promise(resolve => setTimeout(resolve, 10));
+                            console.log('Starting download for:', fileName);
+                        }
+                        
+                        try {
+                            const fileContent: FileContent = await (window as any).cloudFsApi.getFile(cloudType, accountId, filePath, transfer?.id);
+                            fileContentsCacheRef.current.push(fileContent); // Update the ref with the new file content
+                            
+                            downloadedFiles++;
+                            
+                            if (transfer) {
+                                batchUpdateTransfer(transfer.id, {
+                                    progress: (downloadedFiles / totalFiles) * 100,
+                                    currentItem: downloadedFiles < totalFiles 
+                                        ? `${fileName} (${fileIndex}/${totalFiles})` 
+                                        : `Downloaded ${downloadedFiles}/${totalFiles} files`
+                                });
+                            }
+                        } finally {
+                            // Clean up progress listener
+                            if (progressListener) {
+                                (window as any).cloudFsApi.removeDownloadProgressListener(progressListener);
+                            }
                         }
                     } catch (err: any) {
                         if (transfer) {
@@ -697,7 +732,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
     // New function for drag and drop workflow with confirmation first
     const tempDragDropTransfer = async (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => {
         let transfer: TransferItem | null = null;
-        
+        console.log('Starting drag and drop transfer with paths:', filePaths, 'Source:', sourceCloudType, sourceAccountId, 'Target:', targetCloudType, targetAccountId);
         try {
             // Get user confirmation first (before downloading)
             const confirmation = await showUploadConfirmation();
@@ -733,6 +768,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                 transferId: transfer?.id || '',
                 isMove: !confirmation.keepOriginal
             }));
+            
             if (transfer) {
                 addTransferringFiles(transferringFiles);
             }
@@ -756,7 +792,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     
                     // Update status to show current file being processed
                     batchUpdateTransfer(transfer.id, {
-                        currentItem: `${confirmation.keepOriginal ? 'Copying' : 'Moving'} ${fileName} (${fileIndex}/${totalFiles})`,
+                        currentItem: `${fileName} (${fileIndex}/${totalFiles})`,
                         progress: (processedFiles / totalFiles) * 100
                     });
 
@@ -764,20 +800,52 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     isContentLoading.current = true;
                     try {
                         let fileContent: FileContent;
-                        if (!sourceCloudType || !sourceAccountId) {
-                            fileContent = await (window as any).fsApi.getFile(filePath);
-                        } else {
-                            fileContent = await (window as any).cloudFsApi.getFile(sourceCloudType, sourceAccountId, filePath);
+                        
+                        // Set up progress tracking for large files during download and upload
+                        let progressListener: any = null;
+                        
+                        if (transfer && sourceCloudType && sourceAccountId) {
+                            progressListener = (window as any).cloudFsApi.onDownloadProgress((data: { fileName: string; downloaded: number; total: number }) => {
+                                if (data.fileName === fileName && transfer) {
+                                    // Calculate file specific progress within overall transfer progress
+                                    const fileProgress = (data.downloaded / data.total) * (100 / totalFiles);
+                                    const overallProgress = (processedFiles / totalFiles) * 100 + fileProgress;
+                                    batchUpdateTransfer(transfer.id, {
+                                        isDownloading: true,
+                                        progress: Math.min(overallProgress, 100)
+                                    });
+                                }
+                            });
+                            
+                            await new Promise(resolve => setTimeout(resolve, 10));
                         }
+                        
+                        try {
+                            if (!sourceCloudType || !sourceAccountId) {
+                                fileContent = await (window as any).fsApi.getFile(filePath);
+                            } else {
+                                fileContent = await (window as any).cloudFsApi.getFile(sourceCloudType, sourceAccountId, filePath, transfer?.id);
+                            }
+                        } finally {
 
+                            // Download was sucessful, reset to loading state for next operation
+                            batchUpdateTransfer(transfer.id, {
+                                isDownloading: false,
+                                progress: 0
+                            });
+                            // Clean up download progress listener
+                            if (progressListener) {
+                                (window as any).cloudFsApi.removeDownloadProgressListener(progressListener);
+                            }
+                        }
+                        
                         // Upload the file immediately
                         const contentBuffer = Buffer.isBuffer(fileContent.content) 
                             ? fileContent.content 
                             : Buffer.from(fileContent.content || []);
 
-                        // Set up progress tracking for large files
-                        let progressListener: any = null;
-                        
+
+                        progressListener = null // Reset for upload progress tracking
                         if (contentBuffer.length > 5 * 1024 * 1024) { // Only for large files (>5MB)
                             progressListener = (window as any).cloudFsApi.onUploadProgress((data: { fileName: string; uploaded: number; total: number }) => {
                                 if (data.fileName === fileName && transfer) {
@@ -785,6 +853,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                     const fileProgress = (data.uploaded / data.total) * (100 / totalFiles);
                                     const overallProgress = (processedFiles / totalFiles) * 100 + fileProgress;
                                     batchUpdateTransfer(transfer.id, {
+                                        isDownloading: false,
+                                        isUploading: true,
                                         progress: Math.min(overallProgress, 100)
                                     });
                                 }
@@ -805,7 +875,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                     fileName,
                                     targetPath || '',
                                     contentBuffer,
-                                    transfer.id // Pass transfer ID instead of abort signal
+                                    transfer.id 
                                 );
                             }
                         } finally {
@@ -815,6 +885,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             }
                         }
 
+                        console.warn(`File ${fileName} processed successfully`);
                         // Track successful file completion
                         currentCompletedFiles.push(fileName);
 
@@ -853,13 +924,14 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
 
                 // Success
                 batchUpdateTransfer(transfer.id, {
+                    isDownloading: false,
+                    isUploading: false,
                     isCompleted: true,
                     progress: 100,
                     currentItem: `Completed ${processedFiles}/${totalFiles} files`,
                     endTime: Date.now()
                 });
 
-                // Refresh UI after successful transfer - delay to ensure all files are processed
                 setTimeout(() => {
                     // Create fake file content cache for refresh function
                     const fakeFileContents = filePaths.map(filePath => ({
@@ -885,7 +957,6 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     failedFiles: currentFailedFiles
                 });
 
-                // Also refresh UI on error to remove transferring state
                 setTimeout(() => {
                     const fakeFileContents = filePaths.map(filePath => ({
                         path: filePath,
@@ -894,8 +965,6 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     })) as FileContent[];
                     refreshSourceAndTargetBoxes(fakeFileContents, targetCloudType, targetAccountId);
                 }, 100);
-                
-                // Don't throw the error - just update the transfer state
             }
         } catch (error) {
             // This catches errors before transfer creation (like user cancellation)
@@ -933,13 +1002,12 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
             endTime: undefined,
             completedFiles: [],
             failedFiles: [],
-            abortController: new AbortController() // Create new abort controller for retry
+            abortController: new AbortController() 
         });
 
         try {
             //TODO: Implement retry logic based on transfer type
             // For now, we just reset the state - the actual retry implementation
-            // would depend on storing the original transfer parameters
             console.log(`Retry functionality not yet implemented for transfer ${transferId}`);
             
             batchUpdateTransfer(transferId, {

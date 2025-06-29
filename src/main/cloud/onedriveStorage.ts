@@ -323,7 +323,7 @@ export class OneDriveStorage implements CloudStorage {
     return this.AuthToken || null;
   }
 
-  async getFile(filePath: string): Promise<FileContent> {
+  async getFile(filePath: string, progressCallback?: (downloaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<FileContent> {
     if (!this.graphClient) {
       await this.initAccount();
     }
@@ -331,6 +331,12 @@ export class OneDriveStorage implements CloudStorage {
     if (!this.graphClient) {
       console.error('Graph client is not initialized');
       return Promise.reject(new Error('Graph client is not initialized'));
+    }
+
+    // Check for cancellation before download
+    if (abortSignal?.aborted) {
+      console.log('Download cancelled by user');
+      throw new Error('Download cancelled by user');
     }
 
     const apiPath = `/me/drive/root:/${filePath.replace(/^\//, '')}`; // remove leading slash if exists, to avoid double slashes
@@ -358,6 +364,11 @@ export class OneDriveStorage implements CloudStorage {
       const fileData = Buffer.from(dataResponse as ArrayBuffer);
 
       console.log("Base64 file data:", fileData.toString('base64'));
+
+      // Update progress after completion
+      if (progressCallback) {
+        progressCallback(fileData.length, fileData.length);
+      }
 
       const fileContent: FileContent = {
         name: fileName,
