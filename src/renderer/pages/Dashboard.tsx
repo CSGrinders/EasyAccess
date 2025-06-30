@@ -7,6 +7,7 @@ import { StorageBox } from "@/components/box/StorageBox";
 import { type StorageBoxData } from "@Types/box";
 import StorageSideWindow from '@/components/box/StorageSideWindow';
 import { CloudType } from '@Types/cloudType';
+import { DashboardState } from '@Types/canvas';
 import { BoxDragProvider } from "@/contexts/BoxDragContext";
 import { BoxDragPreview } from '@/components/box/BoxDragPreview';
 import SettingsPanel from '@/pages/SettingsPanel';
@@ -17,6 +18,8 @@ import { UploadConfirmationDialog } from '@/components/transactions/UploadConfir
 import { useTransferService } from '@/services/TransferService';
 import { RendererIpcCommandDispatcher } from '@/services/AgentControlService';
 
+import { FaDropbox, FaGoogleDrive} from "react-icons/fa";
+import { TbBrandOnedrive } from "react-icons/tb";
 
 const Dashboard = () => {
     const [zoomLevel, setZoomLevel] = useState(1);
@@ -28,7 +31,6 @@ const Dashboard = () => {
     const canvasVwpRef = useRef<HTMLDivElement>({} as HTMLDivElement);
     const [canvasVwpSize, setCanvasViewportSize] = useState({ width: 0, height: 0 });
     const [showStorageWindow, setShowStorageWindow] = useState(false);
-    const [nextBoxId, setNextBoxId] = useState(3);
     const [showMcpTest, setShowMcpTest] = useState(false);
     const [disabledAction, setDisabledAction] = useState(false);
 
@@ -41,17 +43,7 @@ const Dashboard = () => {
         return boxRefs.current.get(id);
     };
 
-    const [storageBoxes, setStorageBoxes] = useState<StorageBoxData[]>([
-        {
-            id: 1,
-            title: "Local Directory",
-            type: "local",
-            icon: <HardDrive className="h-6 w-6" />,
-            position: { x: -250, y: -200 },
-            size: { width: 400, height: 300 },
-            zIndex: 1,
-        }
-    ]);
+    const [storageBoxes, setStorageBoxes] = useState<StorageBoxData[]>([]);
 
     // To sync storageBoxes with a ref for performance.. not sure actually..
     const storageBoxesRef = useRef<StorageBoxData[]>(storageBoxes);
@@ -115,8 +107,19 @@ const Dashboard = () => {
         };
     }, [canvasVwpRef.current]);
 
+    function getNextBoxId() {
+        // Get the next box ID based on the current state
+        const setUsedIds = new Set(storageBoxes.map(box => box.id));
+        let nextId = 1;
+        while (setUsedIds.has(nextId)) {
+            nextId++;
+        }
+        return nextId;
+    }
+
     const addStorageBox = (type: string, title: string, icon?: React.ReactNode, cloudType?: CloudType, accountId?: string) => {
         console.log(`Adding storage box: type=${type}, title=${title}, icon=${icon}, cloudType=${cloudType}, accountId=${accountId}`);
+        const nextBoxId = getNextBoxId();
         const newStorageBox: StorageBoxData = {
             id: nextBoxId,
             title: title,
@@ -129,7 +132,6 @@ const Dashboard = () => {
             accountId: accountId,
         };
         setStorageBoxes([...storageBoxes, newStorageBox]);
-        setNextBoxId(nextBoxId + 1);
         // setNextZIndex(nextZIndex + 1);
         // nextZIndexRef.current += 1;
         setShowStorageWindow(false); // Close the storage window after adding
@@ -156,6 +158,8 @@ const Dashboard = () => {
     };
 
     const bringToFront = useCallback((id: number) => {
+        // there can be better algorithm to handle z-index management TODO
+        // but now its fine i guess...
         // Skip if box is maximized
         if (maximizedBoxes.has(id)) return;
 
@@ -219,6 +223,104 @@ const Dashboard = () => {
             dispatcher.unregister('postFileOnRenderer');
         };
     }, [tempPostFile, tempGetFile, addStorageBox]);
+
+    // Move the listener setup into a useEffect to properly handle state updates
+    useEffect(() => {
+        const layoutHandler = () => {
+            console.log("Requesting layout for Dashboard");
+            const currentState: DashboardState = {
+                scale: zoomLevel,  // Now this will have the current value
+                pan: position,
+                boxes: storageBoxesRef.current.map(box => {
+                    const boxRef = getRefForBox(box.id);
+                    const boxState = boxRef.current?.getCurrentState();
+                    return {
+                        id: box.id.toString(),
+                        title: box.title,
+                        type: box.type,
+                        position: boxState?.position || { x: -1, y: -1 },
+                        size: boxState?.size || { width: 400, height: 300 },
+                        zIndex: box.zIndex ?? 0,
+                        cloudType: box.cloudType ? String(box.cloudType) : undefined,
+                        accountId: box.accountId,
+                    };
+                }),
+            };
+            console.log("Current state:", currentState);
+            return currentState;
+        };
+
+        // Register the handler
+        (window as any).electronAPI.onRequestLayout(layoutHandler);
+
+
+        (window as any).electronAPI.onLoadSavedState((state: DashboardState | undefined) => {
+            if (!state) {
+                console.warn("No saved state found, initializing with default");
+                setZoomLevel(1);
+                setPosition({ x: 0, y: 0 });
+                setStorageBoxes([
+                    {
+                        id: 1,
+                        title: "Local Directory",
+                        type: "local",
+                        icon: <HardDrive className="h-6 w-6" />,
+                        position: { x: -250, y: -200 },
+                        size: { width: 400, height: 300 },
+                        zIndex: 1,
+                    }
+                ]);
+                return;
+            }
+            console.log("Loading saved state for Dashboard");
+            console.log("Loaded state:", state);
+            setZoomLevel(state.scale);
+            setPosition(state.pan);
+            if (state.boxes.length === 0) {
+                console.warn("No boxes found in saved state, initializing with default box");
+                setStorageBoxes([
+                    {
+                        id: 1,
+                        title: "Local Directory",
+                        type: "local",
+                        icon: <HardDrive className="h-6 w-6" />,
+                        position: { x: -250, y: -200 },
+                        size: { width: 400, height: 300 },
+                        zIndex: 1,
+                    }
+                ]);
+                return;
+            }
+            setStorageBoxes(state.boxes.map(box => {
+                let icon = <HardDrive className="h-6 w-6" />;
+                if (box.cloudType === CloudType.GoogleDrive) {
+                    icon = <FaGoogleDrive className="h-6 w-6" />;
+                } else if (box.cloudType === CloudType.Dropbox) {
+                    icon = <FaDropbox className="h-6 w-6" />;
+                } else if (box.cloudType === CloudType.OneDrive) {
+                    icon = <TbBrandOnedrive className="h-6 w-6" />;
+                }
+                return {
+                    id: parseInt(box.id, 10),
+                    title: box.title,
+                    type: box.type,
+                    position: box.position,
+                    size: box.size,
+                    zIndex: box.zIndex,
+                    cloudType: box.cloudType as CloudType | undefined,
+                    accountId: box.accountId,
+                    icon: icon,
+                };
+            }));
+        });
+
+        // Cleanup on unmount
+        return () => {
+            // Assuming you have a way to remove the listener
+            (window as any).electronAPI.removeRequestLayoutListener(layoutHandler);
+            (window as any).electronAPI.removeLoadSavedStateListener();
+        };
+    }, [zoomLevel, position]); // Add dependencies that should trigger updates
 
 
     return (

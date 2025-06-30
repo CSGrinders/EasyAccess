@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, shell, ipcRenderer } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, ipcRenderer, dialog } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
+import Store from 'electron-store';
 import { config } from 'dotenv';
 import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getFileInfo, getDirectoryTree, readFile } from './cloud/cloudManager';
 import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal, calculateDirectorySize } from './local/localFileSystem';
@@ -19,6 +20,9 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { PermissionManager } from './permissions/permissionManager';
 import { createFsServer } from './MCP/globalFsMcpServer';
 import { v4 as uuidv4 } from 'uuid';
+import { DashboardState } from '@Types/canvas';
+
+const store = new Store();
 
 let mcpClient: MCPClient | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -58,6 +62,46 @@ const setUpMCP = async () => {
     }
     
     return mcpClient;
+};
+
+const saveCurrentLayout = async () => {
+    /*
+    Save the current layout of the main window to a file.
+    current scale
+    current view position
+    storage boxes that are open
+    Each Storagebox:
+    - cloud type
+    - account id
+    - current path
+    - box position in canvas
+    - box size
+    */
+    return new Promise<void>((resolve, reject) => {
+        // Set up one-time listener for the response
+        const layoutResponseHandler = (event: Electron.IpcMainEvent, state: DashboardState) => {
+            ipcMain.removeListener('save-current-state', layoutResponseHandler);
+            try {
+                console.log('Saving current layout:', state.scale, state.pan, state.boxes);
+                store.set('savedAppState', state);
+                resolve();
+            } catch (error) {
+                reject(error);
+            }
+        };
+
+        // Register the one-time listener
+        ipcMain.once('save-current-state', layoutResponseHandler);
+
+        // Request layout from renderer
+        mainWindow?.webContents.send('request-current-state');
+
+        // Add timeout to prevent hanging
+        setTimeout(() => {
+            ipcMain.removeListener('save-current-state', layoutResponseHandler);
+            reject(new Error('Timeout waiting for layout save response'));
+        }, 5000);
+    });
 };
 
 const createWindow = async () => {
@@ -101,8 +145,44 @@ const createWindow = async () => {
     } else {
         win.loadFile(path.join(__dirname, '../index.html')).then(r => console.log("loaded"));
     }
-    
+
+    win.on('close', function (e) {
+        e.preventDefault(); // Prevent default close behavior
+        dialog.showMessageBox(win, {
+            type: 'question',
+            buttons: ['Yes', 'No'],
+            title: 'Confirm',
+            message: 'Are you sure you want to quit?',
+            checkboxLabel: 'Save current layout before closing?',
+            checkboxChecked: true
+        }).then(async (result) => {
+            if (result.response === 0) { // Yes
+                try {
+                    if (result.checkboxChecked) {
+                        console.log("Saving current layout before closing...");
+                        await saveCurrentLayout();
+                        console.log("Layout saved successfully");
+                    } else {
+                        console.log("Skipping layout save");
+                        console.log("Remove the savedAppState from store");
+                        store.delete('savedAppState'); // Remove saved state if not saving
+                    }
+                    win.destroy(); // Close the window
+                } catch (error) {
+                    console.error("Error saving layout:", error);
+                }
+            }
+        });
+    });
+
     win.once('ready-to-show', () => {
+        console.log('Window is ready to show');
+        // Load saved layout if available
+        const savedState = store.get('savedAppState') as DashboardState | undefined;
+        if (savedState) {
+            console.log(savedState.scale, savedState.pan, savedState.boxes);
+        }
+        win.webContents.send('load-saved-state', savedState);
         win.show()
         win.webContents.openDevTools({ mode: 'right' })
     })

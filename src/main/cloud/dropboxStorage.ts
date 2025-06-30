@@ -6,6 +6,7 @@ import { BrowserWindow, shell } from 'electron';
 import { Dropbox } from 'dropbox';
 import { v4 as uuidv4 } from 'uuid';
 import * as http from 'http';
+import fetch from 'node-fetch';
 
 const mime = require('mime-types');
 import { minimatch } from 'minimatch';
@@ -433,6 +434,9 @@ export class DropboxStorage implements CloudStorage {
 
         try {
             const response = await this.client.filesGetMetadata({ path: filePath });
+            if (!response.result) {
+                throw new Error('File not found');
+            }
             const metadata = response.result;
 
             // Check if file is deleted

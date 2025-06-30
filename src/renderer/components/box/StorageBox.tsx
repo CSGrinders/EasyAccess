@@ -167,6 +167,14 @@ function StorageBoxInner({
                 Object.assign(boxRef.current.style, style);
             }
         },
+        getCurrentState: () => {
+            return {
+                position: positionRef.current,
+                size: sizeRef.current,
+                currentPath: currentPath,
+                isMaximized: isMaximized,
+            };
+        }
     }));
 
     /** Update the current folder path when user navigates */

@@ -1,5 +1,6 @@
 import { GoogleDriveStorage } from '../src/main/cloud/googleStorage';
-import { beforeEach, expect, jest, test } from '@jest/globals';
+import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { error } from 'console';
 import { google } from 'googleapis';
 import { drive_v3 } from 'googleapis/build/src/apis/drive/v3'; // import types
 
@@ -34,7 +35,7 @@ const mockDrive = {
             console.log('Extracted Folder ID:', match ? match[1] : 'root');
             console.log('Search Pattern:', search ? search[1] : 'none');
             console.log('MIME Type Pattern:', mimeTypeMatch ? mimeTypeMatch[1] : 'none');
-            const folderId: keyof typeof mockFileSystem = match ? 
+            const folderId: keyof typeof mockFileSystem = match ?
                 (match[1] as keyof typeof mockFileSystem) : 'root';
             let files = mockFileSystem[folderId] || [];
 
@@ -118,113 +119,142 @@ beforeEach(() => {
 
 });
 
-test('getFileInfo returns file information', async () => {
-    await storage.getFileInfo('File 1.txt').then((fileInfo) => {
-        expect(fileInfo.id).toEqual('file1');
-        expect(fileInfo.name).toEqual('File 1.txt');
+
+describe('GoogleDriveStorage working cases', () => {
+    test('getFileInfo returns file information', async () => {
+        await storage.getFileInfo('File 1.txt').then((fileInfo) => {
+            expect(fileInfo.id).toEqual('file1');
+            expect(fileInfo.name).toEqual('File 1.txt');
+        });
+    });
+
+    test('readDir returns files in root directory', async () => {
+        const files = await storage.readDir('/');
+        expect(files.length).toBe(mockFileSystem.root.length);
+        expect(files[0].name).toBe('Folder 1');
+        expect(files[1].name).toBe('File 1.txt');
+        expect(files[2].name).toBe('File Google Doc');
+    });
+
+    test('readFile returns file content', async () => {
+        const content = await storage.readFile('File 1.txt');
+        expect(content).toBe('File 1 content');
+    });
+
+    test('readFile returns file content for google native files', async () => {
+        const content = await storage.readFile('File Google Doc');
+        expect(content).toBe('exported content');
+    });
+
+    test('connect sets AuthToken and accountId on success', async () => {
+        const mockToken = { access_token: 'a', refresh_token: 'r', expiry_date: Date.now() + 10000 };
+        const mockEmail = 'user@example.com';
+        (storage as any).authenticateGoogle = jest.fn().mockImplementation(() => {
+            return Promise.resolve({ token: mockToken, email: mockEmail } as unknown as any);
+        });
+        await storage.connect();
+        expect(storage.AuthToken).toEqual(mockToken);
+        expect(storage.accountId).toBe(mockEmail);
+    });
+
+    test('connect throws on authentication failure', async () => {
+        (storage as any).authenticateGoogle = jest.fn().mockImplementation(() => {
+            return Promise.resolve(null as unknown as any);
+        });
+        await expect(storage.connect()).rejects.toThrow('Authentication failed');
+    });
+
+    test('getFile returns FileContent for binary file', async () => {
+        const file = await storage.getFile('File 1.txt');
+        expect(file.content!.toString()).toBe('File 1 content');
+        expect(file.type).toBe('text/plain');
+    });
+
+    test('getFile returns FileContent for Google Docs file', async () => {
+        const file = await storage.getFile('File Google Doc');
+        expect(file.content!.toString()).toBe('exported content');
+        expect(file.type).toBe('application/pdf'); // Google Docs export type
+    });
+
+    test('postFile uploads file to Google Drive', async () => {
+        (storage as any).getFolderId = jest.fn().mockImplementation(() => {
+            return Promise.resolve('parentid' as unknown as any);
+        });
+        await storage.postFile('new.txt', '/', 'text/plain', Buffer.from('data'));
+        expect(mockDrive.files.create).toHaveBeenCalled();
+    });
+
+    test('createDirectory creates nested folders', async () => {
+        await storage.createDirectory('/foo/bar');
+        expect(mockDrive.files.create).toHaveBeenCalledTimes(2);
+    });
+
+    test('getAccountId and getAuthToken return correct values', () => {
+        expect(storage.getAccountId()).toBe('test-account-id');
+        expect(storage.getAuthToken()).toEqual(storage.AuthToken);
+    });
+
+    test('deleteFile deletes file by path', async () => {
+        await storage.deleteFile('File 1.txt');
+        expect(mockDrive.files.delete).toHaveBeenCalledWith({ fileId: 'file1' });
+    });
+
+    test('getDirectoryInfo returns folder info with size', async () => {
+        const folderInfo = await storage.getDirectoryInfo('/Folder 1');
+        console.log('Folder Info:', folderInfo);
+        expect(folderInfo.name).toBe('Folder 1');
+        expect(folderInfo.isDirectory).toBe(true);
+        expect(folderInfo.size).toBe(200); // size of File 2.txt
+    });
+
+    test('searchFiles finds files matching pattern and excludes', async () => {
+        // Recursively call search for subfolder
+        (storage as any).search = jest.fn();
+        const files = await storage.searchFiles('/', 'File 2.txt', []);
+        expect(files.some(f => f.name === 'File 2.txt')).toBe(true);
+    });
+
+    test('getDirectoryTree returns recursive tree', async () => {
+        const folderTreeNodes = await storage.getDirectoryTree('/');
+        console.log('Folder Tree Nodes:', folderTreeNodes);
+        expect(folderTreeNodes.length).toBe(mockFileSystem['root'].length + mockFileSystem['folder1'].length);
+    });
+
+    test('calculateFolderSize sums file sizes recursively', async () => {
+        (storage as any).getFolderId = jest.fn().mockImplementation(() => {
+            return Promise.resolve('root');
+        });
+        const size = await storage.calculateFolderSize('/');
+        expect(size).toBe(600);
     });
 });
 
-test('readDir returns files in root directory', async () => {
-    const files = await storage.readDir('/');
-    expect(files.length).toBe(mockFileSystem.root.length);
-    expect(files[0].name).toBe('Folder 1');
-    expect(files[1].name).toBe('File 1.txt');
-    expect(files[2].name).toBe('File Google Doc');
-});
-
-test('readFile returns file content', async () => {
-    const content = await storage.readFile('File 1.txt');
-    expect(content).toBe('File 1 content');
-});
-
-test('readFile returns file content for google native files', async () => {
-    const content = await storage.readFile('File Google Doc');
-    expect(content).toBe('exported content');
-});
-
-test('connect sets AuthToken and accountId on success', async () => {
-    const mockToken = { access_token: 'a', refresh_token: 'r', expiry_date: Date.now() + 10000 };
-    const mockEmail = 'user@example.com';
-    (storage as any).authenticateGoogle = jest.fn().mockImplementation(() => {
-        return Promise.resolve({ token: mockToken, email: mockEmail } as unknown as any);
+describe('GoogleDriveStorage error cases', () => {
+    test('readFile throws error for non-existent file', async () => {
+        await expect(storage.readFile('/non-existent.txt')).rejects.toBeInstanceOf(Error);
     });
-    await storage.connect();
-    expect(storage.AuthToken).toEqual(mockToken);
-    expect(storage.accountId).toBe(mockEmail);
-});
 
-test('connect throws on authentication failure', async () => {
-    (storage as any).authenticateGoogle = jest.fn().mockImplementation(() => {
-        return Promise.resolve(null as unknown as any);
+    test('getFile throws error for non-existent file', async () => {
+        await expect(storage.getFile('/non-existent.txt')).rejects.toBeInstanceOf(Error);
     });
-    await expect(storage.connect()).rejects.toThrow('Authentication failed');
-});
 
-test('getFile returns FileContent for binary file', async () => {
-    const file = await storage.getFile('File 1.txt');
-    expect(file.content!.toString()).toBe('File 1 content');
-    expect(file.type).toBe('text/plain');
-});
-
-test('getFile returns FileContent for Google Docs file', async () => {
-    const file = await storage.getFile('File Google Doc');
-    expect(file.content!.toString()).toBe('exported content');
-    expect(file.type).toBe('application/pdf'); // Google Docs export type
-});
-
-test('postFile uploads file to Google Drive', async () => {
-    (storage as any).getFolderId = jest.fn().mockImplementation(() => {
-        return Promise.resolve('parentid' as unknown as any);
+    test('postFile throws error for non-existent parent folder', async () => {
+        await expect(storage.postFile('new.txt', '/non-existent-folder', 'text/plain', Buffer.from('data')))
+            .rejects.toBeInstanceOf(Error);
     });
-    await storage.postFile('new.txt', '/', 'text/plain', Buffer.from('data'));
-    expect(mockDrive.files.create).toHaveBeenCalled();
-});
-
-test('createDirectory creates nested folders', async () => {
-    await storage.createDirectory('/foo/bar');
-    expect(mockDrive.files.create).toHaveBeenCalledTimes(2);
-});
-
-test('getAccountId and getAuthToken return correct values', () => {
-    expect(storage.getAccountId()).toBe('test-account-id');
-    expect(storage.getAuthToken()).toEqual(storage.AuthToken);
-});
-
-test('deleteFile deletes file by path', async () => {
-    await storage.deleteFile('File 1.txt');
-    expect(mockDrive.files.delete).toHaveBeenCalledWith({ fileId: 'file1' });
-});
-
-test('getDirectoryInfo returns folder info with size', async () => {
-    const folderInfo = await storage.getDirectoryInfo('/Folder 1');
-    console.log('Folder Info:', folderInfo);
-    expect(folderInfo.name).toBe('Folder 1');
-    expect(folderInfo.isDirectory).toBe(true);
-    expect(folderInfo.size).toBe(200); // size of File 2.txt
-});
-
-test('searchFiles finds files matching pattern and excludes', async () => {
-    // Recursively call search for subfolder
-    (storage as any).search = jest.fn();
-    const files = await storage.searchFiles('/', 'File 2.txt', []);
-    expect(files.some(f => f.name === 'File 2.txt')).toBe(true);
-});
-
-test('getDirectoryTree returns recursive tree', async () => {
-    const folderTreeNodes = await storage.getDirectoryTree('/');
-    console.log('Folder Tree Nodes:', folderTreeNodes);
-    expect(folderTreeNodes.length).toBe(mockFileSystem['root'].length + mockFileSystem['folder1'].length);
-});
-
-test('calculateFolderSize sums file sizes recursively', async () => {
-    (storage as any).getFolderId = jest.fn().mockImplementation(() => {
-        return Promise.resolve('root');
+    test('deleteFile throws error for non-existent file', async () => {
+        await expect(storage.deleteFile('/non-existent.txt')).rejects.toBeInstanceOf(Error);
     });
-    const size = await storage.calculateFolderSize('/');
-    expect(size).toBe(600);
+    test('getDirectoryInfo throws error for non-existent directory', async () => {
+        await expect(storage.getDirectoryInfo('/non-existent-folder')).rejects.toBeInstanceOf(Error);
+    });
+    test('getDirectoryTree throws error for non-existent directory', async () => {
+        await expect(storage.getDirectoryTree('/non-existent-folder')).rejects.toBeInstanceOf(Error);
+    });
+    test('getFileInfo throws error for non-existent file', async () => {
+        await expect(storage.getFileInfo('/non-existent.txt')).rejects.toBeInstanceOf(Error);
+    });
 });
-
 /*
     connect(): Promise<void | any>;
     readDir(dir: string): Promise<FileSystemItem[]>;

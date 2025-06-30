@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { FileContent, FileSystemItem } from '../types/fileSystem'
 import { CloudType } from '../types/cloudType';
 import { deleteFile } from './cloud/cloudManager';
+import { DashboardState } from '@Types/canvas';
 
 contextBridge.exposeInMainWorld('cloudFsApi', {
     connectNewCloudAccount: (cloudType: CloudType) =>
@@ -59,6 +60,28 @@ contextBridge.exposeInMainWorld('fsApi', {
 contextBridge.exposeInMainWorld('electronAPI', {
     openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url) as Promise<{ success: boolean, error?: any }>,
     openFile: (fileContent: FileContent) => ipcRenderer.invoke('open-file', fileContent) as Promise<void>,
+
+    // saveLayout: (layout: any) => ipcRenderer.invoke('save-layout', layout) as Promise<void>,
+    onRequestLayout: (callback: () => any) => {
+        ipcRenderer.on('request-current-state', () => {
+            const layout = callback();
+            ipcRenderer.send('save-current-state', layout);
+        });
+    },
+
+    removeRequestLayoutListener: () => {
+        ipcRenderer.removeAllListeners('request-current-state');
+    },
+
+    onLoadSavedState: (callback: (state: DashboardState) => any) => {
+        ipcRenderer.on('load-saved-state', (_event, state: DashboardState) => {
+            callback(state);
+        });
+    },
+
+    removeLoadSavedStateListener: () => {
+        ipcRenderer.removeAllListeners('load-saved-state');
+    }
 });
 
 contextBridge.exposeInMainWorld('mcpApi', {
