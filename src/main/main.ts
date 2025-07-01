@@ -19,7 +19,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { PermissionManager } from './permissions/permissionManager';
 import { createFsServer } from './MCP/globalFsMcpServer';
 import { v4 as uuidv4 } from 'uuid';
-import { transferManager } from './transfer/transferManager';
+import { progressCallbackData, transferManager } from './transfer/transferManager';
 
 let mcpClient: MCPClient | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -208,10 +208,9 @@ ipcMain.handle('transfer-manager', async (event, transferInfo: any) => {
         activeTransfer.set(transferInfo.transferId, abortController);
     }
     // Create progress callback that sends updates to renderer
-    const progressCallback = (transfered: number, total: number) => {
-        const fileName = transferInfo.fileName; 
-        console.log('Main process sending download progress:', { fileName, transfered, total });
-        event.sender.send('transfer-progress', { fileName, transfered, total });
+    const progressCallback = (data: progressCallbackData) => {
+        console.log('Main process sending download progress:', data);
+        event.sender.send('transfer-progress', data);
     };
     
     try {

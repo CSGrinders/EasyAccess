@@ -3,11 +3,20 @@ import { CLOUD_HOME, CloudType } from "../../types/cloudType";
 import { StoredAccounts } from "../cloud/cloudManager";
 import mime from "mime-types";
 
-export async function transferManager(transferInfo: any, progressCallback: (transfered: number, total: number) => void, abortSignal?: AbortSignal): Promise<void> {
+
+export interface progressCallbackData {
+    transferId: string;
+    fileName: string;
+    transfered: number;
+    total: number;
+    isDirectory?: boolean;
+}
+
+export async function transferManager(transferInfo: any, progressCallback: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
     // This function will handle the transfer operations based on the provided transferInfo
     // It will determine the source and target cloud types and accounts, and perform the transfer accordingly
 
-    const { fileName, sourcePath, sourceCloudType, sourceAccountId, targetCloudType, targetAccountId, targetPath } = transferInfo;
+    const { transferId, fileName, sourcePath, sourceCloudType, sourceAccountId, targetCloudType, targetAccountId, targetPath } = transferInfo;
 
     const isSourceLocal = !sourceCloudType || !sourceAccountId;
 
@@ -16,7 +25,7 @@ export async function transferManager(transferInfo: any, progressCallback: (tran
         // if source is local, we will fetch the file from local filesystem and then upload using resumable upload
         if (isSourceLocal) {
             console.warn("Transferring from local filesystem to cloud storage...");
-            await transferLocalToCloudUpload(fileName, sourcePath, targetCloudType, targetAccountId, targetPath, progressCallback, abortSignal);
+            await transferLocalToCloudUpload(transferId, fileName, sourcePath, targetCloudType, targetAccountId, targetPath, progressCallback, abortSignal);
         } else {
 
         }
@@ -29,12 +38,13 @@ export async function transferManager(transferInfo: any, progressCallback: (tran
 
 
 async function transferLocalToCloudUpload(
+    transferId: string,
     fileName: string,
     sourcePath: string,
     targetCloudType: CloudType,
     targetAccountId: string,
     targetPath: string,
-    progressCallback?: (progress: number, total: number) => void,
+    progressCallback?: (data: progressCallbackData) => void,
     abortSignal?: AbortSignal
 ): Promise<void> {
     // This function will handle the upload of a file from local filesystem to cloud storage
@@ -46,8 +56,8 @@ async function transferLocalToCloudUpload(
                     if (account.getAccountId() === targetAccountId) {
                         const type = mime.lookup(fileName) || 'application/octet-stream'; // default to binary if no mime type found
                         // Handle local to cloud upload
-                        const fileInfo = {fileName, sourcePath, type, targetCloudType, targetAccountId, targetPath};
-                        await account.transferFileToCloud(fileInfo, progressCallback, abortSignal);
+                        const fileInfo = {transferId, fileName, sourcePath, type, targetCloudType, targetAccountId, targetPath};
+                        await account.transferLocalToCloud(fileInfo, progressCallback, abortSignal);
                         
                     }
                 }

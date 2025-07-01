@@ -15,6 +15,10 @@ export interface TransferItem {
   currentItem?: string;
   /** Transfer progress as a percentage (0-100) */
   progress?: number;
+  /** Directory Name */
+  directoryName?: string;
+  /** Transfer current item is from directory **/
+  isCurrentDirectory?: boolean;
   /** Get the transfer status */
   status: "completed" | "fetching" | "cancelled" | "uploading" | "downloading" | "moving" | "copying" | "error";
   /** Error message if the transfer failed, null if successful */

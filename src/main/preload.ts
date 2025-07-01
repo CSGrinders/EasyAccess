@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { FileContent, FileSystemItem } from '../types/fileSystem'
 import { CloudType } from '../types/cloudType';
 import { transcode } from 'buffer';
+import { progressCallbackData } from './transfer/transferManager';
 
 contextBridge.exposeInMainWorld('cloudFsApi', {
     connectNewCloudAccount: (cloudType: CloudType) =>
@@ -95,8 +96,8 @@ contextBridge.exposeInMainWorld('fsApi', {
 contextBridge.exposeInMainWorld('transferApi', {
     transferManager: (transferInfo: any) =>
         ipcRenderer.invoke('transfer-manager', transferInfo) as Promise<void>,
-    onTransferProgress: (callback: (data: { fileName: string; transfered: number; total: number }) => void) => {
-        const wrappedCallback = (event: any, data: { fileName: string; transfered: number; total: number }) => {
+    onTransferProgress: (callback: (data: progressCallbackData) => void) => {
+        const wrappedCallback = (event: any, data: progressCallbackData) => {
             console.log('Preload received transfer progress:', data);
             callback(data);
         };
@@ -104,7 +105,7 @@ contextBridge.exposeInMainWorld('transferApi', {
         ipcRenderer.on('transfer-progress', wrappedCallback);
         return wrappedCallback;
     },
-    removeUploadProgressListener: (wrappedCallback: any) => {
+    removeTransferProgressListener: (wrappedCallback: any) => {
         ipcRenderer.removeListener('transfer-progress', wrappedCallback);
     },
     cancelTransfer: (transferId: string) =>

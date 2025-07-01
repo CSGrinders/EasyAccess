@@ -11,7 +11,7 @@ import { BoxDragProvider } from "@/contexts/BoxDragContext";
 import { BoxDragPreview } from '@/components/box/BoxDragPreview';
 import SettingsPanel from '@/pages/SettingsPanel';
 import AgentWindow from '../components/app/AgentWindow';
-import { TransferManager } from '@/components/transactions/TransferManager';
+import { TransferManager } from '@/components/transactions/TransferSmallPanel';
 import { TransferDetailPanel } from '@/pages/TransferDetailPanel';
 import { UploadConfirmationDialog } from '@/components/transactions/UploadConfirmationDialog';
 import { useTransferService } from '@/services/TransferService';

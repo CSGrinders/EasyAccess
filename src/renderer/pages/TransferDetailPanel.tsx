@@ -70,7 +70,7 @@ export function TransferDetailPanel({
   };
 
   const getStatusIcon = (transfer: TransferItem) => {
-    if (transfer.status === "cancelled") return <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" />;
+    if (transfer.status === "cancelled") return <AlertCircle className="h-7 w-7 text-red-500 animate-pulse" />;
     if (transfer.status === "completed") return <CheckCircle className="h-7 w-7 text-green-500 animate-pulse" />;
     if (transfer.status === "downloading") return <CloudDownload className="h-7 w-7 text-blue-500 animate-bounce" />;
     if (transfer.status === "uploading") return <CloudUpload className="h-7 w-7 text-orange-500 animate-bounce" />;
@@ -230,7 +230,7 @@ export function TransferDetailPanel({
                   transfer.status === "fetching" ? "text-purple-700 dark:text-purple-300" :
                   "text-blue-700 dark:text-blue-300"
                 )}>
-                  {getTransferOperationText(transfer)} {transfer.itemCount} file{transfer.itemCount > 1 ? 's' : ''}
+                  {getTransferOperationText(transfer)} {transfer.itemCount} Item{transfer.itemCount > 1 ? 's' : ''}
                   {/* Show file name for single file transfers */}
                   {transfer.itemCount === 1 && (() => {
                     // Try to get the file name from various sources

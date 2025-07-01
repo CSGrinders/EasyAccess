@@ -169,8 +169,6 @@ export function TransferManager({
 
     const getStatusText = () => {
       if (transfer.status === "cancelled") {
-        console.error("Transfer cancelled:", transfer.completedFiles);
-        console.error("Transfer cancelled message:", transfer.failedFiles);
         if (transfer.failedFiles && transfer.failedFiles.length > 1) {
           return `Partial (${transfer.completedFiles?.length}/${transfer.itemCount})`;
         }
@@ -267,7 +265,7 @@ export function TransferManager({
           </div>
         </div>
 
-        {(transfer.status !== "completed" && (transfer.progress ?? 0) > 0 && (
+        {(transfer.status !== "completed" && (transfer.progress ?? 0) >= 0 && (
           <div className="space-y-1">
             <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
               <div 
@@ -293,13 +291,18 @@ export function TransferManager({
                   {transfer.cancelledMessage}
                 </p>)}
             <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400">
-              <div className="flex items-center gap-2">
+              <div className={cn("flex", transfer.isCurrentDirectory ? "flex-col" : "items-center gap-2")}>
                 {transfer.itemCount > 1 && transfer.status !== "cancelled" && (
                   <span>
                     Completed {transfer.completedFiles?.length} of {transfer.itemCount} Items
                   </span>
 
                 )}
+                {transfer.isCurrentDirectory && transfer.status !== "cancelled" && (
+                  <span>
+                    Item from directory: {transfer.directoryName}
+                  </span>
+              )}
                 {estimatedTimes[transfer.id] && transfer.status !== "cancelled" && (
                   <>
                     {transfer.itemCount > 1 && <span>•</span>}

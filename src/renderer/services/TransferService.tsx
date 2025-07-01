@@ -46,86 +46,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
     
     // Transfer queue state
     const [transferQueue, setTransferQueue] = useState<TransferQueueState>({
-        transfers: [
-            {
-                id: 'test-transfer-1',
-                itemCount: 3,
-                currentItem: "file2.txt",
-                progress: 33,
-                status: "fetching",
-                startTime: Date.now(),
-                keepOriginal: false,
-                sourceStorageType: CloudType.Local,
-                sourceAccountId: "",
-                targetStorageType: CloudType.GoogleDrive,
-                targetAccountId: "test2@gmail.com",
-                fileList: ["file143873428934287948327879437894789755483893584787345.txt", "file2.txt", "file3.txt"],
-                completedFiles: ["file143873428934287948327879437894789755483893584787345.txt"],
-                failedFiles: [],
-            }, 
-            {
-                id: 'test-transfer-10',
-                itemCount: 3,
-                currentItem: "file2.txt",
-                progress: 33,
-                status: "uploading",
-                startTime: Date.now(),
-                keepOriginal: false,
-                sourceStorageType: CloudType.Local,
-                sourceAccountId: "",
-                targetStorageType: CloudType.GoogleDrive,
-                targetAccountId: "test2@gmail.com",
-                fileList: ["file143873428934287948327879437894789755483893584787345.txt", "file2.txt", "file3.txt"],
-                completedFiles: ["file143873428934287948327879437894789755483893584787345.txt", "file2.txt"],
-            },
-         {
-                id: 'test-transfer-12',
-                itemCount: 3,
-                currentItem: "file2.txt",
-                progress: 33,
-                status: "downloading",
-                startTime: Date.now(),
-                keepOriginal: false,
-                sourceStorageType: CloudType.Local,
-                sourceAccountId: "",
-                targetStorageType: CloudType.GoogleDrive,
-                targetAccountId: "test2@gmail.com",
-                fileList: ["file143873428934287948327879437894789755483893584787345.txt", "file2.txt", "file3.txt"],
-                completedFiles: ["file143873428934287948327879437894789755483893584787345.txt", "file2.txt"],
-            },
-            {
-                id: 'test-transfer-2',
-                itemCount: 3,
-                currentItem: "file2.txt",
-                progress: 33,
-                status: "cancelled",
-                cancelledMessage: "Transfer cancelled by user",
-                startTime: Date.now(),
-                keepOriginal: false,
-                sourceStorageType: CloudType.Local,
-                sourceAccountId: "",
-                targetStorageType: CloudType.GoogleDrive,
-                targetAccountId: "test2@gmail.com",
-                fileList: ["file143873428934287948327879437894789755483893584787345.txt", "file2.txt", "file3.txt"],
-                completedFiles: ["file143873428934287948327879437894789755483893584787345.txt"],
-                failedFiles: [{ file: "file2.txt", error: "Transfer cancelled by user" }, { file: "file3.txt", error: "Transfer cancelled by user" }],
-            },
-            {
-                id: 'test-transfer-3',
-                itemCount: 3,
-                currentItem: "file2.txt",
-                progress: 33,
-                status: "completed",
-                startTime: Date.now(),
-                keepOriginal: false,
-                sourceStorageType: CloudType.Local,
-                sourceAccountId: "",
-                targetStorageType: CloudType.GoogleDrive,
-                targetAccountId: "test2@gmail.com",
-                fileList: ["file143873428934287948327879437894789755483893584787345.txt", "file2.txt", "file3.txt"],
-                completedFiles: ["file143873428934287948327879437894789755483893584787345.txt", "file2.txt"],
-            }
-        ],
+        transfers: [],
         nextId: 2
     });
 
@@ -472,29 +393,38 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         const isLocaltoCloud = transfer.sourceStorageType === CloudType.Local && transfer.targetStorageType !== CloudType.Local; // Local to Cloud show uploading ui
                         const isCloudToLocal = transfer.sourceStorageType !== CloudType.Local && transfer.targetStorageType === CloudType.Local; // Cloud to local show downloading ui
         
-                        progressListener = (window as any).transferApi.onTransferProgress((data: { fileName: string; transfered: number; total: number }) => {
+                        progressListener = (window as any).transferApi.onTransferProgress((data: { transferId: string; fileName: string; transfered: number; total: number, isDirectory?: boolean }) => {
                             const latestTransfer = getTransfer(transfer.id);
                             if (latestTransfer?.status === "cancelled") {
                                 return; // Don't update progress if cancelled
                             }
                            
-                            if (data.fileName === fileName && transfer) {
+                            if (transfer && data.transferId == transfer.id) {
                                 // Calculate file specific progress within overall transfer progress
                                 const fileProgress = (data.transfered / data.total) * (100 / totalFiles);
                                 const overallProgress = (processedFiles / totalFiles) * 100 + fileProgress;
                                 // Update transfer progress
                                 if (isLocalToLocal || isClodutoCloud) {
                                     batchUpdateTransfer(transfer.id, {
+                                        currentItem: data.fileName,
+                                        directoryName: data.isDirectory ? fileName : "unknown",
+                                        isCurrentDirectory: data.isDirectory,
                                         status: transfer.keepOriginal ? "copying" : "moving",
                                         progress: Math.min(overallProgress, 100)
                                     })
                                 } else if (isLocaltoCloud){
                                     batchUpdateTransfer(transfer.id, {
+                                        currentItem: data.fileName,
+                                        directoryName: data.isDirectory ? fileName : "unknown",
+                                        isCurrentDirectory: data.isDirectory,
                                         status: transfer.keepOriginal ? "copying" : "uploading",
                                         progress: Math.min(overallProgress, 100)
                                     });
                                 } else if (isCloudToLocal) {
                                     batchUpdateTransfer(transfer.id, {
+                                        currentItem: data.fileName,
+                                        directoryName: data.isDirectory ? fileName : "unknown",
+                                        isCurrentDirectory: data.isDirectory,
                                         status: transfer.keepOriginal ? "copying" : "downloading",
                                         progress: Math.min(overallProgress, 100)
                                     });
@@ -503,79 +433,55 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         });
                             
                         await new Promise(resolve => setTimeout(resolve, 10));
+                    
+                        // Cases: 
+                        // 1. Local to Cloud
+                        // 2. Cloud to local
+                        // 3. Cloud to Cloud
                         
+                        // Prepare information for transfer
+                        const transferInfo = {
+                            transferId: transfer?.id,
+                            fileName,
+                            sourcePath: filePath,
+                            sourceCloudType,
+                            sourceAccountId,
+                            targetCloudType,
+                            targetAccountId,
+                            targetPath,
+                        };
+
                         
-                        try {
-                            // Cases: 
-                            // 1. Local to Cloud
-                            // 2. Cloud to local
-                            // 3. Cloud to Cloud
-                            
-                            // Prepare information for transfer
-                            const transferInfo = {
-                                fileName,
-                                sourcePath: filePath,
+                        await (window as any).transferApi.transferManager(transferInfo);
+                    
+
+                        const latestTransfer = getTransfer(transfer.id);
+                        console.log("Latest transfer:", latestTransfer, "for file:", fileName);
+                        // Clean up progress listener
+                        if (progressListener) {
+                            (window as any).transferApi.removeTransferProgressListener(progressListener);
+                        }
+                        if (latestTransfer?.status !== "cancelled") { // 
+                            console.warn(`File ${fileName} processed successfully`);
+                            // Track successful file completion
+                            currentCompletedFiles.push(fileName);
+
+                            deleteFileFromSource({
                                 sourceCloudType,
                                 sourceAccountId,
-                                targetCloudType,
-                                targetAccountId,
-                                targetPath,
-                                transferId: transfer?.id,
-                            };
+                                sourcePath: filePath
+                            }, confirmation.keepOriginal).catch(err => {
+                                console.warn(`Failed to delete source file ${fileName}:`, err);
+                            });
 
-                            
-                            await (window as any).transferApi.transferManager(transferInfo);
-                        } finally {
-                            const latestTransfer = getTransfer(transfer.id);
-                            console.log("Latest transfer:", latestTransfer, "for file:", fileName);
-                            // Clean up progress listener
-                            if (progressListener) {
-                                (window as any).transferApi.removeTransferProgressListener(progressListener);
-                            }
-                            if (latestTransfer?.status !== "cancelled") { // 
-                                console.warn(`File ${fileName} processed successfully`);
-                                // Track successful file completion
-                                currentCompletedFiles.push(fileName);
-
-                                deleteFileFromSource({
-                                    sourceCloudType,
-                                    sourceAccountId,
-                                    sourcePath: filePath
-                                }, confirmation.keepOriginal).catch(err => {
-                                    console.warn(`Failed to delete source file ${fileName}:`, err);
-                                });
-
-                                processedFiles++;
-                                batchUpdateTransfer(transfer.id, {
-                                    completedFiles: [...currentCompletedFiles],
-                                    progress: (processedFiles / totalFiles) * 100,
-                                });
-                            }
+                            processedFiles++;
+                            batchUpdateTransfer(transfer.id, {
+                                completedFiles: [...currentCompletedFiles],
+                                progress: (processedFiles / totalFiles) * 100,
+                            });
                         }
                     } catch (err: any) {
-                        // Track failed file
-                        const errorMessage = err.message || 'Transfer cancelled';
-                        currentFailedFiles.push({ file: fileName, error: errorMessage });
-                        
-                        batchUpdateTransfer(transfer.id, {
-                            failedFiles: [...currentFailedFiles]
-                        });
-                        console.error("transfer cancelled 1");
-                        
-                        // Check if transfer was cancelled - if so, mark remaining files as failed and break
-                        const latestTransfer = getTransfer(transfer.id);
-                        if (latestTransfer?.status !== "cancelled") {
-                            // Mark all remaining files as failed
-                            const remainingFiles = filePaths.slice(i + 1);
-                            const remainingFailedFiles = remainingFiles.map(path => ({
-                                file: path.split('/').pop() || path,
-                                error: "Transfer cancelled by user"
-                            }));
-                            
-                            currentFailedFiles.push(...remainingFailedFiles);
-                            break; // Exit the loop
-                        }
-                        return;
+                        throw err;
                     } 
                 }
 
@@ -598,7 +504,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
 
             } catch (error) {
                 console.error("transfer cancelled 2");
-                const errorMessage = error instanceof Error ? error.message : "Transfer failed";
+                const parts = error instanceof Error ? error.message.split(':') : ["Transfer failed"];
+                const errorMessage = parts[parts.length - 1].trim();
             
                 const allFiles = filePaths.map(path => path.split('/').pop() || path);
                 const failedFiles = allFiles
@@ -607,8 +514,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                 
                 batchUpdateTransfer(transfer.id, {
                     status: "cancelled",
-                    cancelledMessage: errorMessage,
                     endTime: Date.now(),
+                    cancelledMessage: errorMessage,
                     completedFiles: currentCompletedFiles,
                     failedFiles: [...currentFailedFiles, ...failedFiles]
                 });
