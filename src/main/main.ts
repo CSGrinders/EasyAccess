@@ -19,6 +19,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { PermissionManager } from './permissions/permissionManager';
 import { createFsServer } from './MCP/globalFsMcpServer';
 import { v4 as uuidv4 } from 'uuid';
+import { transferManager } from './transfer/transferManager';
 
 let mcpClient: MCPClient | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -164,59 +165,75 @@ ipcMain.handle('cloud-get-file', async (event, cloudType: CloudType, accountId: 
         }
     }
 });
-// Map to store active upload abort controllers by transfer ID
-const activeUploads = new Map<string, AbortController>();
 
-ipcMain.handle('cloud-post-file', async (event, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer | any, transferId?: string) => {
-    // Ensure data is a Buffer (handle IPC serialization issues)
-    const bufferData = Buffer.isBuffer(data) ? data : Buffer.from(data.data || data);
+
+// ipcMain.handle('cloud-post-file', async (event, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer | any, transferId?: string) => {
+//     // Ensure data is a Buffer (handle IPC serialization issues)
+//     const bufferData = Buffer.isBuffer(data) ? data : Buffer.from(data.data || data);
     
-    // Create abort controller for this upload if transferId is provided
+//     // Create abort controller for this upload if transferId is provided
+//     let abortController: AbortController | undefined;
+//     if (transferId) {
+//         abortController = new AbortController();
+//         activeUploads.set(transferId, abortController);
+//     }
+    
+//     // Create progress callback that sends updates to renderer
+//     const progressCallback = (uploaded: number, total: number) => {
+//         console.log('Main process sending upload progress:', { fileName, uploaded, total });
+//         event.sender.send('cloud-upload-progress', { fileName, uploaded, total });
+//     };
+    
+//     try {
+//         const result = await postFile(cloudType, accountId, fileName, folderPath, bufferData, progressCallback, abortController?.signal);
+//         return result;
+//     } finally {
+//         // Clean up abort controller
+//         if (transferId) {
+//             activeUploads.delete(transferId);
+//         }
+//     }
+// });
+
+
+
+// Map to store active upload abort controllers by transfer ID
+const activeTransfer = new Map<string, AbortController>();
+
+// Transfer Operations 
+ipcMain.handle('transfer-manager', async (event, transferInfo: any) => { 
     let abortController: AbortController | undefined;
-    if (transferId) {
+    if (transferInfo.transferId) {
         abortController = new AbortController();
-        activeUploads.set(transferId, abortController);
+        activeTransfer.set(transferInfo.transferId, abortController);
     }
-    
     // Create progress callback that sends updates to renderer
-    const progressCallback = (uploaded: number, total: number) => {
-        console.log('Main process sending upload progress:', { fileName, uploaded, total });
-        event.sender.send('cloud-upload-progress', { fileName, uploaded, total });
+    const progressCallback = (transfered: number, total: number) => {
+        const fileName = transferInfo.fileName; 
+        console.log('Main process sending download progress:', { fileName, transfered, total });
+        event.sender.send('transfer-progress', { fileName, transfered, total });
     };
     
     try {
-        const result = await postFile(cloudType, accountId, fileName, folderPath, bufferData, progressCallback, abortController?.signal);
-        return result;
+        return transferManager(transferInfo, progressCallback, abortController?.signal);
     } finally {
         // Clean up abort controller
-        if (transferId) {
-            activeUploads.delete(transferId);
+        if (transferInfo.transferId) {
+            activeDownloads.delete(transferInfo.transferId);
         }
     }
 });
 
-// Handle upload cancellation
-ipcMain.handle('cloud-cancel-upload', async (_e, transferId: string) => {
-    const abortController = activeUploads.get(transferId);
+ipcMain.handle('transfer-cancel', async (_e, transferId: string) => {
+    const abortController = activeTransfer.get(transferId);
     if (abortController) {
         abortController.abort();
-        activeUploads.delete(transferId);
+        activeTransfer.delete(transferId);
         return true;
     }
     return false;
 });
 
-
-// Handle download cancellation
-ipcMain.handle('cloud-cancel-download', async (_e, transferId: string) => {
-    const abortController = activeDownloads.get(transferId);
-    if (abortController) {
-        abortController.abort();
-        activeDownloads.delete(transferId);
-        return true;
-    }
-    return false;
-});
 
 
 ipcMain.handle('cloud-delete-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {

@@ -63,6 +63,20 @@ export default {
                 md: 'calc(var(--radius) - 2px)',
                 sm: 'calc(var(--radius) - 4px)'
             },
+            keyframes: {
+                'bounce-x': {
+                '0%, 100%': { transform: 'translateX(0)' },
+                '20%': { transform: 'translateX(-10px)' },
+                '50%': { transform: 'translateX(10px)' },
+                '80%': { transform: 'translateX(-10px)' },
+                },
+            },
+            animation: {
+                'bounce-x': 'bounce-x 1s infinite',
+            boxShadow: {
+                'glow-purple': '0 0 10px #a855f7, 0 0 20px #a855f7',
+        },
+      },
         }
     },
     plugins: [

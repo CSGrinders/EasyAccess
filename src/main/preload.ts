@@ -2,6 +2,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FileContent, FileSystemItem } from '../types/fileSystem'
 import { CloudType } from '../types/cloudType';
+import { transcode } from 'buffer';
 
 contextBridge.exposeInMainWorld('cloudFsApi', {
     connectNewCloudAccount: (cloudType: CloudType) =>
@@ -16,8 +17,15 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
         ipcRenderer.invoke('cloud-get-file', cloudType, accountId, filePath, transferId) as Promise<FileContent>,
     postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer, transferId?: string) =>
         ipcRenderer.invoke('cloud-post-file', cloudType, accountId, fileName, folderPath, data, transferId) as Promise<void>,
+
+    // New function to handle file transfers
+    transferFile: (cloudType: CloudType, accountId: string, filePath: string, transferId?: string) =>
+        ipcRenderer.invoke('cloud-transfer-file', cloudType, accountId, filePath, transferId) as Promise<FileContent>,
+
+
     cancelUpload: (transferId: string) =>
         ipcRenderer.invoke('cloud-cancel-upload', transferId) as Promise<boolean>,
+
     cancelDownload: (transferId: string) =>
         ipcRenderer.invoke('cloud-cancel-download', transferId) as Promise<boolean>,
     onUploadProgress: (callback: (data: { fileName: string; uploaded: number; total: number }) => void) => {
@@ -81,6 +89,26 @@ contextBridge.exposeInMainWorld('fsApi', {
         ipcRenderer.invoke('delete-file', filePath) as Promise<void>,
     createDirectory: (dirPath: string, dirName: string) =>
         ipcRenderer.invoke('create-directory', dirPath, dirName) as Promise<void>,
+})
+
+
+contextBridge.exposeInMainWorld('transferApi', {
+    transferManager: (transferInfo: any) =>
+        ipcRenderer.invoke('transfer-manager', transferInfo) as Promise<void>,
+    onTransferProgress: (callback: (data: { fileName: string; transfered: number; total: number }) => void) => {
+        const wrappedCallback = (event: any, data: { fileName: string; transfered: number; total: number }) => {
+            console.log('Preload received transfer progress:', data);
+            callback(data);
+        };
+        console.log('Setting up transfer progress listener in preload');
+        ipcRenderer.on('transfer-progress', wrappedCallback);
+        return wrappedCallback;
+    },
+    removeUploadProgressListener: (wrappedCallback: any) => {
+        ipcRenderer.removeListener('transfer-progress', wrappedCallback);
+    },
+    cancelTransfer: (transferId: string) =>
+        ipcRenderer.invoke('transfer-cancel', transferId) as Promise<boolean>,
 })
 
 contextBridge.exposeInMainWorld('electronAPI', {

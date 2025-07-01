@@ -70,7 +70,7 @@ const Dashboard = () => {
         handleRetryTransfer,
         tempPostFile,
         tempGetFile,
-        tempDragDropTransfer,
+        handleBoxFileTransfer,
         handleUploadDialogConfirm,
         handleUploadDialogCancel,
     } = useTransferService({ boxRefs, storageBoxesRef });
@@ -287,7 +287,7 @@ const Dashboard = () => {
                                             setIsMaximized={(isMaximized: boolean) => setBoxMaximized(box.id, isMaximized)}
                                             tempPostFile={tempPostFile}
                                             tempGetFile={tempGetFile}
-                                            tempDragDropTransfer={tempDragDropTransfer}
+                                            handleBoxFileTransfer={handleBoxFileTransfer}
                                         />
                                     ))}
                                 </CanvasContainer>

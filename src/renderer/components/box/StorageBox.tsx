@@ -85,7 +85,7 @@ function StorageBoxInner({
                              setIsMaximized,    // Function to make box full screen or no
                              tempPostFile,      // Function to upload files
                              tempGetFile,       // Function to download files
-                             tempDragDropTransfer, // Function to handle drag and drop with confirmation first
+                             handleBoxFileTransfer, // Function to handle box file transfer with confirmation first
                          }: StorageBoxProps, 
                          ref: React.Ref<{
                             callDoRefresh: (silent?: boolean) => void; 
@@ -324,7 +324,7 @@ function StorageBoxInner({
                                     
                                     
                                     const filePaths = draggedItems.map(item => item.path);
-                                    await tempDragDropTransfer?.(
+                                    await handleBoxFileTransfer?.(
                                         filePaths, 
                                         sourceCloudType as any, 
                                         sourceAccountId,

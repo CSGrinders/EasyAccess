@@ -7,9 +7,9 @@ import Store from 'electron-store';
 import { AuthTokens, CloudStorage } from './cloudStorage';
 import { GoogleDriveStorage } from './googleStorage';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
-import { OneDriveStorage } from "./onedriveStorage";
+//import { OneDriveStorage } from "./onedriveStorage";
 import { BrowserWindow, safeStorage } from "electron";
-import { DropboxStorage } from "./dropboxStorage";
+//import { DropboxStorage } from "./dropboxStorage";
 
 const mime = require('mime-types');
 
@@ -46,7 +46,7 @@ function decryptData(encryptedData: string): string {
   }
 }
 
-const StoredAccounts: Map<CloudType, CloudStorage[]> = new Map();
+export const StoredAccounts: Map<CloudType, CloudStorage[]> = new Map();
 
 // To keep track of active authentication processes
 interface ActiveAuth {
@@ -118,10 +118,10 @@ export async function loadStoredAccounts(): Promise<void> {
             cloudStorageInstance = new GoogleDriveStorage();
             break;
           case CloudType.OneDrive:
-            cloudStorageInstance = new OneDriveStorage();
+            //cloudStorageInstance = new OneDriveStorage();
             break;
           case CloudType.Dropbox:
-            cloudStorageInstance = new DropboxStorage();
+            //cloudStorageInstance = new DropboxStorage();
             break;
           default:
             console.warn(`Unsupported cloud type: ${cloudType}`);
@@ -172,11 +172,11 @@ export async function connectNewCloudAccount(cloudType: CloudType) : Promise<str
         break;
       case CloudType.Dropbox:
         console.log('Cloud type is Dropbox');
-        cloudStorageInstance = new DropboxStorage();
+        //cloudStorageInstance = new DropboxStorage();
         break;
       case CloudType.OneDrive:
         console.log('Cloud type is OneDrive');
-        cloudStorageInstance = new OneDriveStorage();
+        //cloudStorageInstance = new OneDriveStorage();
         break;
       default:
         console.error('Cloud type is not supported');
@@ -360,6 +360,8 @@ export async function readFile(CloudType: CloudType, accountId: string, filePath
   }
 }
 
+
+// GOING TO BE REPLACED 
 
   // filePath: /HOME/dir/temp.txt
   // returns the file content in base64 format

@@ -32,7 +32,11 @@ export interface CloudStorage {
     getAccountId(): string;
     getAuthToken(): AuthTokens | null;
     deleteFile(filePath: string): Promise<void>;
-
+    transferFileToCloud(
+        fileInfo: any,
+        progressCallback?: (progress: number, total: number) => void,
+        abortSignal?: AbortSignal
+    ): Promise<void>; // Transfer file to another cloud or local storage
 
     searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]>;
     getFileInfo(filePath: string): Promise<FileSystemItem>;

@@ -7,6 +7,8 @@
  * Used to identify and route operations to the appropriate cloud service
  */
 export enum CloudType {
+    /** Local file system storage */
+    Local = 'Local',
     /** Google Drive cloud storage service */
     GoogleDrive = 'GoogleDrive',
     /** Dropbox cloud storage service */

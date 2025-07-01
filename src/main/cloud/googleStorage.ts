@@ -11,8 +11,9 @@ import { v4 as uuidv4 } from 'uuid';
 const { Readable } = require('stream');
 import * as http from 'http';
 import { URL } from 'url';
-import { normalize } from 'path';
 import { minimatch } from 'minimatch';
+import { promises as fs } from 'fs';
+import { file } from 'googleapis/build/src/apis/file';
 
 dotenv.config();
 
@@ -505,57 +506,28 @@ export class GoogleDriveStorage implements CloudStorage {
 
   async postFile(fileName: string, folderPath: string, type: string, data: Buffer, progressCallback?: (uploaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<void> {
     console.log('Posting file to Google Drive:', fileName, folderPath, type, 'Size:', data.length);
-    
-    // Use resumable upload for files larger than 5MB
-    const LARGEFILE_CUTOFF = 5 * 1024 * 1024; // 5MB
-    
-    if (data.length > LARGEFILE_CUTOFF) {
-      // Use resumable upload for large files
-      await this.postFileResumable(fileName, folderPath, type, data, progressCallback, abortSignal);
-    } else {
-      // Normal approach using buffer
-      await this.postFileSimple(fileName, folderPath, type, data, progressCallback);
-    }
   }
 
-  private async postFileSimple(fileName: string, folderPath: string, type: string, data: Buffer, progressCallback?: (uploaded: number, total: number) => void): Promise<void> {
-    const stream = await this.bufferToStream(data);
-    await this.refreshOAuthClientIfNeeded();
-    if (!this.oauth2Client) {
-      throw new Error('OAuth2 client is not initialized');
-    }
-    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
-    const parentFolderId = await this.getFolderId(folderPath);
-    console.log('Parent folder ID:', parentFolderId);
-    
-    const res = await drive.files.create({
-      requestBody: {
-        name: fileName,
-        mimeType: type,
-        parents: [parentFolderId],
-      },
-      media: {
-        mimeType: type,
-        body: stream,
-      },
-    });
-  
-    // Update progress after completion
-    if (progressCallback) {
-      progressCallback(data.length, data.length);
-    }
-    
-    console.log(`Uploaded file ID: ${res.data.id}`);
-  }
 
-  private async postFileResumable(fileName: string, folderPath: string, type: string, data: Buffer, progressCallback?: (uploaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<void> {
+
+  // Transfer file from local storage to Google Drive using resumable upload/download, this will fetch and upload the file in chunks at the same time
+
+  async transferFileToCloud(fileInfo: any, progressCallback?: (uploaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<void> {
+
+    const {fileName, sourcePath, type, targetCloudType, targetAccountId, targetPath} = fileInfo;
+
+    console.log(`From local ${sourcePath} to cloud ${targetCloudType} account ${targetAccountId} at path ${targetPath}`);
     await this.refreshOAuthClientIfNeeded();
     if (!this.oauth2Client) {
       throw new Error('OAuth2 client is not initialized');
     }
     
-    const parentFolderId = await this.getFolderId(folderPath);
-    console.log('Starting resumable upload for file:', fileName, 'Size:', data.length, 'Parent folder ID:', parentFolderId);
+    const parentFolderId = await this.getFolderId(targetPath);
+
+    // Get file size from local file 
+    const fileSize = (await fs.stat(sourcePath)).size;
+
+    console.log('Starting resumable upload for file:', fileName, 'Size:', fileSize, 'Parent folder ID:', parentFolderId);
     
     try {
       // Initialize resumable upload session
@@ -563,7 +535,7 @@ export class GoogleDriveStorage implements CloudStorage {
       console.log('Resumable upload session initiated:', uploadUrl);
       
       // Upload file in chunks
-      await this.uploadFileInChunks(uploadUrl, data, progressCallback, abortSignal);
+      await this.uploadFileInChunks(uploadUrl, sourcePath, fileSize, progressCallback, abortSignal);
       
       console.log(`Resumable upload completed for file: ${fileName}`);
     } catch (error) {
@@ -603,129 +575,134 @@ export class GoogleDriveStorage implements CloudStorage {
   }
 
   /* upload file in chunks, used when large files */
-  private async uploadFileInChunks(uploadUrl: string, data: Buffer, progressCallback?: (uploaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<void> {
+  private async uploadFileInChunks(uploadUrl: string, sourcePath: string, fileSize: number, progressCallback?: (uploaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<void> {
     let CHUNK_SIZE: number;
-    const totalSize = data.length;
     
-    if (totalSize < 10 * 1024 * 1024) { // < 10MB
+    if (fileSize < 10 * 1024 * 1024) { // < 10MB
         CHUNK_SIZE = 512 * 1024; // 512KB
-    } else if (totalSize < 100 * 1024 * 1024) { // < 100MB
+    } else if (fileSize < 100 * 1024 * 1024) { // < 100MB
         CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
-    } else if (totalSize < 1024 * 1024 * 1024) { // < 1GB
+    } else if (fileSize < 1024 * 1024 * 1024) { // < 1GB
         CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
     } else { // > 1GB
         CHUNK_SIZE = 32 * 1024 * 1024; // 32MB
     }
     
 
-    let uploadedBytes = 0;
+    let TransferedBytes = 0;
     let retryCount = 0;
     const MAX_RETRIES = 3;
+    const fileHandle = await fs.open(sourcePath, 'r');
 
-    console.log(`Starting chunked upload. Total size: ${totalSize}, Chunk size: ${CHUNK_SIZE}`);
+    console.log(`Starting chunked upload. Total size: ${fileSize}, Chunk size: ${CHUNK_SIZE}`);
 
-    while (uploadedBytes < totalSize) {
-      // Check for cancellation before each chunk
-      if (abortSignal?.aborted) {
-        console.log('Upload cancelled by user');
-        throw new Error('Upload cancelled by user');
-      }
-
-      const chunkStart = uploadedBytes;
-      const chunkEnd = Math.min(uploadedBytes + CHUNK_SIZE, totalSize) - 1;
-      const chunkData = data.subarray(chunkStart, chunkEnd + 1);
-      
-      console.log(`Uploading chunk: ${chunkStart}-${chunkEnd}/${totalSize - 1}`);
-
-      try {
-        const response = await fetch(uploadUrl, {
-          method: 'PUT',
-          headers: {
-            'Content-Range': `bytes ${chunkStart}-${chunkEnd}/${totalSize}`,
-            'Content-Length': chunkData.length.toString(),
-          },
-          body: chunkData,
-          signal: abortSignal 
-        });
-
-        if (response.status === 308) {
-          // Resume incomplete - check range and continue
-          const rangeHeader = response.headers.get('Range');
-          if (rangeHeader) {
-            const match = rangeHeader.match(/bytes=0-(\d+)/);
-            if (match) {
-              uploadedBytes = parseInt(match[1]) + 1;
-              console.log(`Resuming from byte: ${uploadedBytes}`);
-            }
-          } else {
-            uploadedBytes = chunkEnd + 1;
-          }
-          
-          //  Update progress
-          if (progressCallback) {
-            progressCallback(uploadedBytes, totalSize);
-          }
-          
-          retryCount = 0; // Reset retry count on successful chunk
-        } else if (response.status === 200 || response.status === 201) {
-          // Upload complete
-          uploadedBytes = totalSize;
-          if (progressCallback) {
-            progressCallback(totalSize, totalSize);
-          }
-          console.log('Upload completed successfully');
-          break;
-        } else {
-          throw new Error(`Upload chunk failed: ${response.status} ${response.statusText}`);
+    try {
+      while (TransferedBytes < fileSize) {
+        // Check for cancellation before each chunk
+        if (abortSignal?.aborted) {
+          console.log('Transfer cancelled by user');
+          throw new Error('Transfer cancelled by user');
         }
-      } catch (error) {
-        retryCount++;
-        console.error(`Chunk upload error (attempt ${retryCount}/${MAX_RETRIES}):`, error);
+
+        const chunkStart = TransferedBytes;
+        const chunkEnd = Math.min(TransferedBytes + CHUNK_SIZE, fileSize) - 1;
+
+        // Read the chunk from the local file
+        const length = chunkEnd - chunkStart + 1;
+        const chunkData = Buffer.alloc(length);
+        await fileHandle.read(chunkData, 0, length, chunkStart);
         
-        if (retryCount >= MAX_RETRIES) {
-          throw new Error(`Upload failed after ${MAX_RETRIES} attempts: ${error}`);
-        }
-        
-        // Wait before retry
-        const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
-        console.log(`Retrying in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        
-        // Try to get current upload status before retry
+        console.log(`Transfering chunk: ${chunkStart}-${chunkEnd}/${fileSize - 1}`);
+
         try {
-          const statusResponse = await fetch(uploadUrl, {
+          const response = await fetch(uploadUrl, {
             method: 'PUT',
             headers: {
-              'Content-Range': `bytes */${totalSize}`,
+              'Content-Range': `bytes ${chunkStart}-${chunkEnd}/${fileSize}`,
+              'Content-Length': chunkData.length.toString(),
             },
+            body: chunkData,
             signal: abortSignal 
           });
-          
-          // If the status response is 308, it means we can resume
-          if (statusResponse.status === 308) {
-            const rangeHeader = statusResponse.headers.get('Range');
-            // If the range header is present, we can resume from the last uploaded byte
+
+          if (response.status === 308) {
+            // Resume incomplete - check range and continue
+            const rangeHeader = response.headers.get('Range');
             if (rangeHeader) {
               const match = rangeHeader.match(/bytes=0-(\d+)/);
               if (match) {
-                uploadedBytes = parseInt(match[1]) + 1;
-                console.log(`Resuming from byte: ${uploadedBytes} after error`);
+                TransferedBytes = parseInt(match[1]) + 1;
+                console.log(`Resuming from byte: ${TransferedBytes}`);
+              }
+            } else {
+              TransferedBytes = chunkEnd + 1;
+            }
+            
+            //  Update progress
+            if (progressCallback) {
+              progressCallback(TransferedBytes, fileSize);
+            }
+            
+            retryCount = 0; // Reset retry count on successful chunk
+          } else if (response.status === 200 || response.status === 201) {
+            // Upload complete
+            TransferedBytes = fileSize;
+            if (progressCallback) {
+              progressCallback(fileSize, fileSize);
+            }
+            console.log('Upload completed successfully');
+            break;
+          } else {
+            throw new Error(`Upload chunk failed: ${response.status} ${response.statusText}`);
+          }
+        } catch (error) {
+          retryCount++;
+          console.error(`Chunk upload error (attempt ${retryCount}/${MAX_RETRIES}):`, error);
+          
+          if (retryCount >= MAX_RETRIES) {
+            throw new Error(`Upload failed after ${MAX_RETRIES} attempts: ${error}`);
+          }
+          
+          // Wait before retry
+          const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          
+          // Try to get current upload status before retry
+          try {
+            const statusResponse = await fetch(uploadUrl, {
+              method: 'PUT',
+              headers: {
+                'Content-Range': `bytes */${fileSize}`,
+              },
+              signal: abortSignal 
+            });
+            
+            // If the status response is 308, it means we can resume
+            if (statusResponse.status === 308) {
+              const rangeHeader = statusResponse.headers.get('Range');
+              // If the range header is present, we can resume from the last uploaded byte
+              if (rangeHeader) {
+                const match = rangeHeader.match(/bytes=0-(\d+)/);
+                if (match) {
+                  TransferedBytes = parseInt(match[1]) + 1;
+                  console.log(`Resuming from byte: ${TransferedBytes} after error`);
+                }
               }
             }
+          } catch (statusError) {
+            console.warn('Failed to get upload status, continuing with current position:', statusError);
           }
-        } catch (statusError) {
-          console.warn('Failed to get upload status, continuing with current position:', statusError);
         }
+      } 
+    } finally {
+      // Ensure the file handle is closed after upload
+      if (fileHandle) {
+        await fileHandle.close();
       }
     }
   }
 
-  private async bufferToStream(buffer: Buffer)  {
-    const readable = new Readable();
-    readable.push(buffer);
-    readable.push(null); // Signal end of stream
-    return readable;
-  }
 
   async deleteFile(filePath: string): Promise<void> {
     await this.refreshOAuthClientIfNeeded();
