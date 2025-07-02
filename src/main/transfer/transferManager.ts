@@ -10,6 +10,7 @@ export interface progressCallbackData {
     transfered: number;
     total: number;
     isDirectory?: boolean;
+    isFetching?: boolean; 
 }
 
 export async function transferManager(transferInfo: any, progressCallback: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
@@ -25,6 +26,14 @@ export async function transferManager(transferInfo: any, progressCallback: (data
         // if source is local, we will fetch the file from local filesystem and then upload using resumable upload
         if (isSourceLocal) {
             console.warn("Transferring from local filesystem to cloud storage...");
+            progressCallback({
+                transferId,
+                fileName,
+                transfered: 0,
+                total: 0, 
+                isDirectory: false,
+                isFetching: true 
+            });
             await transferLocalToCloudUpload(transferId, fileName, sourcePath, targetCloudType, targetAccountId, targetPath, progressCallback, abortSignal);
         } else {
 

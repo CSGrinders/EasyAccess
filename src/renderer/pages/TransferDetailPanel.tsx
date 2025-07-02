@@ -230,17 +230,11 @@ export function TransferDetailPanel({
                   transfer.status === "fetching" ? "text-purple-700 dark:text-purple-300" :
                   "text-blue-700 dark:text-blue-300"
                 )}>
-                  {getTransferOperationText(transfer)} {transfer.itemCount} Item{transfer.itemCount > 1 ? 's' : ''}
+                  {getTransferOperationText(transfer)} {transfer.itemCount} Item{transfer.itemCount > 1 ? 's' : ''} {transfer.isCurrentDirectory && `from directory ${transfer.directoryName}`}
                   {/* Show file name for single file transfers */}
                   {transfer.itemCount === 1 && (() => {
                     // Try to get the file name from various sources
-                    const fileName = transfer.fileList?.[0] || 
-                                   transfer.completedFiles?.[0] || 
-                                   transfer.failedFiles?.[0]?.file ||
-                                   transfer.currentItem;
-                    return fileName ? (
-                      <span className="text-slate-600 dark:text-slate-400 font-normal">: {fileName}</span>
-                    ) : null;
+                      return <span className="text-slate-600 dark:text-slate-400 font-normal">: {transfer.currentItem}</span>
                   })()}
                 </span>
               
@@ -413,8 +407,15 @@ export function TransferDetailPanel({
           </div>
         )}
 
-        {/* Simple Error Message */}
+        {/* Cancel Message */}
         {transfer.status == "cancelled" && (
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3">
+            <p className="text-sm text-red-700 dark:text-red-300">{transfer.cancelledMessage}</p>
+          </div>
+        )}
+
+        {/* Error Message */}
+        {transfer.cancelledMessage && transfer.status !== "cancelled" && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3">
             <p className="text-sm text-red-700 dark:text-red-300">{transfer.cancelledMessage}</p>
           </div>

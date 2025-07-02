@@ -583,9 +583,25 @@ export class GoogleDriveStorage implements CloudStorage {
       }
         console.log(`Transferring directory: ${item.name}`);
         // Recursively transfer directory
-        await this.transferDirectoryToCloud(transferId, item.name, itemPath, targetFolderId, progressCallback, abortSignal);
+        progressCallback?.({
+          transferId,
+          fileName: item.name,
+          transfered: 0,
+          total: 0, 
+          isDirectory: false,
+          isFetching: true 
+        });
+        await this.transferDirectoryContentsStreaming(transferId, itemPath, subFolderId, progressCallback, abortSignal);
       }
       else if (item.isFile()) {
+        progressCallback?.({
+          transferId,
+          fileName: item.name,
+          transfered: 0,
+          total: 0, 
+          isDirectory: true,
+          isFetching: true 
+        });
         console.log('Processing file:', item.name);
         // Get file size from local file 
         const fileStats = await fs.stat(itemPath);

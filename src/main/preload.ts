@@ -53,7 +53,7 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
     removeDownloadProgressListener: (wrappedCallback: any) => {
         ipcRenderer.removeListener('cloud-download-progress', wrappedCallback);
     },
-    deleteFile: (cloudType: CloudType, accountId: string, filePath: string) =>
+    deleteItem: (cloudType: CloudType, accountId: string, filePath: string) =>
         ipcRenderer.invoke('cloud-delete-file', cloudType, accountId, filePath) as Promise<void>,
     createDirectory: (cloudType: CloudType, accountId: string, folderPath: string, folderName: string) =>
         ipcRenderer.invoke('cloud-create-directory', cloudType, accountId, folderPath, folderName) as Promise<void>,
@@ -86,7 +86,7 @@ contextBridge.exposeInMainWorld('fsApi', {
         ipcRenderer.invoke('get-file', filePath) as Promise<FileContent>,
     postFile: (fileName: string, folderPath: string, data: Buffer) =>
         ipcRenderer.invoke('post-file', fileName, folderPath, data) as Promise<void>,
-    deleteFile: (filePath: string) =>
+    deleteItem: (filePath: string) =>
         ipcRenderer.invoke('delete-file', filePath) as Promise<void>,
     createDirectory: (dirPath: string, dirName: string) =>
         ipcRenderer.invoke('create-directory', dirPath, dirName) as Promise<void>,

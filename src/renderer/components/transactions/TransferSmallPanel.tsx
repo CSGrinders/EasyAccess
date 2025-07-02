@@ -292,20 +292,19 @@ export function TransferManager({
                 </p>)}
             <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400">
               <div className={cn("flex", transfer.isCurrentDirectory ? "flex-col" : "items-center gap-2")}>
+                {transfer.isCurrentDirectory && (
+                  <span>
+                    Item from directory: {transfer.directoryName}
+                  </span>
+                )}
                 {transfer.itemCount > 1 && transfer.status !== "cancelled" && (
                   <span>
                     Completed {transfer.completedFiles?.length} of {transfer.itemCount} Items
                   </span>
-
                 )}
-                {transfer.isCurrentDirectory && transfer.status !== "cancelled" && (
-                  <span>
-                    Item from directory: {transfer.directoryName}
-                  </span>
-              )}
                 {estimatedTimes[transfer.id] && transfer.status !== "cancelled" && (
                   <>
-                    {transfer.itemCount > 1 && <span>•</span>}
+                    {transfer.itemCount > 1 && !transfer.isCurrentDirectory && <span>•</span>}
                     <div className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       <span>{estimatedTimes[transfer.id]}</span>

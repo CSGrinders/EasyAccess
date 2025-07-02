@@ -3,7 +3,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { config } from 'dotenv';
 import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getFileInfo, getDirectoryTree, readFile } from './cloud/cloudManager';
-import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal } from './local/localFileSystem';
+import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteItemLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal } from './local/localFileSystem';
 // Load environment variables
 // In development, load from project root; in production, load from app Contents directory
 const envPath = app.isPackaged 
@@ -425,7 +425,7 @@ ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, dat
 });
 
 ipcMain.handle('delete-file', async (_e, filePath: string)  => {
-    return await deleteFileLocal(filePath);
+    return await deleteItemLocal(filePath);
 });
 
 ipcMain.handle('mcp-process-query-test', (_e, toolName, toolArgs) => {

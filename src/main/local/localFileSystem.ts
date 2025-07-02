@@ -215,7 +215,7 @@ export const postFileLocal = async (fileName: string, folderPath: string, data: 
     }
 };
 
-export const deleteFileLocal = async (filePath: string) => {
+export const deleteItemLocal = async (filePath: string) => {
     console.log('deleting file:', filePath);
     
     const permissionManager = PermissionManager.getInstance();
@@ -225,14 +225,27 @@ export const deleteFileLocal = async (filePath: string) => {
         throw new Error(`Access denied to ${filePath}. Insufficient permissions.`);
     }
 
+    //check if item is a directory or a file
     try {
-        await fs.promises.unlink(filePath);
-        console.log('File deleted successfully:', filePath);
+        const stats = await fs.promises.stat(filePath);
+        if (stats.isDirectory()) {
+            // If it's a directory, we need to remove it recursively
+            await fs.promises.rmdir(filePath, { recursive: true });
+            console.log('Directory deleted successfully:', filePath);
+                return; 
+        } else {
+            await fs.promises.unlink(filePath);
+            console.log('File deleted successfully:', filePath);
+        }
     } catch (error: any) {
         if (error.code === 'EPERM' || error.code === 'EACCES') {
             throw new Error(`Permission denied deleting ${filePath}.`);
+        } else if (error.code === 'ENOENT') {
+            throw new Error(`File or directory not found: ${filePath}.`);
+        } else if (error.code === 'ENOTEMPTY') {
+            throw new Error(`Directory not empty: ${filePath}.`);
         }
-        console.error('Error deleting file:', error);
+        console.error('Error deleting file or directory:', error);
         throw error; 
     }
 };
