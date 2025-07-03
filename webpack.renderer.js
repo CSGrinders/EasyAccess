@@ -38,7 +38,8 @@ module.exports = {
             '@': path.resolve(__dirname, 'src/renderer'),
         },
         fallback: {
-            "buffer": require.resolve("buffer")
+            "buffer": require.resolve("buffer"),
+            path: require.resolve('path-browserify'),
         },
         extensions: ['.tsx', '.ts', '.js', '.css'],
     },

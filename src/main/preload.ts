@@ -1,9 +1,9 @@
 // preload.ts - Bridge between main and renderer processes
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FileContent, FileSystemItem } from '../types/fileSystem'
-import { CloudType } from '../types/cloudType';
+import { CloudType } from '@Types/cloudType';
 import { transcode } from 'buffer';
-import { progressCallbackData } from './transfer/transferManager';
+import {progressCallbackData} from '../types/transfer';
 
 contextBridge.exposeInMainWorld('cloudFsApi', {
     connectNewCloudAccount: (cloudType: CloudType) =>

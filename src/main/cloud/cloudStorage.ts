@@ -6,7 +6,7 @@ Each provider has its own authentication method and file retrieval process.
 */
 
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
-import { progressCallbackData } from "../transfer/transferManager";
+import { progressCallbackData } from "../../types/transfer";
 
 export type AuthTokens = {
     access_token: string;

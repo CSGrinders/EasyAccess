@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, shell, ipcRenderer } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { config } from 'dotenv';
-import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getFileInfo, getDirectoryTree, readFile } from './cloud/cloudManager';
+import { connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getFileInfo, getDirectoryTree, readFile } from './cloud/cloudManager';
 import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteItemLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal } from './local/localFileSystem';
 // Load environment variables
 // In development, load from project root; in production, load from app Contents directory
@@ -12,14 +12,15 @@ const envPath = app.isPackaged
 
 console.log('Loading .env from:', envPath);
 config({ path: envPath });
-import { CloudType } from "@Types/cloudType";
-import { FileContent, FileSystemItem } from '@Types/fileSystem';
+import { CloudType } from "../types/cloudType";
+import { FileContent, FileSystemItem } from '../types/fileSystem';
 import MCPClient from './MCP/mcpClient';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { PermissionManager } from './permissions/permissionManager';
 import { createFsServer } from './MCP/globalFsMcpServer';
 import { v4 as uuidv4 } from 'uuid';
-import { progressCallbackData, transferManager } from './transfer/transferManager';
+import { transferManager } from './transfer/transferManager';
+import {progressCallbackData} from '../types/transfer';
 
 let mcpClient: MCPClient | null = null;
 let mainWindow: BrowserWindow | null = null;

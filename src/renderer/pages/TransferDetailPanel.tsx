@@ -239,39 +239,49 @@ export function TransferDetailPanel({
                 </span>
               
               <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">From:</span>
-                  <span className="truncate">{transfer.sourceStorageType}</span>
-                  <span className={cn(
-                    "text-sm font-medium",
-                    transfer.status === "cancelled" ? "text-red-700 dark:text-red-300" :
-                    transfer.status === "completed" ? "text-green-700 dark:text-green-300" :
-                    transfer.status === "downloading" ? "text-blue-700 dark:text-blue-300" :
-                    transfer.status === "uploading" ? "text-orange-700 dark:text-orange-300" :
-                    transfer.status === "moving" ? "text-purple-700 dark:text-purple-300" :
-                    transfer.status === "copying" ? "text-purple-700 dark:text-purple-300" :
-                    transfer.status === "fetching" ? "text-purple-700 dark:text-purple-300" :
-                    "text-blue-700 dark:text-blue-300"
+                <div className="flex flex-col">
+                  <div className="flex flex-row items-center gap-2">
+                    <span className="font-medium">To:</span>
+                    <span className="truncate">{transfer.sourceStorageType}</span>
+                    <span className={cn(
+                      "text-sm font-medium",
+                      transfer.status === "cancelled" ? "text-red-700 dark:text-red-300" :
+                      transfer.status === "completed" ? "text-green-700 dark:text-green-300" :
+                      transfer.status === "downloading" ? "text-blue-700 dark:text-blue-300" :
+                      transfer.status === "uploading" ? "text-orange-700 dark:text-orange-300" :
+                      transfer.status === "moving" ? "text-purple-700 dark:text-purple-300" :
+                      transfer.status === "copying" ? "text-purple-700 dark:text-purple-300" :
+                      transfer.status === "fetching" ? "text-purple-700 dark:text-purple-300" :
+                      "text-blue-700 dark:text-blue-300"
                     )}>
-                    {transfer.sourceAccountId}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">To:</span>
-                  <span className="truncate">{transfer.targetStorageType}</span>
-                  <span className={cn(
-                    "text-sm font-medium",
-                    transfer.status === "cancelled" ? "text-red-700 dark:text-red-300" :
-                    transfer.status === "completed" ? "text-green-700 dark:text-green-300" :
-                    transfer.status === "downloading" ? "text-blue-700 dark:text-blue-300" :
-                    transfer.status === "uploading" ? "text-orange-700 dark:text-orange-300" :
-                    transfer.status === "moving" ? "text-purple-700 dark:text-purple-300" :
-                    transfer.status === "copying" ? "text-purple-700 dark:text-purple-300" :
-                    transfer.status === "fetching" ? "text-purple-700 dark:text-purple-300" :
-                    "text-blue-700 dark:text-blue-300"
-                    )}>
-                    {transfer.targetAccountId}
+                      {transfer.sourceAccountId}
                     </span>
+                  </div>
+                    {transfer.sourcePath && (
+                      <span className="text-xs text-slate-600 dark:text-slate-400 pl-6">{`${transfer.sourcePath}`}</span>
+                    )}
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex flex-row items-center gap-2">
+                    <span className="font-medium">To:</span>
+                    <span className="truncate">{transfer.targetStorageType}</span>
+                    <span className={cn(
+                      "text-sm font-medium",
+                      transfer.status === "cancelled" ? "text-red-700 dark:text-red-300" :
+                      transfer.status === "completed" ? "text-green-700 dark:text-green-300" :
+                      transfer.status === "downloading" ? "text-blue-700 dark:text-blue-300" :
+                      transfer.status === "uploading" ? "text-orange-700 dark:text-orange-300" :
+                      transfer.status === "moving" ? "text-purple-700 dark:text-purple-300" :
+                      transfer.status === "copying" ? "text-purple-700 dark:text-purple-300" :
+                      transfer.status === "fetching" ? "text-purple-700 dark:text-purple-300" :
+                      "text-blue-700 dark:text-blue-300"
+                    )}>
+                      {transfer.targetAccountId}
+                    </span>
+                  </div>
+                    {transfer.targetPath && (
+                      <span className="text-xs text-slate-600 dark:text-slate-400 pl-6">{`${transfer.targetPath}`}</span>
+                    )}
                 </div>
               </div>
             </div>

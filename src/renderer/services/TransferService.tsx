@@ -1,11 +1,12 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { CloudType } from '@Types/cloudType';
 import { FileContent } from '@Types/fileSystem';
-import { TransferItem, TransferQueueState } from '@Types/transfer';
+import { progressCallbackData, TransferItem, TransferQueueState } from '@Types/transfer';
 import { StorageBoxData } from '@Types/box';
 import { useTransferState } from '@/contexts/TransferStateContext';
 import { v4 as uuidv4 } from 'uuid';
 import { batch } from 'googleapis/build/src/apis/batch';
+import path from 'path';
 
 interface TransferServiceProps {
     boxRefs: React.RefObject<Map<any, any>>;
@@ -21,7 +22,7 @@ interface TransferServiceReturn {
     setUploadDialogResolve: React.Dispatch<React.SetStateAction<((value: { confirmed: boolean; keepOriginal: boolean }) => void) | null>>;
     
     // Transfer management functions
-    createTransfer: (sourceStorageType: CloudType, sourceAccountId: string, targetStorageType: CloudType, targetAccountId: string, keepOriginal: boolean, itemCount: number, fileList?: string[]) => TransferItem;
+    createTransfer: (sourceStorageType: CloudType, sourceAccountId: string, targetStorageType: CloudType, targetAccountId: string, sourcePath: string, targetPath: string, keepOriginal: boolean, itemCount: number, fileList?: string[]) => TransferItem;
     updateTransfer: (transferId: string, updates: Partial<TransferItem>) => void;
     batchUpdateTransfer: (transferId: string, updates: Partial<TransferItem>) => void;
     removeTransfer: (transferId: string) => void;
@@ -92,7 +93,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
     };
 
     // Transfer queue management functions
-    const createTransfer = (sourceStorageType: CloudType, sourceAccountId: string, targetStorageType: CloudType, targetAccountId: string, keepOriginal: boolean, itemCount: number, fileList?: string[]): TransferItem => {
+    const createTransfer = (sourceStorageType: CloudType, sourceAccountId: string, targetStorageType: CloudType, targetAccountId: string, sourcePath: string, targetPath: string, keepOriginal: boolean, itemCount: number, fileList?: string[]): TransferItem => {
         // Use uuid to have unique IDs
         const transferId =  uuidv4();
         const newTransfer: TransferItem = {
@@ -106,6 +107,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
             sourceAccountId,
             targetStorageType,
             targetAccountId,
+            sourcePath,
+            targetPath,
             fileList: fileList || [],
             completedFiles: [],
             failedFiles: [],
@@ -340,6 +343,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                 sourceAccountId || '',
                 targetCloudType || CloudType.Local,
                 targetAccountId || '',
+                path.dirname(filePaths[0] || ''),
+                targetPath || '',
                 confirmation.keepOriginal,
                 filePaths.length,
                 filePaths.map(path => path.split('/').pop() || path) 
@@ -377,7 +382,6 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     // }
 
                     const fileName = filePath.split('/').pop() || filePath;
-                    const fileIndex = i + 1;
                     
                     // Update status to show current file being processed
                     batchUpdateTransfer(transfer.id, {
@@ -394,7 +398,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         const isLocaltoCloud = transfer.sourceStorageType === CloudType.Local && transfer.targetStorageType !== CloudType.Local; // Local to Cloud show uploading ui
                         const isCloudToLocal = transfer.sourceStorageType !== CloudType.Local && transfer.targetStorageType === CloudType.Local; // Cloud to local show downloading ui
         
-                        progressListener = (window as any).transferApi.onTransferProgress((data: { transferId: string; fileName: string; transfered: number; total: number, isDirectory?: boolean, isFetching?: boolean }) => {
+                        progressListener = (window as any).transferApi.onTransferProgress((data: progressCallbackData) => {
                             const latestTransfer = getTransfer(transfer.id);
                             if (latestTransfer?.status === "cancelled") {
                                 return; // Don't update progress if cancelled
@@ -406,6 +410,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                         currentItem: data.fileName,
                                         status: "fetching",
                                         isCurrentDirectory: data.isDirectory,
+                                        cancelledMessage: data.errorItemDirectory || "",
                                         directoryName: data.isDirectory ? fileName : "unknown",
                                         progress: (processedFiles / totalFiles) * 100
                                     }); 

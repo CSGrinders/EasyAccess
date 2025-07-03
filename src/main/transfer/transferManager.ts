@@ -2,16 +2,8 @@ import { file } from "googleapis/build/src/apis/file";
 import { CLOUD_HOME, CloudType } from "../../types/cloudType";
 import { StoredAccounts } from "../cloud/cloudManager";
 import mime from "mime-types";
+import { progressCallbackData } from "../../types/transfer";
 
-
-export interface progressCallbackData {
-    transferId: string;
-    fileName: string;
-    transfered: number;
-    total: number;
-    isDirectory?: boolean;
-    isFetching?: boolean; 
-}
 
 export async function transferManager(transferInfo: any, progressCallback: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
     // This function will handle the transfer operations based on the provided transferInfo

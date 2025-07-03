@@ -37,6 +37,10 @@ export interface TransferItem {
   targetStorageType: CloudType;
   /* Accountid of the target location if it is a cloud */
   targetAccountId: string;
+  /** Source path */
+  sourcePath: string;
+  /** Target path */
+  targetPath: string;
   /** Total number of items to be transferred */
   itemCount: number;
   /** List of all files included in the transfer operation */
@@ -45,6 +49,8 @@ export interface TransferItem {
   completedFiles?: string[];
   /** List of files that failed to transfer with their error messages */
   failedFiles?: { file: string; error: string }[];
+  /* Files Failed to Delete */
+  failedToDeleteItems?: { file: string; error: string }[];
 }
 
 /**
@@ -55,4 +61,15 @@ export interface TransferQueueState {
   transfers: TransferItem[];
   /** Counter for generating unique transfer IDs */
   nextId: number;
+}
+
+/** Trasnfer progress claback data items */
+export interface progressCallbackData {
+    transferId: string;
+    fileName: string;
+    transfered: number;
+    total: number;
+    isDirectory?: boolean;
+    errorItemDirectory?: string;
+    isFetching?: boolean; 
 }

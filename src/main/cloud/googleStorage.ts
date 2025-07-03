@@ -15,7 +15,7 @@ import { minimatch } from 'minimatch';
 import { promises as fs } from 'fs';
 import path from 'path';
 import mime from "mime-types";
-import { progressCallbackData } from '../transfer/transferManager';
+import { progressCallbackData } from '../../types/transfer';
 
 dotenv.config();
 
@@ -540,13 +540,13 @@ export class GoogleDriveStorage implements CloudStorage {
 
     console.log(`Created directory: ${dirName} with ID: ${createdFolderId}`);
     let processedFiles = 0;
-    await this.transferDirectoryContentsStreaming(transferId, sourcePath, createdFolderId, progressCallback, abortSignal);
+    await this.transferDirectoryContentsResumable(transferId, sourcePath, createdFolderId, progressCallback, abortSignal);
 
     
   }
 
 
-  private async transferDirectoryContentsStreaming(
+  private async transferDirectoryContentsResumable(
     transferId: string,
     sourcePath: string,
     targetFolderId: string,
@@ -563,55 +563,124 @@ export class GoogleDriveStorage implements CloudStorage {
 
       const itemPath = path.join(sourcePath, item.name);
       if (item.isDirectory()) {
-        console.log(`Processing directory: ${item.name}`);
-        if (!this.oauth2Client) {
-          throw new Error('OAuth2 client must be initialized before creating drive instance');
-        }
-        // Create subdirectory in Google Drive
-        const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
-        const subFolderResponse = await drive.files.create({
-        requestBody: {
-          name: item.name,
-          mimeType: 'application/vnd.google-apps.folder',
-          parents: [targetFolderId],
-        },
-      });
-
-      const subFolderId = subFolderResponse.data.id;
-      if (!subFolderId) {
-        throw new Error(`Failed to create subdirectory: ${item.name}`);
-      }
-        console.log(`Transferring directory: ${item.name}`);
-        // Recursively transfer directory
-        progressCallback?.({
-          transferId,
-          fileName: item.name,
-          transfered: 0,
-          total: 0, 
-          isDirectory: false,
-          isFetching: true 
+        try {
+          console.log(`Processing directory: ${item.name}`);
+          if (!this.oauth2Client) {
+            throw new Error('OAuth2 client must be initialized before creating drive instance');
+          }
+          // Create subdirectory in Google Drive
+          const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+          const subFolderResponse = await drive.files.create({
+          requestBody: {
+            name: item.name,
+            mimeType: 'application/vnd.google-apps.folder',
+            parents: [targetFolderId],
+          },
         });
-        await this.transferDirectoryContentsStreaming(transferId, itemPath, subFolderId, progressCallback, abortSignal);
+
+        const subFolderId = subFolderResponse.data.id;
+        if (!subFolderId) {
+          throw new Error(`Failed to create subdirectory: ${item.name}`);
+        }
+          console.log(`Transferring directory: ${item.name}`);
+          // Recursively transfer directory
+          progressCallback?.({
+            transferId,
+            fileName: item.name,
+            transfered: 0,
+            total: 0, 
+            isDirectory: false,
+            isFetching: true 
+          });
+          await this.transferDirectoryContentsResumable(transferId, itemPath, subFolderId, progressCallback, abortSignal);
+        } catch (error) {
+          console.error(`Failed to process directory ${item.name}:`, error);
+          // Extract error message
+          const parts = error instanceof Error ? error.message.split(':') : ["Transfer failed"];
+          let errorMessage = parts[parts.length - 1].trim() + ". Continueing with next file...";
+          if (errorMessage.toLowerCase().includes('permission')) {
+            errorMessage = "You don't have permission to access this file or folder.";
+          } else if (errorMessage.toLowerCase().includes('quota')) {
+            errorMessage = "Google Drive storage quota exceeded.";
+          } else if (errorMessage.toLowerCase().includes('network')) {
+            errorMessage = "Network error. Please check your internet connection.";
+          } else if (errorMessage.toLowerCase().includes('not found')) {
+            errorMessage = "The file or folder was not found.";
+          } else if (errorMessage.toLowerCase().includes('timeout')) {
+            errorMessage = "The operation timed out. Please try again.";
+          } else if (errorMessage === "" || errorMessage === "Transfer failed") {
+            errorMessage = "An unknown error occurred during transfer.";
+          }
+          progressCallback?.({
+            transferId,
+            fileName: item.name,
+            transfered: 0,
+            total: 0, 
+            isDirectory: true,
+            isFetching: true,
+            errorItemDirectory: `Failed to process directory ${item.name}: ${errorMessage}`
+          });
+
+          // Wait 5 seconds before continuing with the next item
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          console.log(`Continuing with next item after error: ${errorMessage}`);
+          // Skip this directory and continue with the next item
+          continue;
+        }
       }
       else if (item.isFile()) {
-        progressCallback?.({
-          transferId,
-          fileName: item.name,
-          transfered: 0,
-          total: 0, 
-          isDirectory: true,
-          isFetching: true 
-        });
-        console.log('Processing file:', item.name);
-        // Get file size from local file 
-        const fileStats = await fs.stat(itemPath);
-        const fileSize = fileStats.size;
-        const type = mime.lookup(item.name) || 'application/octet-stream';
-        const uploadUrl = await this.initiateResumableUpload(item.name, type, targetFolderId);
-        await this.uploadFileInChunks(transferId, item.name, uploadUrl, itemPath, fileSize, progressCallback, abortSignal, true);
-      
-        console.log(`Transfer Directory: File transferred: ${item.name} files processed)`);
+        try {
+          progressCallback?.({
+            transferId,
+            fileName: item.name,
+            transfered: 0,
+            total: 0, 
+            isDirectory: true,
+            isFetching: true 
+          });
+          console.log('Processing file:', item.name);
+          // Get file size from local file 
+          const fileStats = await fs.stat(itemPath);
+          const fileSize = fileStats.size;
+          const type = mime.lookup(item.name) || 'application/octet-stream';
+          const uploadUrl = await this.initiateResumableUpload(item.name, type, targetFolderId);
+          await this.uploadFileInChunks(transferId, item.name, uploadUrl, itemPath, fileSize, progressCallback, abortSignal, true);
+        
+          console.log(`Transfer Directory: File transferred: ${item.name} files processed)`);
+        } catch(error) {
+          console.error(`Failed to process file ${item.name}:`, error);
+          // Extract error message
+          const parts = error instanceof Error ? error.message.split(':') : ["Transfer failed"];
+          let errorMessage = parts[parts.length - 1].trim() + ". Continueing with next file...";
+          if (errorMessage.toLowerCase().includes('permission')) {
+            errorMessage = "You don't have permission to access this file or folder.";
+          } else if (errorMessage.toLowerCase().includes('quota')) {
+            errorMessage = "Google Drive storage quota exceeded.";
+          } else if (errorMessage.toLowerCase().includes('network')) {
+            errorMessage = "Network error. Please check your internet connection.";
+          } else if (errorMessage.toLowerCase().includes('not found')) {
+            errorMessage = "The file or folder was not found.";
+          } else if (errorMessage.toLowerCase().includes('timeout')) {
+            errorMessage = "The operation timed out. Please try again.";
+          } else if (errorMessage === "" || errorMessage === "Transfer failed") {
+            errorMessage = "An unknown error occurred during transfer.";
+          }
+          progressCallback?.({
+            transferId,
+            fileName: item.name,
+            transfered: 0,
+            total: 0, 
+            isDirectory: true,
+            isFetching: true,
+            errorItemDirectory: `Failed to process file ${item.name}: ${errorMessage}`
+            })
 
+            // Wait 5 seconds before continuing with the next item
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          console.log(`Continuing with next item after error: ${errorMessage}`);
+          // Skip this file and continue with the next item
+          continue;
+        }
       }
     }
   }
