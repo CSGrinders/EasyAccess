@@ -18,7 +18,7 @@ import { CloudType } from "../../types/cloudType";
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { createServerMemory } from "./serverMemory";
 import { createDirectoryLocal, getDirectoryInfoLocal, getFileLocal, postFileLocal, readFileLocal } from "../local/localFileSystem";
-import { triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerPostFileOnRenderer } from "../main";
+import { triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerPostFileOnRenderer, triggerRequestClarification } from "../main";
 import { CLOUD_HOME } from "../../types/cloudType";
 
 
@@ -206,6 +206,10 @@ export const createFsServer = async (allowedDirs: string[]) => {
 
   const GetConnectedAccountArgsSchema = z.object({
     provider: z.string() // Optional provider for cloud storage
+  });
+
+  const RequestClarificationArgsSchema = z.object({
+    question: z.string().describe('Question to ask the user'),
   });
 
   const ToolInputSchema = ToolSchema.shape.inputSchema;
@@ -396,7 +400,8 @@ export const createFsServer = async (allowedDirs: string[]) => {
             "Read the complete contents of a file from the file system. " +
             "Handles various text encodings and provides detailed error messages " +
             "if the file cannot be read. Use this tool when you need to examine " +
-            "the contents of a single file. Only works within allowed directories.",
+            "the contents of a single file. Only works within allowed directories. Should not " +
+            "be used for large files or binary data such as images or videos.",
           inputSchema: zodToJsonSchema(ReadFileArgsSchema) as ToolInput,
         },
         {
@@ -406,7 +411,8 @@ export const createFsServer = async (allowedDirs: string[]) => {
             "efficient than reading files one by one when you need to analyze " +
             "or compare multiple files. Each file's content is returned with its " +
             "path as a reference. Failed reads for individual files won't stop " +
-            "the entire operation. Only works within allowed directories.",
+            "the entire operation. Only works within allowed directories. Should not " +
+            "be used for large files or binary data such as images or videos.",
           inputSchema: zodToJsonSchema(ReadMultipleFilesArgsSchema) as ToolInput,
         },
         {
@@ -458,8 +464,8 @@ export const createFsServer = async (allowedDirs: string[]) => {
           name: "move_file",
           description:
             "Move or rename files and directories. Can move files between directories " +
-            "and rename them in a single operation. If the destination exists, the " +
-            "operation will fail. Works across different directories and can be used " +
+            "and rename them in a single operation. Check if the destination folder exists first before calling this tool." +
+            "If the destination file exists, the operation will fail. Works across different directories and can be used " +
             "for simple renaming within the same directory. Both source and destination must be within allowed directories." +
             "Can also move files between cloud storage accounts and local storage.",
           inputSchema: zodToJsonSchema(MoveFileArgsSchema) as ToolInput,
@@ -506,11 +512,19 @@ export const createFsServer = async (allowedDirs: string[]) => {
         {
           name: "list_connected_cloud_accounts",
           description:
-            "Returns the list of connected cloud accounts for the current user." +
-            "Use this to find an account to perform operations on cloud files." +
-            "This includes accounts for Google Drive, OneDrive, and Dropbox.",
+            "Retrieve all connected cloud accounts (Google Drive, OneDrive, Dropbox) for the current user. " +
+            "Use this tool when you need to identify which accounts are available before performing any cloud file operations. " +
+            "This should be called proactively if a user requests an action involving cloud storage but has not specified an account.",
           inputSchema: zodToJsonSchema(GetConnectedAccountArgsSchema) as ToolInput,
-        },
+        },    
+        {
+          name: "get_information_from_user",
+          description:
+            "Use this tool to ask the user for clarification — specifically when the request is ambiguous, incomplete, or cannot be resolved using available data and tools. " +
+            "Do NOT use this tool if the information can be inferred or retrieved through tool calls (e.g., connected accounts, folder listings, file searches). " +
+            "If clarification is truly needed, this tool **must be used instead of ending the conversation with a question or failing to act**.",
+          inputSchema: zodToJsonSchema(RequestClarificationArgsSchema) as ToolInput
+        }
       ],
     };
   });
@@ -523,7 +537,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
     const provider = parsed.data.provider;
     const accountId = parsed.data.accountId;
     // local storage
-    if (!provider || !accountId) {
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
       const validPath = await validatePath(parsed.data.path);
       const content = await readFileLocal(validPath);
       return {
@@ -564,7 +578,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
     const provider = parsed.data.provider;
     const accountId = parsed.data.accountId;
     // local storage
-    if (!provider || !accountId) {
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
       const results = await Promise.all(
         parsed.data.paths.map(async (filePath: string) => {
           try {
@@ -619,7 +633,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
     const accountId = parsed.data.accountId;
 
     // local storage
-    if (!provider || !accountId) {
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
       const validPath = await validatePath(parsed.data.path);
       await fs.writeFile(validPath, parsed.data.content, "utf-8");
       return {
@@ -657,7 +671,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
     const accountId = parsed.data.accountId;
     // local storage
     // need to change this to use createDirectoryLocal? TODO
-    if (!provider || !accountId) {
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
       const validPath = await validatePath(parsed.data.path);
       await createDirectoryLocal(validPath);
       return {
@@ -724,7 +738,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
     const provider = await parsed.data.provider;
     const accountId = await parsed.data.accountId;
     // local storage
-    if (!provider || !accountId) {
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
       const validPath = await validatePath(parsed.data.path);
       const entries = await fs.readdir(validPath, { withFileTypes: true });
       const formatted = entries
@@ -767,7 +781,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
     const accountId = parsed.data.accountId;
 
     // local storage
-    if (!provider || !accountId) {
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
       interface TreeEntry {
         name: string;
         type: 'file' | 'directory';
@@ -979,7 +993,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
     }
     const provider = parsed.data.provider;
     const accountId = parsed.data.accountId;
-    if (!provider || !accountId) {
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
       // local storage
       const validPath = await validatePath(parsed.data.path);
       const results = await searchFiles(validPath, parsed.data.pattern, parsed.data.excludePatterns);
@@ -1016,7 +1030,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
     const accountId = parsed.data.accountId;
 
     // local storage
-    if (!provider || !accountId) {
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
       const validPath = await validatePath(parsed.data.path);
       const info = await getFileStats(validPath);
       return {
@@ -1068,7 +1082,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
     const provider = parsed.data.provider;
     const accountId = parsed.data.accountId;
 
-    if (!provider || !accountId) {
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
       // local storage
       const validPath = await validatePath(parsed.data.path);
       const info = await getDirectoryInfoLocal(validPath);
@@ -1105,6 +1119,16 @@ export const createFsServer = async (allowedDirs: string[]) => {
     };
   }
 
+  async function handleRequestClarificationTool(args: any): Promise<string> {
+    const parsed = RequestClarificationArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for get_information_from_user: ${parsed.error}`);
+    } else {
+      // This tool is used to ask for clarification from the user
+      
+      return await triggerRequestClarification(parsed.data.question);
+    }
+  }
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
@@ -1179,6 +1203,14 @@ export const createFsServer = async (allowedDirs: string[]) => {
         // DONE
         case "list_connected_cloud_accounts": {
           return await handleListConnectedCloudAccountsTool(args);
+        }
+
+        case "get_information_from_user": {
+          // Always return a value, even if the handler does not return anything
+          const result = await handleRequestClarificationTool(args);
+          return {
+            content: [{ type: "text", text: result }],
+          };
         }
 
         default:

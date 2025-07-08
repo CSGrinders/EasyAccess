@@ -5,19 +5,28 @@ import {
     Tool,
 } from "@anthropic-ai/sdk/resources/messages/messages.mjs";
 
+import { WebSocket } from 'ws';
 // mcp sdk
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport";
 
 import dotenv from "dotenv";
-import { triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerRefreshAgentMessage } from "../main";
+import { triggerAgentWorkStop, triggerCallingFunctionMessage, triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerRefreshAgentMessage, triggerSendTextDelta } from "../main";
 import { CloudType } from "../../types/cloudType";
-dotenv.config();
+import fs from 'fs';
+import { getConnectedCloudAccounts } from "../cloud/cloudManager";
 
+import Store from 'electron-store';
+
+dotenv.config({ path: '.env' });
+const store = new Store();
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 if (!ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY is not set");
+}
+
+const getSupabaseJwt = async (email: string) => {
 }
 
 class MCPClient {
@@ -54,11 +63,149 @@ class MCPClient {
             "Connected to server with tools:",
             this.tools.map(({ name }) => name)
         );
+
+        const serializedTools = JSON.stringify(this.tools);
+        console.log("Serialized tools:", serializedTools);
+        fs.writeFileSync("toolset.json", serializedTools, "utf-8");
+        const deserializedTools = JSON.parse(serializedTools) as Tool[];
+        console.log("Deserialized tools:", deserializedTools);
+    }
+
+    async getConnectedAccountsText(): Promise<string> {
+        const googleAccounts = await getConnectedCloudAccounts(CloudType.GoogleDrive) ?? [];
+        const onedriveAccounts = await getConnectedCloudAccounts(CloudType.OneDrive) ?? [];
+        const dropboxAccounts = await getConnectedCloudAccounts(CloudType.Dropbox) ?? [];
+
+        const connectedAccountsText = `Google Drive: ${googleAccounts.map(acc => `${acc}`).join(", ")}; ` +
+            `OneDrive: ${onedriveAccounts.map(acc => `${acc}`).join(", ")}; ` +
+            `Dropbox: ${dropboxAccounts.map(acc => `${acc}`).join(", ")}`;
+
+        return connectedAccountsText;
     }
 
     // Process query
-    async processQuery(query: string): Promise<string> {
-        // call th llm
+    async processQuery(query: string, access_token: string): Promise<string> {
+        console.log("Processing query:", query);
+
+        // // temp: just testing rendering messages in renderer process
+        // const characters = `Hi, my name is Hojin. Hi, my name is Hojin. Hi, my name is Hojin. Hi, my name is Hojin. Hi, my name is Hojin.`;
+        // for (let i = 0; i < Math.floor(characters.length / 3); i++) {
+        //     await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 50)));
+        //     await triggerSendTextDelta(characters.substring(i * 3, i * 3 + 3));
+        //     if (i % 50 == 0) {
+        //         const response = await this.mcp.callTool({
+        //             name: "get_information_from_user",
+        //             arguments: {
+        //                 question: "what the fuck is this?",
+        //             },
+        //         });
+        //         console.log("Response from get_information_from_user:", response);
+        //         await triggerCallingFunctionMessage("get_information_from_user", {});
+        //     }
+        // }
+        // return "s";
+
+        const connectedAccountsText = await this.getConnectedAccountsText();
+
+        const jwt: string | null = access_token;
+        if (!jwt) {
+            throw new Error("Failed to get Supabase JWT");
+        }
+
+        const texts: string[] = [];
+        const jwtToken = jwt.replace('\r\n', '');
+        const ws = new WebSocket(
+            "wss://lliuckljienxmohsoitv.supabase.co/functions/v1/chat-stream?token=" + jwtToken
+        );
+        ws.onopen = () => ws.send(JSON.stringify({ 
+            type: "query",
+            content: query,
+            tool_use_id: "",
+            connected_accounts: connectedAccountsText,
+        }));
+        ws.onmessage = async (e) => {
+            console.log('Received:', e.data);
+            // Handle the response from the server
+            const response = JSON.parse(e.data.toString()) as { type: string; text?: string, name?: string, input?: { [x: string]: unknown }, block_type?: string, content?: { type: string, text?: string }[] , conversationId?: string, tool_use_id?: string, error?: string, stack?: string};
+            if (response) {
+                if (response.type === "text_delta" && response.text) {
+                    texts.push(response.text);
+                    console.log("Response Text content:", response.text);
+                    triggerSendTextDelta(response.text);
+                    // triggerRefreshAgentMessage(texts.join(""));
+                } else if (response.type === "tool_use") {
+                    console.warn("Tool use detected in response:", response);
+                    // Handle tool use if needed
+                    const toolName = response.name;
+                    const toolArgs = response.input as { [x: string]: unknown } | undefined;
+                    const toolId = response.tool_use_id // Generate a unique ID if not provided
+
+                    if (!toolName || !toolArgs || !toolId) {
+                        console.error("Tool name or arguments are missing in response:", response);
+                    } else {
+                        triggerCallingFunctionMessage(toolName, toolArgs, toolId);
+                        const result = await this.mcp.callTool({
+                            name: toolName,
+                            arguments: toolArgs || {},
+                        });
+                        ws.send(JSON.stringify({
+                            type: "tool_result",
+                            content: result.content,
+                            tool_use_id: toolId,
+                            connected_accounts: connectedAccountsText,
+                        }));
+                        console.log("Tool result:", result);
+                    }
+                } else if (response.type === "content_stop") {
+                    console.warn("Content stop detected in response:", response);
+                    // Handle content stop if needed
+                } else if (response.type === "complete") {
+                    console.warn("Complete detected in response:", response);
+                    // Handle complete if needed
+                } else if (response.type === "start") {
+                    console.warn("Start detected in response:", response);
+                    // Handle start if needed
+                } else if (response.type === "content_start") {
+                    console.warn("Content start detected in response:", response);
+                    // Handle content start if needed
+                } else if (response.type === "complete") {
+                    console.warn("Tool result detected in response:", response);
+                    // Handle tool result if needed
+                    ws.close();
+                } else if (response.type === "connection") {
+                    console.warn("Connection detected in response:", response);
+                    // Handle connection if needed
+                } else if (response.type === "error") {
+                    console.error("Error detected in response:", response);
+                    // Handle error if needed
+                    if (response.error && response.error.includes("overload")) {
+                        console.error("API overloaded error:", response);
+                        triggerAgentWorkStop("API overloaded error. Please try again later.");
+                    }
+                } else if (response.type === "tool_error") {
+                    console.error("Tool error detected in response:", response);
+                    // Handle tool error if needed
+                } else {
+                    console.warn("Unknown content type in response:", response);
+                }
+            
+            }
+            console.log("Response:", response);
+        };
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+        ws.onclose = () => {
+            console.log('WebSocket connection closed');
+        };
+
+
+        // seems not synchronized well here... but keep it for now
+        return texts.join("") + "\n";
+
+        /*
+
+        // call the llm
         const messages: MessageParam[] = [
             {
                 role: "user",
@@ -141,6 +288,7 @@ class MCPClient {
         }
 
         return texts.join("\n") + "\n";
+        */
     }
 
     async callToolTest(toolName: string, args: { [x: string]: unknown }) {

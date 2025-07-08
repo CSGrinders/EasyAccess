@@ -85,7 +85,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 });
 
 contextBridge.exposeInMainWorld('mcpApi', {
-    processQuery: (query: string) => ipcRenderer.invoke('mcp-process-query', query),
+    processQuery: (query: string, access_token: string) => ipcRenderer.invoke('mcp-process-query', query, access_token),
     processQueryTest: (toolName: string, toolArgs: { [x: string]: unknown }) => ipcRenderer.invoke('mcp-process-query-test', toolName, toolArgs),
     reinitialize: () => ipcRenderer.invoke('reinitialize-mcp'),
     getStatus: () => ipcRenderer.invoke('get-mcp-status'),

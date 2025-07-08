@@ -21,11 +21,14 @@ import { PermissionManager } from './permissions/permissionManager';
 import { createFsServer } from './MCP/globalFsMcpServer';
 import { v4 as uuidv4 } from 'uuid';
 import { DashboardState } from '@Types/canvas';
+// import GeminiMcpClient from './MCP/GeminiClient';
 
 const store = new Store();
 
+// let mcpClient: MCPClient | null = null;
 let mcpClient: MCPClient | null = null;
 let mainWindow: BrowserWindow | null = null;
+
 
 const setUpMCP = async () => {
     const mcpClient = new MCPClient();
@@ -188,17 +191,12 @@ const createWindow = async () => {
     })
 
     // Add IPC handler for MCP queries
-    ipcMain.handle('mcp-process-query', async (_e, query: string) => {
-        try {
-            if (!mcpClient) {
-                throw new Error('MCP client not initialized - insufficient permissions');
-            }
-            console.log("Processing MCP query:", query);
-            return await mcpClient.processQuery(query);
-        } catch (error) {
-            console.error("Error in MCP query:", error);
-            throw error;
+    ipcMain.handle('mcp-process-query', async (_e, query: string, access_token: string) => {
+        if (!mcpClient) {
+            throw new Error('MCP client not initialized - insufficient permissions');
         }
+        console.log("Processing MCP query:", query);
+        return await mcpClient.processQuery(query, access_token);
     });
 };
 
@@ -428,6 +426,10 @@ export async function triggerRefreshAgentMessage(text: string) {
     return await invokeRendererFunction('refreshAgentMessage', text);
 }
 
+export async function triggerSendTextDelta(delta: string) {
+    return await invokeRendererFunction('sendTextDeltaMessage', delta);
+}
+
 export async function triggerOpenAccountWindow(type: string, title: string, icon?: React.ReactNode, cloudType?: CloudType, accountId?: string) {
     return await invokeRendererFunction('openAccountWindow', type, title, icon, cloudType, accountId);
 }
@@ -441,6 +443,10 @@ export async function triggerGetFileOnRenderer(filePaths: string[], cloudType?: 
     return await invokeRendererFunction('getFileOnRenderer', filePaths, cloudType, accountId, showProgress);
 }
 
+export async function triggerRequestClarification(question: string) {
+    return await invokeRendererFunction('requestClarification', question);
+}
+
 // tempPostFile: (parentPath: string, cloudType?: CloudType, accountId?: string) => Promise<void>;
 export async function triggerPostFileOnRenderer(parentPath: string, cloudType?: CloudType, accountId?: string, fileName?: string) {
     return await invokeRendererFunction('postFileOnRenderer', parentPath, cloudType, accountId, fileName);
@@ -448,6 +454,75 @@ export async function triggerPostFileOnRenderer(parentPath: string, cloudType?: 
 
 export async function triggerChangeDirectoryOnAccountWindow(dir: string, cloudType?: CloudType, accountId?: string | undefined) {
     return await invokeRendererFunction('changeDirectoryOnAccountWindow', dir, cloudType, accountId);
+}
+
+export async function triggerAgentWorkStop(reason: string) {
+    return await invokeRendererFunction('agentWorkStop', reason);
+}
+
+export async function triggerCallingFunctionMessage(toolName: string, toolArgs: { [x: string]: unknown }, toolId?: string) {
+    let message: string;
+
+    switch (toolName) {
+    case "read_file":
+        message = `The agent is reading the file at "${toolArgs.path}".`;
+        break;
+
+    case "read_multiple_files":
+        message = `The agent is accessing multiple files: ${
+            Array.isArray(toolArgs.paths) ? toolArgs.paths.join(", ") : ""
+        }.`;
+        break;
+
+    case "write_file":
+        message = `The agent is writing content to "${toolArgs.path}".`;
+        break;
+
+    case "create_directory":
+        message = `The agent is creating a directory at "${toolArgs.path}".`;
+        break;
+
+    case "list_directory":
+        message = `The agent is listing the contents of "${toolArgs.path}".`;
+        break;
+
+    case "directory_tree":
+        message = `The agent is generating a directory tree for "${toolArgs.path}".`;
+        break;
+
+    case "move_file":
+        message = `The agent is moving a file from "${toolArgs.source}" to "${toolArgs.destination}".`;
+        break;
+
+    case "search_files":
+        message = `The agent is searching in "${toolArgs.path}" for "${toolArgs.pattern}".`;
+        break;
+
+    case "get_file_info":
+        message = `The agent is retrieving information for the file at "${toolArgs.path}".`;
+        break;
+
+    case "get_folder_info":
+        message = `The agent is retrieving details for the folder at "${toolArgs.path}".`;
+        break;
+
+    case "list_allowed_directories":
+        message = `The agent is listing all allowed directories.`;
+        break;
+
+    case "list_connected_cloud_accounts":
+        message = `The agent is checking connected cloud accounts for "${toolArgs.provider}".`;
+        break;
+
+    case "get_information_from_user":
+        message = `The agent is asking the user: "${toolArgs.question}".`;
+        break;
+
+    default:
+        message = `The agent is attempting to handle an unknown tool: "${toolName}".`;
+        break;
+    }
+    return await invokeRendererFunction('callingFunctionMessage', message);
 }
 
 // Handler for creating new directories in local file system

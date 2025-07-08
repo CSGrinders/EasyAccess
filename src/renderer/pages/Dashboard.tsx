@@ -20,6 +20,8 @@ import { RendererIpcCommandDispatcher } from '@/services/AgentControlService';
 
 import { FaDropbox, FaGoogleDrive} from "react-icons/fa";
 import { TbBrandOnedrive } from "react-icons/tb";
+import { AgentClarificationDialog } from '@/components/box/AgentClarificationDialog';
+import AgentAction  from '@/components/box/AgentAction';
 
 const Dashboard = () => {
     const [zoomLevel, setZoomLevel] = useState(1);
@@ -33,6 +35,12 @@ const Dashboard = () => {
     const [showStorageWindow, setShowStorageWindow] = useState(false);
     const [showMcpTest, setShowMcpTest] = useState(false);
     const [disabledAction, setDisabledAction] = useState(false);
+
+    const [showClarificationDialog, setShowClarificationDialog] = useState(false);
+    const [question, setQuestion] = useState("");
+    // const [userResponseForClarification, setUserResponseForClarification] = useState("");
+    // const [showAgentWork, setShowAgentWork] = useState(false);
+    // const [agentWorkingMessages, setAgentWorkingMessages] = useState<string[]>([]);
 
     const boxRefs = useRef(new Map());
 
@@ -399,12 +407,12 @@ const Dashboard = () => {
                             ) : (
                                 <div className="flex-1 flex items-center justify-center">Loading canvas...</div>
                             )}     
-                             <AgentWindow show={showMcpTest} setShow={setShowMcpTest} />
+                            {/* <AgentWindow show={showMcpTest} setShow={setShowMcpTest} /> */}
+                            <AgentAction/>
                         </div>
                     </div>
                     <BoxDragPreview zoomLevel={zoomLevel} />
                 </BoxDragProvider>
-                
                 <UploadConfirmationDialog
                     isOpen={showUploadDialog}
                     onConfirm={handleUploadDialogConfirm}

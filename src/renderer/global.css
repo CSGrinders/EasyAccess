@@ -131,6 +131,8 @@ body {
         
         --star-color: black;
         --BreadcrumbItem-text: var(--foreground);
+
+        --font-helvetica: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
 
     .dark {
@@ -183,6 +185,39 @@ body {
         /* Custom */
         --star-color: white;
         --BreadcrumbItem-text: var(--foreground);
+    }
+    
+}
+
+@layer utilities {
+    .agentResponse {
+        background: rgba(0, 0, 0, 0.4) !important;
+        width: 600px !important;
+        border-radius: 32px !important;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        transition: all 0.26s ease-out;
+        backdrop-filter: brightness(1.1) blur(2px);
+        font-family: var(--font-helvetica);
+        font-size: 14px !important;
+        white-space: pre !important;
+        word-wrap: normal !important;
+        word-break: normal !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    }
+
+    .agentResponse:hover {
+        border-color: rgba(255, 255, 255, 0.15);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+    }
+
+    .userQuery {
+        color: #9ca3af;
+        font-style: italic;
+        text-decoration-color: rgba(156, 163, 175, 0.5);
+        text-underline-offset: 2px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-width: 80%;
     }
 }
 
