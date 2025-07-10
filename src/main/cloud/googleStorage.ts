@@ -439,7 +439,19 @@ export class GoogleDriveStorage implements CloudStorage {
     if (isNearExpiration) {
       // Refresh the access token
       console.log('Access token is near expiration, refreshing...');
-      await this.oauth2Client.getAccessToken();
+      console.log('Current access token:', this.oauth2Client.credentials.access_token);
+      console.log('Current refresh token:', this.oauth2Client.credentials.refresh_token);
+      try {
+        await this.oauth2Client.getAccessToken();
+      } catch (error) {
+        console.error('Error refreshing access token:', error);
+        // USER NEEDS TO RE-AUTHENTICATE TODO
+        await this.authenticateGoogle(); // Re-authenticate if refresh fails
+        if (!this.oauth2Client) {
+          throw new Error('OAuth2 client is not initialized after re-authentication');
+        }
+        console.log('Re-authenticated successfully, new access token:', this.oauth2Client.credentials.access_token);
+      }
       const {
         access_token: newAccessToken,
         expiry_date: newExpiryDate,

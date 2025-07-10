@@ -403,6 +403,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             if (latestTransfer?.status === "cancelled") {
                                 return; // Don't update progress if cancelled
                             }
+
+                            console.log("Progress update for transfer:", latestTransfer, "data:", data);
                            
                             if (transfer && data.transferId == transfer.id) {
                                 if (data.isFetching) {
