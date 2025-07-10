@@ -325,6 +325,7 @@ const AgentAction = memo(function AgentAction() {
 
     useEffect(() => {
         console.log("Initializing Supabase session");
+        questionRef.current!.style.display = 'none';
         supabase.auth.getSession().then(({ data }: { data: { session: import('@supabase/supabase-js').Session | null } }) => {
             setSession(data.session);
             console.log("Supabase session:", data.session);
@@ -524,7 +525,9 @@ const AgentAction = memo(function AgentAction() {
             {/* User Input */}
             {/* Enhanced Chat Interface */}
             <div className="absolute pointer-events-auto bottom-8 left-1/2 transform -translate-x-1/2 w-full max-w-4xl">
-                <span ref={questionRef} className="text-center text-xs text-gray-500 mb-4">
+                <span ref={questionRef} 
+                    className={`text-center text-xs text-gray-500 mb-4`}
+                >
                     waiting for your response on agent question...
                 </span>
                 <div className="bg-white/80 dark:bg-gray-900/80 rounded-2xl border border-gray-200/50 dark:border-gray-700/50 backdrop-blur-xl shadow-lg p-2 transition-all duration-300 hover:shadow-3xl">
