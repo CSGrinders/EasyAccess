@@ -1209,8 +1209,7 @@ export class DropboxStorage implements CloudStorage {
         });
 
         if (!closeResponse.ok) {
-            const errorText = await closeResponse.text();
-            throw new Error(`Failed to finalize upload session: ${closeResponse.status} - ${errorText}`);
+            throw new Error(`Finalize Error`);
         }
 
         console.log(`Upload session finalized successfully for file: ${targetFilePath}`);

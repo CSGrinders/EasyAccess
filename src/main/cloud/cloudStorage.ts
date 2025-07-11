@@ -39,13 +39,6 @@ export interface CloudStorage {
         abortSignal?: AbortSignal
     ): Promise<void>; // Transfer file to another cloud or local storage
     
-    // startTransferCloudToCloud(
-    //     transferInfo: any,
-    //     targetStorage: CloudStorage,
-    //     progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal
-        
-    // ): Promise<void>; // Start a transfer operation between two cloud storages
-
     createReadStream(filePath: string, fileSize: number, chunkSize?: number, maxQueueSize?: number): Promise<ReadableStream>;
     initiateResumableUpload(fileName: string, mimeType: string, parentFolderPath: string): Promise<string>;
     uploadChunk(sessionId: string, chunk: Buffer, offset: number, totalSize: number): Promise<void>;

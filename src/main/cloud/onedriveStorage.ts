@@ -1304,6 +1304,7 @@ export class OneDriveStorage implements CloudStorage {
             throw new Error('Graph client is not initialized');
         }
         chunkSize = chunkSize || 32 * 1024 * 1024; // Default to 32MB chunks
+        maxQueueSize = 10 * chunkSize; // Default to 10 chunks in the queue
         const apiPath = `/me/drive/root:/${filePath.replace(/^\//, '')}`;
         console.log(`Creating read stream for OneDrive file at path: ${apiPath}`);
 
@@ -1391,7 +1392,7 @@ export class OneDriveStorage implements CloudStorage {
               }
             }, {
                 // Set a high water mark to control internal buffering
-                highWaterMark: chunkSize,
+                highWaterMark: maxQueueSize, // Default to 10 chunks in the queue
             });
         } catch (error) {
             console.error('Error creating read stream from OneDrive:', error);

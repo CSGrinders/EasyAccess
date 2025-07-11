@@ -106,7 +106,6 @@ async function transferCloudToCloud(
         // TODO: Implement move logic
         return;
     }
-
     // move file from source cloud storage to target cloud storage
     await transferItemCloudToCloud(
         transferId,
@@ -137,6 +136,8 @@ async function transferItemCloudToCloud(
     // Check if the source item is a directory
     const isDirectory = await sourceAccountInstance.isDirectory(sourcePath);
     
+    // TODO: maybe there is way to check if directory or file without making a request to the cloud storage?
+
     if (isDirectory) {
         // Notify progress for the initial state
         if (progressCallback) {
@@ -146,7 +147,7 @@ async function transferItemCloudToCloud(
                 transfered: 0,
                 total: 1,
                 isDirectory: true,
-                isFetching: false
+                isFetching: true
             });
         }
         // If it's a directory, create a directory in the target cloud storage
@@ -209,8 +210,19 @@ async function transferItemCloudToCloud(
         } else { // > 1GB
             CHUNK_SIZE = 32 * 1024 * 1024; // 32MB
         }
+        // Notify progress for the initial state
+        if (progressCallback) {
+            progressCallback({
+                transferId,
+                fileName: itemName,
+                transfered: 0,
+                total: fileSize,
+                isDirectory: false,
+                isFetching: true
+            });
+        }
 
-        const maxQueueSize = 10 * 32 * 1024 * 1024; // 10 chunks of 32MB each, adjust as needed
+        const maxQueueSize = 10 * CHUNK_SIZE; // 10 chunks, adjust as needed
 
         // create a read stream from the source cloud storage
         // actually maxQueueSize is not used in the current implementation as chunk is read synchronously
@@ -222,56 +234,62 @@ async function transferItemCloudToCloud(
         // assume it returns a sessionId or upload URL
         let chunkOffset = 0;
         
-        // Notify progress for the initial state
-        if (progressCallback) {
-            progressCallback({
-                transferId,
-                fileName: itemName,
-                transfered: 0,
-                total: fileSize,
-                isDirectory: false,
-                isFetching: false
-            });
-        }
+
 
         const targetFilePath = path.join(targetPath, itemName);
         const reader = fileStream.getReader();
-        while (true) {
-            const { done, value: chunk } = await reader.read();
-            if (done) {
-                console.log(`All chunks read for file: ${itemName}`);
-                break;
-            }
+        try {
+            while (true) {
+                const { done, value: chunk } = await reader.read();
+                if (done) {
+                    console.log(`All chunks read for file: ${itemName}`);
+                    break;
+                }
 
-            if (abortSignal?.aborted) {
-                console.warn(`Transfer aborted for ${itemName}`);
-                // If the transfer is aborted, cancel the file stream
-                fileStream.cancel();
-                throw new Error(`User cancelled transfer`);
-            }
-            console.log(`Uploading chunk of size: ${chunk.length} bytes at offset: ${chunkOffset}`);
-            // upload the chunk to the target cloud storage with sessionId or upload URL
-            // targetPath + itemName is the target file path in the target cloud storage
-            // upload(sessionId, chunk, chunkOffset, fileSize, targetPath, itemName, progressCallback, abortSignal);
-            await targetAccountInstance.uploadChunk(sessionId, chunk, chunkOffset, fileSize);
-            chunkOffset += chunk.length;
+                if (abortSignal?.aborted) {
+                    console.warn(`Transfer aborted for ${itemName}`);
+                    // If the transfer is aborted, cancel the file stream
+                    fileStream.cancel();
+                    throw new Error(`User cancelled transfer`);
+                }
+                console.log(`Uploading chunk of size: ${chunk.length} bytes at offset: ${chunkOffset}`);
+                // upload the chunk to the target cloud storage with sessionId or upload URL
+                // targetPath + itemName is the target file path in the target cloud storage
+                // upload(sessionId, chunk, chunkOffset, fileSize, targetPath, itemName, progressCallback, abortSignal);
+                await targetAccountInstance.uploadChunk(sessionId, chunk, chunkOffset, fileSize);
+                chunkOffset += chunk.length;
 
-            // Call the progress callback if provided
+                // Call the progress callback if provided
+                if (progressCallback) {
+                    progressCallback({
+                        transferId,
+                        fileName: itemName,
+                        transfered: chunkOffset,
+                        total: fileSize,
+                        isDirectory: false,
+                        isFetching: false
+                    });
+                }
+
+                if (chunkOffset >= fileSize) {
+                    console.log(`File ${itemName} transferred successfully to ${targetPath}/${itemName}`);
+                    await targetAccountInstance.finishResumableUpload(sessionId, targetFilePath, fileSize);
+                }
+            }
+        } catch (error: any) {
             if (progressCallback) {
                 progressCallback({
                     transferId,
                     fileName: itemName,
-                    transfered: chunkOffset,
-                    total: fileSize,
-                    isDirectory: false,
-                    isFetching: false
+                    transfered: 0,
+                    total: 0, 
+                    isDirectory: true,
+                    isFetching: true,
+                    errorItemDirectory: `Failed to process file ${itemName}: skipping to next file`
                 });
             }
-
-            if (chunkOffset >= fileSize) {
-                console.log(`File ${itemName} transferred successfully to ${targetPath}/${itemName}`);
-                await targetAccountInstance.finishResumableUpload(sessionId, targetFilePath, fileSize);
-            }
+            await new Promise((resolve) => setTimeout(resolve, 1000)); // wait for 1 second before throwing error
+            // skip to next file
         }
         console.log(`All chunks uploaded for file: ${itemName}`);
     }

@@ -391,6 +391,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     });
 
                     let progressListener: any = null;
+                    let includeFailure = false;
                     try {
                         // progressListener to track download/upload progress
                         const isLocalToLocal = transfer.sourceStorageType === CloudType.Local && transfer.targetStorageType === CloudType.Local;  // Local to Local show moving ui
@@ -407,6 +408,11 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             console.log("Progress update for transfer:", latestTransfer, "data:", data);
                            
                             if (transfer && data.transferId == transfer.id) {
+                                if (data.errorItemDirectory) {
+                                    // the transfer includes a failure
+                                    currentFailedFiles.push({ file: data.fileName, error: data.errorItemDirectory });
+                                    includeFailure = true;
+                                }
                                 if (data.isFetching) {
                                     batchUpdateTransfer(transfer.id, {
                                         currentItem: data.fileName,
@@ -485,13 +491,17 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             // Track successful file completion
                             currentCompletedFiles.push(fileName);
 
-                            deleteFileFromSource({
-                                sourceCloudType,
-                                sourceAccountId,
-                                sourcePath: filePath
-                            }, confirmation.keepOriginal).catch(err => {
-                                console.warn(`Failed to delete source file ${fileName}:`, err);
-                            });
+                            // delete from the source if not keeping original and not including failure
+                            if (!includeFailure && !confirmation.keepOriginal) {
+                                console.warn(`Deleting source file ${fileName} after transfer`);
+                                deleteFileFromSource({
+                                    sourceCloudType,
+                                    sourceAccountId,
+                                    sourcePath: filePath
+                                }, confirmation.keepOriginal).catch(err => {
+                                    console.warn(`Failed to delete source file ${fileName}:`, err);
+                                });
+                            }
 
                             processedFiles++;
                             batchUpdateTransfer(transfer.id, {
