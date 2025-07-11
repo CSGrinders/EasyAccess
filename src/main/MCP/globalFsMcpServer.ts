@@ -13,7 +13,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { diffLines, createTwoFilesPatch } from 'diff';
 import { minimatch } from 'minimatch';
-import { getFile, readDirectory, getConnectedCloudAccounts, searchFilesFromStorageAccount, createDirectory, postFile, getFileInfo, getDirectoryTree, readFile } from "../cloud/cloudManager"
+import { getFile, readDirectory, getConnectedCloudAccounts, searchFilesFromStorageAccount, createDirectory, postFile, getItemInfo, getDirectoryTree, readFile } from "../cloud/cloudManager"
 import { CloudType } from "../../types/cloudType";
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { createServerMemory } from "./serverMemory";
@@ -1017,7 +1017,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
           }
           
           const cloudType = await validateProvider(provider);
-          const fileInfo: FileSystemItem = await getFileInfo(cloudType, accountId, filePath);
+          const fileInfo: FileSystemItem = await getItemInfo(cloudType, accountId, filePath);
 
           if (!fileInfo) {
             throw new Error(`File not found: ${filePath}`);

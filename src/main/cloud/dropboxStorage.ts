@@ -446,7 +446,30 @@ export class DropboxStorage implements CloudStorage {
         return result;
     }
 
-    async getFileInfo(filePath: string): Promise<FileSystemItem> {
+    async isDirectory(filePath: string): Promise<boolean> {
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            throw new Error('Dropbox client is not initialized');
+        }
+
+        try {
+            const response = await this.client.filesGetMetadata({ path: filePath });
+            const metadata = response.result;
+
+            // Check if file is deleted
+            if (metadata['.tag'] === 'deleted') {
+                throw new Error('File not found or has been deleted');
+            }
+
+            return metadata['.tag'] === 'folder';
+        } catch (error) {
+            console.error('Error checking if path is a directory in Dropbox:', error);
+            return false;
+        }
+    }
+
+    async getItemInfo(filePath: string): Promise<FileSystemItem> {
         await this.initClient();
         if (!this.client) {
             console.error('Dropbox client is not initialized');
@@ -613,7 +636,7 @@ export class DropboxStorage implements CloudStorage {
     }
 
     /*
-        * Transfers a file or directory from local storage to Google Drive using resumable upload.
+        * Transfers a file or directory from local storage to Dropbox using resumable upload.
         * @param fileInfo - Information about the file or directory to transfer
         * @param progressCallback - Optional callback to report progress
         * @param abortSignal - Optional AbortSignal to cancel the transfer
@@ -649,7 +672,7 @@ export class DropboxStorage implements CloudStorage {
 
         try {
             // Initialize resumable upload session
-            const sessionId = await this.initiateResumableUpload();
+            const sessionId = await this.initiateResumableUpload(fileName, type, parentFolderPath);
             console.log('Resumable upload session initiated:', sessionId);
 
             // Upload file in chunks
@@ -741,7 +764,7 @@ export class DropboxStorage implements CloudStorage {
                     if (errorMessage.toLowerCase().includes('permission')) {
                         errorMessage = "You don't have permission to access this file or folder.";
                     } else if (errorMessage.toLowerCase().includes('quota')) {
-                        errorMessage = "Google Drive storage quota exceeded.";
+                        errorMessage = "Dropbox storage quota exceeded.";
                     } else if (errorMessage.toLowerCase().includes('network')) {
                         errorMessage = "Network error. Please check your internet connection.";
                     } else if (errorMessage.toLowerCase().includes('not found')) {
@@ -784,7 +807,7 @@ export class DropboxStorage implements CloudStorage {
 
                     // await this.uploadFile(transferId, item.name, itemPath, targetPath, type, progressCallback, abortSignal);
 
-                    const sessionId = await this.initiateResumableUpload();
+                    const sessionId = await this.initiateResumableUpload( item.name, type, targetFolderPath);
                     await this.uploadFileInChunks(transferId, item.name, sessionId, itemPath, fileSize, targetFolderPath, progressCallback, abortSignal);
 
                     console.log(`File ${item.name} transferred successfully to ${targetFolderPath}/${item.name}`);
@@ -796,7 +819,7 @@ export class DropboxStorage implements CloudStorage {
                     if (errorMessage.toLowerCase().includes('permission')) {
                         errorMessage = "You don't have permission to access this file or folder.";
                     } else if (errorMessage.toLowerCase().includes('quota')) {
-                        errorMessage = "Google Drive storage quota exceeded.";
+                        errorMessage = "Dropbox storage quota exceeded.";
                     } else if (errorMessage.toLowerCase().includes('network')) {
                         errorMessage = "Network error. Please check your internet connection.";
                     } else if (errorMessage.toLowerCase().includes('not found')) {
@@ -830,7 +853,7 @@ export class DropboxStorage implements CloudStorage {
     * Initiates a resumable upload session for a file in Dropbox.
     * @returns Promise<string> - The session ID for resumable upload session
     */
-    private async initiateResumableUpload(): Promise<string> {
+    async initiateResumableUpload(fileName: string, mimeType: string, parentFolderPath: string): Promise<string> {
         // Implementation for initiating a resumable upload
         const res = await fetch('https://content.dropboxapi.com/2/files/upload_session/start', {
                 method: 'POST',
@@ -854,19 +877,19 @@ export class DropboxStorage implements CloudStorage {
     }
 
     /*
-    * Uploads a file in chunks to Google Drive using resumable upload.
+    * Uploads a file in chunks to Dropbox using resumable upload.
     * @param transferId - Unique identifier for the transfer operation
     * @param filename - Name of the file being uploaded
     * @param sessionId - ID for resumable upload session
     * @param sourcePath - Local path of the file to upload
     * @param fileSize - Size of the file in bytes
-    * @param parentFolderPath - Path of the parent folder in Google Drive where the file will be uploaded
+    * @param parentFolderPath - Path of the parent folder in Dropbox where the file will be uploaded
     * @param progressCallback - Optional callback to report progress
     * @param abortSignal - Optional AbortSignal to cancel the transfer
     * @param isDirectory - Optional flag indicating if the upload is for a directory (default: false)
     * @returns Promise<void>
     * @throws Error if upload fails or is cancelled
-    * @description This method reads the file in chunks and uploads each chunk to Google Drive.
+    * @description This method reads the file in chunks and uploads each chunk to Dropbox.
     * It handles resumable uploads, retries on failure, and reports progress through the callback.
     * The chunk size is determined based on the file size to optimize upload performance.
     */
@@ -1006,4 +1029,190 @@ export class DropboxStorage implements CloudStorage {
         }
     }
 
+    async createReadStream(filePath: string, fileSize: number, chunkSize?: number,  maxQueueSize?: number): Promise<ReadableStream> {
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            throw new Error('Dropbox client is not initialized');
+        }
+
+        chunkSize = chunkSize || 32 * 1024 * 1024; // Default to 4MB if not provided
+        maxQueueSize = maxQueueSize || 10 * 32 * 1024 * 1024; // Default to 100 if not provided
+
+
+        let currentPosition = 0;
+        let retryCount = 0;
+        let isStreamClosed = false;
+        const MAX_RETRIES = 3;
+
+        const accessToken = this.AuthToken?.access_token;
+
+        const response = await fetch("https://api.dropboxapi.com/2/files/get_temporary_link", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                path: filePath
+            })
+        });
+        const { link: tempLink } = await response.json();
+
+        if (!tempLink) {
+            throw new Error('Failed to get temporary link for file: ' + filePath);
+        }
+
+        console.log(`Temporary link for file ${filePath}: ${tempLink}`);
+
+
+        // Create a ReadableStream that downloads the file in chunks
+        const stream = new ReadableStream({
+            async start(controller) {
+                // Stream started
+                console.log('Dropbox read stream started');
+            },
+
+            async pull(controller) {
+                if (isStreamClosed) {
+                    console.log('Stream is already closed, no more data to pull');
+                    controller.close();
+                    return;
+                }
+
+                if (currentPosition >= fileSize) {
+                    console.log('Stream finished');
+                    controller.close();
+                    return;
+                }
+
+                console.log(controller.desiredSize, 'desired size');
+                // Check if we should pause due to backpressure
+                // Not used, but can be useful in the future
+                while (controller.desiredSize !== null && controller.desiredSize <= chunkSize) {
+                    console.log(`Backpressure detected, desired size: ${controller.desiredSize}, waiting...`);
+                    // Wait a bit for the consumer to process some data
+                    // wait for 1 second before checking again
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    retryCount++;
+                    if (retryCount > 10) {
+                        console.error('Too much backpressure, stopping stream');
+                        controller.close();
+                        isStreamClosed = true;
+                        return;
+                    }
+                }
+
+                console.log(`Pulling chunk from position ${currentPosition} with size ${chunkSize}`);
+
+                try {
+                    const endPosition = Math.min(currentPosition + chunkSize - 1, fileSize - 1);
+
+                    const res = await fetch(tempLink, {
+                        method: 'GET',
+                        headers: {
+                            Range: `bytes=${currentPosition}-${endPosition}`,
+                        }
+                    });
+
+                    if (!res.ok) {
+                        const errorText = await res.text();
+                        throw new Error(`Failed to download chunk: ${res.status} - ${errorText}`);
+                    }
+
+                    console.log(`Chunk pulled successfully: ${currentPosition}-${endPosition}/${fileSize - 1}`);
+
+                    const chunkData = Buffer.from(await res.arrayBuffer());
+                    controller.enqueue(chunkData);
+                    currentPosition += chunkSize;
+                    retryCount = 0;
+                } catch (error) {
+                    // retry logic TODO
+                    console.error(`Error pulling chunk: ${error}`);
+                    retryCount++;
+                    console.error(`Error uploading chunk:`, error);
+
+                    if (retryCount >= MAX_RETRIES) {
+                        throw new Error(`Upload failed after ${MAX_RETRIES} attempts: ${error}`);
+                    }
+                    
+                    // Wait before retry
+                    const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
+                    console.log(`Retrying in ${delay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            },
+
+            async cancel() {
+                console.log('Cancelling Dropbox read stream');
+                isStreamClosed = true;
+            }
+        }, {
+            highWaterMark: maxQueueSize,
+        });
+
+        return stream;
+    }
+
+    async uploadChunk(sessionId: string, chunk: Buffer, offset: number, totalSize: number): Promise<void> {
+        console.log(`Uploading chunk for session ID: ${sessionId}, offset: ${offset}, size: ${chunk.length}`);
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            throw new Error('Dropbox client is not initialized');
+        }
+
+       const response = await fetch('https://content.dropboxapi.com/2/files/upload_session/append_v2', {
+            method: 'POST',
+            headers: {
+            'Authorization': `Bearer ${this.AuthToken?.access_token}`,
+            'Dropbox-API-Arg': JSON.stringify({
+                cursor: {
+                    session_id: sessionId,
+                    offset: offset,
+                },
+                close: false,
+            }),
+            'Content-Type': 'application/octet-stream',
+            },
+            body: chunk, // or stream if file is large
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to upload chunk: ${response.status} - ${errorText}`);
+        }
+        console.log(`Chunk uploaded successfully: ${offset}-${offset + chunk.length - 1}/${totalSize}`);
+    }
+
+    // Dropbox requires to send the sessionId and targetFilePath to api to finalize the upload session
+    async finishResumableUpload(sessionId: string, targetFilePath: string, fileSize: number): Promise<void> {
+        const closeResponse = await fetch('https://content.dropboxapi.com/2/files/upload_session/finish', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.AuthToken?.access_token}`,
+                'Dropbox-API-Arg': JSON.stringify({
+                    commit: {
+                        autorename: true,
+                        mode: "add",
+                        mute: false,
+                        path: targetFilePath,
+                        strict_conflict: false
+                    },
+                    cursor: {
+                        offset: fileSize,
+                        session_id: sessionId
+                    }
+                }),
+                'Content-Type': 'application/octet-stream',
+            },
+        });
+
+        if (!closeResponse.ok) {
+            const errorText = await closeResponse.text();
+            throw new Error(`Failed to finalize upload session: ${closeResponse.status} - ${errorText}`);
+        }
+
+        console.log(`Upload session finalized successfully for file: ${targetFilePath}`);
+    }
 }

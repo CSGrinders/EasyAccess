@@ -660,7 +660,28 @@ export class OneDriveStorage implements CloudStorage {
     return result;
   }
 
-  async getFileInfo(filePath: string): Promise<FileSystemItem> {
+  async isDirectory(filePath: string): Promise<boolean> {
+    if (!this.graphClient) {
+      await this.initAccount();
+    }
+
+    if (!this.graphClient) {
+      console.error('Graph client is not initialized');
+      throw new Error('Graph client is not initialized');
+    }
+
+    const apiPath = `/me/drive/root:/${filePath.replace(/^\//, '')}`; // remove leading slash if exists, to avoid double slashes
+
+    try {
+      const response = await this.graphClient.api(apiPath).get();
+      return !!response.folder; // Check if the item is a directory
+    } catch (error) {
+      console.error('Error checking if path is a directory in OneDrive:', error);
+      return false;
+    }
+  }
+
+  async getItemInfo(filePath: string): Promise<FileSystemItem> {
     if (!this.graphClient) {
       await this.initAccount();
     }
@@ -1088,24 +1109,38 @@ export class OneDriveStorage implements CloudStorage {
         }
 
         console.log(`Initiating resumable upload for ${fileName} to ${targetPath}`);
+
         // Ensure targetPath starts with a slash
         targetPath = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
         // Ensure targetPath does not end with a slash unless it is the root
         targetPath = targetPath !== '/' && targetPath.endsWith('/') ? targetPath.slice(0, -1) : targetPath;
-        const apiPath = `/me/drive/root:${targetPath}/${fileName}:/createUploadSession`;
-        console.log(`API path for resumable upload: ${apiPath}`);
-        
-    // "@odata.type": "microsoft.graph.driveItemUploadableProperties",
-    // "@microsoft.graph.conflictBehavior": "rename",
-    // "name": "largefile.dat"
-        const uploadSession = await this.graphClient.api(apiPath)
-            .header('Content-Type', mimeType)
-            .post({
-                '@microsoft.graph.conflictBehavior': 'rename', // Rename if file already exists
-                'name': fileName
-            });
 
-        return uploadSession.uploadUrl;
+        // Construct API path correctly - don't use path.join() for URLs
+        let apiPath;
+        if (targetPath === '/') {
+            apiPath = `/me/drive/root:/${fileName}:/createUploadSession`;
+        } else {
+            apiPath = `/me/drive/root:${targetPath}/${fileName}:/createUploadSession`;
+        }
+
+        console.log(`API path for resumable upload: ${apiPath}`);
+
+        try {
+            const response = await this.graphClient.api(apiPath)
+                .post({
+                    item: {
+                        '@microsoft.graph.conflictBehavior': 'rename',
+                        name: fileName,
+                    }
+                });
+            
+            console.log('Upload session created successfully:', response.uploadUrl);
+            return response.uploadUrl;
+
+        } catch (error) {
+            console.error('Error creating upload session:', error);
+            throw error;
+        }
     }
 
     async uploadFileInChunks(
@@ -1256,5 +1291,145 @@ export class OneDriveStorage implements CloudStorage {
             await fileHandle.close();
             console.log(`File handle for ${sourcePath} closed.`);
         }
+    }
+  
+    // https://learn.microsoft.com/en-us/graph/api/driveitem-get-content?view=graph-rest-1.0&tabs=http
+    async createReadStream(filePath: string, chunkSize?: number, maxQueueSize?: number): Promise<ReadableStream> {
+        if (!this.graphClient) {
+            await this.initAccount();
+        }
+
+        if (!this.graphClient) {
+            console.error('Graph client is not initialized');
+            throw new Error('Graph client is not initialized');
+        }
+        chunkSize = chunkSize || 32 * 1024 * 1024; // Default to 32MB chunks
+        const apiPath = `/me/drive/root:/${filePath.replace(/^\//, '')}`;
+        console.log(`Creating read stream for OneDrive file at path: ${apiPath}`);
+
+        try {
+            // 1. Get file metadata to extract the download URL
+            const metadata = await this.graphClient.api(apiPath).get();
+            const downloadUrl = metadata['@microsoft.graph.downloadUrl'];
+            const fileSize = metadata.size;
+
+            let offset = 0;
+            let retryCount = 0;
+            let isStreamClosed = false;
+            const MAX_RETRIES = 3;
+
+            // 2. Return a ReadableStream that pulls data in chunks
+            return new ReadableStream({
+              async start(controller) {
+                  console.log(`Starting to read file from OneDrive: ${filePath}`);
+                  if (!downloadUrl) {
+                      controller.error('Download URL not found in file metadata');
+                      return;
+                  }
+              },
+              async pull(controller) {
+                  if (isStreamClosed) {
+                    console.log('Stream is already closed');
+                    controller.close();
+                    return;
+                  }
+                  if (offset >= fileSize) {
+                      controller.close();
+                      return;
+                  }
+
+                  // Check if we should pause due to backpressure
+                  // Not used as synchronous pull is used.... but could be useful in the future
+                  while (controller.desiredSize !== null && controller.desiredSize <= chunkSize) {
+                    console.log(`Backpressure detected, desired size: ${controller.desiredSize}, waiting...`);
+                    // Wait a bit for the consumer to process some data
+                    // wait for 1 second before checking again
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    retryCount++;
+                    if (retryCount > 10) {
+                      console.error('Too much backpressure, stopping stream');
+                      controller.close();
+                      isStreamClosed = true;
+                      return;
+                    }
+                  }
+
+                  try {
+                    const end = Math.min(offset + chunkSize - 1, fileSize - 1);
+                    const res = await fetch(downloadUrl, {
+                        headers: {
+                            Range: `bytes=${offset}-${end}`,
+                        }
+                    });
+
+                    if (!res.ok) {
+                        throw new Error(`Failed to fetch bytes ${offset}-${end}: ${res.statusText}`);
+                    }
+
+                    const chunk = Buffer.from(await res.arrayBuffer());
+                    controller.enqueue(chunk);
+                    offset += chunk.length;
+                  } catch (error) {
+                    // redo the request if it fails
+
+                    retryCount++;
+                    console.error(`Error uploading chunk:`, error);
+
+                    if (retryCount >= MAX_RETRIES) {
+                        throw new Error(`Upload failed after ${MAX_RETRIES} attempts: ${error}`);
+                    }
+                    
+                    // Wait before retry
+                    const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
+                    console.log(`Retrying in ${delay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                  }
+              },
+              async cancel() {
+                  console.log('Stream cancelled');
+                  isStreamClosed = true;
+              }
+            }, {
+                // Set a high water mark to control internal buffering
+                highWaterMark: chunkSize,
+            });
+        } catch (error) {
+            console.error('Error creating read stream from OneDrive:', error);
+            throw error;
+        }
+    }
+
+    async uploadChunk(uploadUrl: string, chunk: Buffer, offset: number, totalSize: number): Promise<void> {
+        if (!this.graphClient) {
+            await this.initAccount();
+        }
+        
+        if (!this.graphClient) {
+            console.error('Graph client is not initialized');
+            throw new Error('Graph client is not initialized');
+        }
+
+        try {
+          const response = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: {
+              'Content-Length': chunk.length.toString(),
+              'Content-Range': `bytes ${offset}-${offset + chunk.length - 1}/${totalSize}`,
+            },
+            body: chunk
+          });
+          console.log(`Uploaded chunk from ${offset} to ${offset + chunk.length - 1}/${totalSize}`);
+          console.log('Response:', response);
+          if (!response.ok) {
+            throw new Error(`Failed to upload chunk: ${response.statusText}`);
+          }
+        } catch (error) {
+          console.error('Error uploading chunk:', error);
+          throw error;
+        }
+    }
+
+    async finishResumableUpload(sessionId: string, targetFilePath: string, fileSize: number): Promise<void> {
+      console.log(`Finishing resumable upload for session ${sessionId} to file ${targetFilePath} with size ${fileSize}`);
     }
 }

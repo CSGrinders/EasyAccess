@@ -499,7 +499,7 @@ export class GoogleDriveStorage implements CloudStorage {
       throw new Error('OAuth2 client is not initialized');
     }
     
-    const parentFolderId = await this.getFolderId(targetPath);
+    // const parentFolderId = await this.getFolderId(targetPath);
 
     // Get file size from local file 
     const fileStats = await fs.stat(sourcePath)
@@ -507,19 +507,19 @@ export class GoogleDriveStorage implements CloudStorage {
 
     //Check if it's a directory, then we will handle it separetely
     if (fileStats.isDirectory()) {
-      console.log('Starting resumeable upload for directory:', fileName, 'Size:', fileSize, 'Parent folder ID:', parentFolderId);
-      await this.transferDirectoryToCloud(transferId, fileName, sourcePath, parentFolderId, progressCallback, abortSignal);
+      console.log('Starting resumeable upload for directory:', fileName, 'Size:', fileSize, 'Parent folder path:', targetPath);
+      await this.transferDirectoryToCloud(transferId, fileName, sourcePath, targetPath, progressCallback, abortSignal);
       return;
 
     }
 
 
     // Handle resumable for files
-    console.log('Starting resumable upload for file:', fileName, 'Size:', fileSize, 'Parent folder ID:', parentFolderId);
-    
+    console.log('Starting resumable upload for file:', fileName, 'Size:', fileSize, 'Parent folder path:', targetPath);
+
     try {
       // Initialize resumable upload session
-      const uploadUrl = await this.initiateResumableUpload(fileName, type, parentFolderId);
+      const uploadUrl = await this.initiateResumableUpload(fileName, type, targetPath);
       console.log('Resumable upload session initiated:', uploadUrl);
       
       // Upload file in chunks
@@ -532,11 +532,12 @@ export class GoogleDriveStorage implements CloudStorage {
     }
   }
 
-  private async transferDirectoryToCloud(transferId: string, dirName: string, sourcePath: string, parentFolderId: string, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+  private async transferDirectoryToCloud(transferId: string, dirName: string, sourcePath: string, parentFolderPath: string, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
     if (!this.oauth2Client) {
       throw new Error('OAuth2 client must be initialized before creating drive instance');
     }
     const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+    const parentFolderId = await this.getFolderId(parentFolderPath);
     const folderResponse = await drive.files.create({
       requestBody: {
         name: dirName,
@@ -545,6 +546,8 @@ export class GoogleDriveStorage implements CloudStorage {
       },
     });
 
+    const createdFolderPath = path.join(parentFolderPath, dirName);
+
     const createdFolderId = folderResponse.data.id;
     if (!createdFolderId) {
       throw new Error('Failed to create directory on Google Drive');
@@ -552,7 +555,7 @@ export class GoogleDriveStorage implements CloudStorage {
 
     console.log(`Created directory: ${dirName} with ID: ${createdFolderId}`);
     let processedFiles = 0;
-    await this.transferDirectoryContentsResumable(transferId, sourcePath, createdFolderId, progressCallback, abortSignal);
+    await this.transferDirectoryContentsResumable(transferId, sourcePath, createdFolderPath, progressCallback, abortSignal);
 
     
   }
@@ -561,7 +564,7 @@ export class GoogleDriveStorage implements CloudStorage {
   private async transferDirectoryContentsResumable(
     transferId: string,
     sourcePath: string,
-    targetFolderId: string,
+    targetFolderPath: string,
     progressCallback?: (data: progressCallbackData) => void,
     abortSignal?: AbortSignal
   ): Promise<void> {
@@ -582,6 +585,7 @@ export class GoogleDriveStorage implements CloudStorage {
           }
           // Create subdirectory in Google Drive
           const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+          const targetFolderId = await this.getFolderId(targetFolderPath);
           const subFolderResponse = await drive.files.create({
           requestBody: {
             name: item.name,
@@ -589,6 +593,8 @@ export class GoogleDriveStorage implements CloudStorage {
             parents: [targetFolderId],
           },
         });
+
+        const subFolderPath = path.join(targetFolderPath, item.name);
 
         const subFolderId = subFolderResponse.data.id;
         if (!subFolderId) {
@@ -604,7 +610,7 @@ export class GoogleDriveStorage implements CloudStorage {
             isDirectory: false,
             isFetching: true 
           });
-          await this.transferDirectoryContentsResumable(transferId, itemPath, subFolderId, progressCallback, abortSignal);
+          await this.transferDirectoryContentsResumable(transferId, itemPath, subFolderPath, progressCallback, abortSignal);
         } catch (error) {
           console.error(`Failed to process directory ${item.name}:`, error);
           // Extract error message
@@ -651,11 +657,12 @@ export class GoogleDriveStorage implements CloudStorage {
             isFetching: true 
           });
           console.log('Processing file:', item.name);
+          console.log('targetFolderPath:', targetFolderPath);
           // Get file size from local file 
           const fileStats = await fs.stat(itemPath);
           const fileSize = fileStats.size;
           const type = mime.lookup(item.name) || 'application/octet-stream';
-          const uploadUrl = await this.initiateResumableUpload(item.name, type, targetFolderId);
+          const uploadUrl = await this.initiateResumableUpload(item.name, type, targetFolderPath);
           await this.uploadFileInChunks(transferId, item.name, uploadUrl, itemPath, fileSize, progressCallback, abortSignal, true);
         
           console.log(`Transfer Directory: File transferred: ${item.name} files processed)`);
@@ -697,7 +704,8 @@ export class GoogleDriveStorage implements CloudStorage {
     }
   }
 
-  private async initiateResumableUpload(fileName: string, mimeType: string, parentFolderId: string): Promise<string> {
+  async initiateResumableUpload(fileName: string, mimeType: string, parentFolderPath: string): Promise<string> {
+    const parentFolderId = await this.getFolderId(parentFolderPath);
     const metadata = {
       name: fileName,
       mimeType: mimeType,
@@ -939,7 +947,20 @@ export class GoogleDriveStorage implements CloudStorage {
       return result;
     }
 
-    async getFileInfo(filePath: string): Promise<FileSystemItem> {
+    async isDirectory(filePath: string): Promise<boolean> {
+      try {
+        const folderId = await this.getFolderId(filePath);
+        if (!folderId) {
+          return false;
+        }
+      } catch (error) {
+        console.error('Error checking if directory:', error);
+        return false;
+      }
+      return true;
+    }
+
+    async getItemInfo(filePath: string): Promise<FileSystemItem> {
         await this.refreshOAuthClientIfNeeded();
         if (!this.oauth2Client) {
             throw new Error('OAuth2 client is not initialized');
@@ -970,8 +991,22 @@ export class GoogleDriveStorage implements CloudStorage {
             
             return fileSystemItem;
         } catch (error) {
-            console.error('Error getting file info from Google Drive:', error);
-            throw error;
+          // check if the path if a directory
+          const folderId = await this.getFolderId(filePath);
+          if (folderId) {
+            const size = await this.calculateFolderSize(filePath);
+            return {
+              id: folderId,
+              name: path.basename(filePath),
+              isDirectory: true,
+              path: CLOUD_HOME + filePath,
+              size,
+              modifiedTime: undefined,
+            };
+          } else {
+            console.error('Error getting item info:', error);
+            throw new Error(`File not found: ${filePath}`);
+          }
         }
     }
 
@@ -1209,5 +1244,170 @@ export class GoogleDriveStorage implements CloudStorage {
 
     // Combine all chunks into a single buffer
     return Buffer.concat(chunks);
+  }
+
+  async createReadStream(filePath: string, fileSize: number, chunkSize?: number, maxQueueSize?: number): Promise<ReadableStream> {
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+
+    maxQueueSize = maxQueueSize || 10 * 32 * 1024 * 1024; // Default to 100 if not provided
+
+    // Get file ID from path
+    const fileId = await this.getFileId(filePath);
+    if (!fileId) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    console.log(`Creating read stream for file ID: ${fileId}, Size: ${fileSize}`);
+
+    chunkSize = chunkSize || 32 * 1024 * 1024; // Default to 32MB if not provided
+
+    let currentPosition = 0;
+    let retryCount = 0;
+    let isStreamClosed = false;
+    const MAX_RETRIES = 3;
+
+    const accessToken = this.oauth2Client!.credentials.access_token;
+    // Create a ReadableStream that downloads the file in chunks
+    const stream = new ReadableStream({
+      async start(controller) {
+        // Stream started
+        console.log('Google read stream started');
+      },
+
+      async pull(controller) {
+        if (isStreamClosed) {
+          console.log('Stream is already closed');
+          controller.close();
+          return;
+        }
+
+        if (currentPosition >= fileSize) {
+          console.log('Stream finished');
+          controller.close();
+          return;
+        }
+
+        console.log(controller.desiredSize, 'desired size');
+        // Check if we should pause due to backpressure
+        // Not used as synchronous pull is used.... but could be useful in the future
+        while (controller.desiredSize !== null && controller.desiredSize <= chunkSize) {
+          console.log(`Backpressure detected, desired size: ${controller.desiredSize}, waiting...`);
+          // Wait a bit for the consumer to process some data
+          // wait for 1 second before checking again
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          retryCount++;
+          if (retryCount > 10) {
+            console.error('Too much backpressure, stopping stream');
+            controller.close();
+            isStreamClosed = true;
+            return;
+          }
+        }
+
+        console.log(`Pulling chunk from position: ${currentPosition}, file size: ${fileSize}`);
+
+
+        try {
+          const endPosition = Math.min(currentPosition + chunkSize - 1, fileSize - 1);
+
+          const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Range': `bytes=${currentPosition}-${endPosition}`,
+            },
+          });
+
+          if (response.status === 206 || response.status === 200) {
+            // Partial content or full content received
+            const chunkBuffer = Buffer.from(await response.arrayBuffer());
+            controller.enqueue(chunkBuffer);
+            
+            currentPosition += chunkBuffer.length;
+
+            retryCount = 0; // Reset retry count on successful chunk
+            
+            if (response.status === 200) {
+              // Full file downloaded in one request
+              isStreamClosed = true;
+              controller.close();
+            }
+          } else {
+            throw new Error(`Download chunk failed: ${response.status} ${response.statusText}`);
+          }
+
+        } catch (error) {
+          // retry logic TODO
+          console.error('Error reading chunk:', error);
+          
+          retryCount++;
+          console.error(`Error uploading chunk:`, error);
+
+          if (retryCount >= MAX_RETRIES) {
+              throw new Error(`Upload failed after ${MAX_RETRIES} attempts: ${error}`);
+          }
+          
+          // Wait before retry
+          const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      },
+
+      cancel() {
+        isStreamClosed = true;
+      }
+    }, {
+      // Set a high water mark to control internal buffering
+      highWaterMark: maxQueueSize,
+    });
+
+    return stream;
+  }
+
+  async uploadChunk(uploadUrl: string, chunk: Buffer, offset: number, totalSize: number): Promise<void> {
+    console.log(`Uploading chunk for uploadUrl: ${uploadUrl}, offset: ${offset}, size: ${chunk.length}`);
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+
+    const response = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Range': `bytes ${offset}-${offset + chunk.length - 1}/${totalSize}`,
+        'Content-Length': chunk.length.toString(),
+      },
+      body: chunk,
+    });
+
+    
+    if (response.status === 308) {
+      // Resume incomplete - check range and continue
+      const rangeHeader = response.headers.get('Range');
+      if (rangeHeader) {
+        const match = rangeHeader.match(/bytes=0-(\d+)/);
+        if (match) {
+          console.log(`Resuming from byte: ${parseInt(match[1]) + 1}`);
+        }
+      } else {
+        console.log(`Resuming from byte: ${offset + chunk.length}`);
+      }
+      
+    } else if (response.status === 200 || response.status === 201) {
+      console.log('Upload completed successfully');
+    } else {
+      throw new Error(`Upload chunk failed: ${response.status} ${response.statusText}`);
+    }
+    console.log(`Chunk uploaded successfully: ${offset}-${offset + chunk.length - 1}/${totalSize}`);
+  }
+
+  async finishResumableUpload(sessionId: string, targetFilePath: string, fileSize: number): Promise<void> {
+    console.log(`Finishing resumable upload for session ID: ${sessionId}`);
   }
 }

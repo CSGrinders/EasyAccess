@@ -685,21 +685,21 @@ function decodeAccountId(key: string): string {
   return key.replace(/__dot__/g, '.');
 }
 
-// Get file info from cloud storage
-export async function getFileInfo(cloudType: CloudType, accountId: string, filePath: string): Promise<FileSystemItem> {
+// Get item info from cloud storage
+export async function getItemInfo(cloudType: CloudType, accountId: string, itemPath: string): Promise<FileSystemItem> {
   try {
-    filePath = filePath.replace(CLOUD_HOME, "");
-    console.log('Getting file info from cloud account:', cloudType, accountId, filePath);
-    
+    itemPath = itemPath.replace(CLOUD_HOME, "");
+    console.log('Getting item info from cloud account:', cloudType, accountId, itemPath);
+
     const accounts = StoredAccounts.get(cloudType);
     if (accounts) {
       for (const account of accounts) {
         if (account.getAccountId() === accountId) {
           try {
-            return await account.getFileInfo(filePath);
+            return await account.getItemInfo(itemPath);
           } catch (error: any) {
-            console.error(`Error getting file info from ${cloudType}:`, error);
-            
+            console.error(`Error getting item info from ${cloudType}:`, error);
+
             // Categorize and re-throw with user-friendly messages
             if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
               throw new Error('Authentication expired. Please reconnect your account.');

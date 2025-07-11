@@ -38,9 +38,22 @@ export interface CloudStorage {
         progressCallback?: (data: progressCallbackData) => void,
         abortSignal?: AbortSignal
     ): Promise<void>; // Transfer file to another cloud or local storage
+    
+    // startTransferCloudToCloud(
+    //     transferInfo: any,
+    //     targetStorage: CloudStorage,
+    //     progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal
+        
+    // ): Promise<void>; // Start a transfer operation between two cloud storages
 
+    createReadStream(filePath: string, fileSize: number, chunkSize?: number, maxQueueSize?: number): Promise<ReadableStream>;
+    initiateResumableUpload(fileName: string, mimeType: string, parentFolderPath: string): Promise<string>;
+    uploadChunk(sessionId: string, chunk: Buffer, offset: number, totalSize: number): Promise<void>;
+    finishResumableUpload(sessionId: string, targetFilePath: string, fileSize: number): Promise<void>;
+
+    isDirectory(filePath: string): Promise<boolean>;
     searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]>;
-    getFileInfo(filePath: string): Promise<FileSystemItem>;
+    getItemInfo(filePath: string): Promise<FileSystemItem>;
     getDirectoryTree(dir: string): Promise<FileSystemItem[]>;
     calculateFolderSize(folderPath: string): Promise<number>; // Calculate total size of a folder recursively
 }
