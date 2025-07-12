@@ -154,6 +154,7 @@ export class GoogleDriveStorage implements CloudStorage {
       if (folderName === '') continue; // Skip empty parts (e.g., leading slash)
 
       if (folderName === dirs[dirs.length - 1]) {
+        console.log('Last part of the path:', folderName);
         // If it's the last part, we want to get the file ID
         const res = await drive.files.list({
           q: `'${currentFolderId}' in parents and name='${folderName}' and trashed = false`,
@@ -1409,5 +1410,355 @@ export class GoogleDriveStorage implements CloudStorage {
 
   async finishResumableUpload(sessionId: string, targetFilePath: string, fileSize: number): Promise<void> {
     console.log(`Finishing resumable upload for session ID: ${sessionId}`);
+  }
+
+  // Move or copy item for within box transfer
+  async moveOrCopyItem(sourcePath: string, targetPath: string, itemName: string, copy: boolean, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+    
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+    
+    try {
+      let sourceId;
+      let isDirectory = false;
+      // hmmm.......
+      try{
+        sourceId = await this.getFolderId(sourcePath);
+        console.log(`Source ID for folder ${sourcePath} is ${sourceId}`);
+        isDirectory = true;
+      } catch (error) {
+        sourceId = await this.getFileId(sourcePath);
+        console.log(`Source ID for file ${sourcePath} is ${sourceId}`);
+        isDirectory = false;
+      }
+      const sourceFolder = path.dirname(sourcePath);
+      const sourceFolderId = await this.getFolderId(sourceFolder);
+      const targetId = await this.getFolderId(targetPath);
+      
+      if (!sourceId || !targetId) {
+        throw new Error(`Source or target path not found: ${sourcePath} -> ${targetPath}`);
+      }
+
+      const accessToken = this.oauth2Client!.credentials.access_token;
+      
+      // Move the file to the new folder
+      if (copy) {
+        if (isDirectory) {
+          console.log(`Copying directory ${itemName} from ${sourcePath} to ${targetPath}`);
+          // Create a new folder in the target location
+          const newFolder = await drive.files.create({
+            requestBody: {
+              name: itemName,
+              mimeType: 'application/vnd.google-apps.folder',
+              parents: [targetId],
+            },
+            fields: 'id',
+          });
+          
+          if (!newFolder.data.id) {
+            throw new Error(`Failed to create folder ${itemName} in target path ${targetPath}`);
+          }
+          const createdFolderId = newFolder.data.id;
+          // For directories, we need to copy all contents recursively
+          await this.copyDirectoryContents(sourceId, createdFolderId, progressCallback, abortSignal);
+          return;
+        }
+        console.log(`Copying file ${itemName} from ${sourcePath} to ${targetPath}`);
+        // await drive.files.copy({
+        //   fileId: sourceId,
+        //   requestBody: {
+        //     parents: [targetId],
+        //   },
+        //   fields: 'id, parents',
+        // });
+
+        // url for copying file
+        const url = `https://www.googleapis.com/drive/v3/files/${sourceId}/copy`;
+        const body = {
+          parents: [targetId]
+        };
+
+        const fetchPromise = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+          signal: abortSignal,
+        });
+      } else {
+        console.log(`Moving item ${itemName} from ${sourcePath} to ${targetPath}`);
+
+        // Move the file or folder by updating its parents
+        const url = `https://www.googleapis.com/drive/v3/files/${sourceId}?addParents=${targetId}&removeParents=${sourceFolderId}`;
+        
+        const fetchPromise = await fetch(url, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          signal: abortSignal,
+        });
+
+        console.log(`response: ${fetchPromise}`);
+
+        if (!fetchPromise.ok) {
+          const errorText = await fetchPromise.text();
+          throw new Error(`Failed to move item: ${fetchPromise.status} ${fetchPromise.statusText} - ${errorText}`);
+        }
+        
+        const responseData = await fetchPromise.json();
+        if (!responseData.id) {
+          throw new Error(`Failed to move item: No ID returned in response`);
+        }
+        console.log(`Item moved successfully. New ID: ${responseData.id}`);
+      }
+      
+      console.log(`Moved item ${itemName} from ${sourcePath} to ${targetPath}`);
+    } catch (error) {
+      console.error('Error moving item:', error);
+      throw error;
+    }
+  }
+
+  // function for within box transfer
+  // google does not support copying directories directly, so we need to copy contents recursively
+  private async copyDirectoryContents(sourceId: string, targetId: string, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+
+    if (abortSignal?.aborted) {
+      console.log('Copy operation cancelled by user');
+      throw new Error('Copy operation cancelled by user');
+    }
+    
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+    let nextPageToken: string | undefined = undefined;
+
+    do {
+      const res: { data: drive_v3.Schema$FileList } = await drive.files.list({
+        q: `'${sourceId}' in parents and trashed = false`,
+        pageSize: 1000,
+        fields: 'nextPageToken, files(id, name, mimeType)',
+        pageToken: nextPageToken,
+      });
+
+      const files = res.data.files || [];
+      
+      for (const file of files) {
+        if (file.mimeType === 'application/vnd.google-apps.folder') {
+          // Recursively copy subdirectories
+          const newFolder = await drive.files.create({
+            requestBody: {
+              name: file.name,
+              mimeType: 'application/vnd.google-apps.folder',
+              parents: [targetId],
+            },
+            fields: 'id',
+          });
+          
+          if (newFolder.data.id) {
+            await this.copyDirectoryContents(file.id || '', newFolder.data.id, progressCallback, abortSignal);
+          }
+        } else {
+          // Copy individual files
+          await drive.files.copy({
+            fileId: file.id || '',
+            requestBody: {
+              name: file.name,
+              parents: [targetId],
+            },
+            fields: 'id, parents',
+          });
+        }
+      }
+
+      nextPageToken = res.data.nextPageToken || undefined;
+    } while (nextPageToken);
+  }
+
+  async  transferCloudToLocal(transferInfo: any, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+    await this.downloadItem(transferInfo, progressCallback, abortSignal);
+  }
+
+  async downloadItem(transferInfo: any, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+    const {transferId, fileName, type, sourcePath, targetPath} = transferInfo;
+
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+    
+    // Get file ID from path
+    const fileId = await this.getFileId(sourcePath);
+    if (!fileId) {
+      throw new Error(`File not found: ${sourcePath}`);
+    }
+
+    // Get file metadata to determine size
+    const fileMetadata = await drive.files.get({
+      fileId: fileId,
+      fields: 'size,mimeType',
+    });
+
+    const isDirectory = fileMetadata.data.mimeType === 'application/vnd.google-apps.folder';
+    if (isDirectory) {
+      const newFolderPath = path.join(targetPath, fileName);
+      fs.mkdir(newFolderPath, { recursive: true });
+      console.log(`Created directory: ${newFolderPath}`);
+      // list files in the directory and download each file
+      const files = await drive.files.list({
+        q: `'${fileId}' in parents and trashed = false`,
+        fields: 'files(id, name, mimeType)',
+      });
+
+      for (const file of files.data.files || []) {
+        const type = file.mimeType === 'application/vnd.google-apps.folder' ? 'directory' : 'file';
+        const fileTransferInfo = {
+          transferId,
+          fileName: file.name || '',
+          type,
+          sourcePath: path.join(sourcePath, file.name || ''),
+          targetPath: newFolderPath,
+        };
+        await this.downloadItem(fileTransferInfo, progressCallback, abortSignal);
+      }
+      return;
+    }
+
+    const fileSize = fileMetadata.data.size ? Number(fileMetadata.data.size) : 0;
+    
+    if (fileSize === 0) {
+      console.log(`File ${fileName} is empty, skipping transfer.`);
+      return;
+    }
+
+    console.log(`Transferring file ${fileName} (${fileSize} bytes) from cloud to local`);
+
+    // Create a writable stream to the target file
+    const targetFilePath = path.join(targetPath, fileName);
+    const fileHandle = await fs.open(targetFilePath, 'w');
+    
+    try {
+      let TransferedBytes = 0;
+      let retryCount = 0;
+      const MAX_RETRIES = 3;
+      const CHUNK_SIZE = 32 * 1024 * 1024; // 32MB chunks
+
+      while (TransferedBytes < fileSize) {
+        // Check for cancellation before each chunk
+        if (abortSignal?.aborted) {
+          console.log('Transfer cancelled by user');
+          throw new Error('Transfer cancelled by user');
+        }
+
+        if (retryCount >= MAX_RETRIES) {
+          throw new Error(`Transfer failed after ${MAX_RETRIES} attempts`);
+        }
+
+        if (progressCallback) {
+          progressCallback({transferId, fileName, transfered: TransferedBytes, total: fileSize, isDirectory: false});
+        }
+
+        const chunkStart = TransferedBytes;
+        const chunkEnd = Math.min(TransferedBytes + CHUNK_SIZE - 1, fileSize - 1);
+        
+        console.log(`Downloading chunk: ${chunkStart}-${chunkEnd}/${fileSize - 1}`);
+
+        try {
+          const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${this.oauth2Client!.credentials.access_token}`,
+              'Range': `bytes=${chunkStart}-${chunkEnd}`,
+            },
+            signal: abortSignal 
+          });
+
+          if (response.status === 206 || response.status === 200) {
+            // Partial content or full content received
+            const chunkBuffer = Buffer.from(await response.arrayBuffer());
+            await fileHandle.write(chunkBuffer, 0, chunkBuffer.length, TransferedBytes);
+            
+            TransferedBytes += chunkBuffer.length;
+            
+            retryCount = 0; // Reset retry count on successful chunk
+            
+            if (response.status === 200) {
+              // Full file downloaded in one request
+              break;
+            }
+          } else {
+            throw new Error(`Download chunk failed: ${response.status} ${response.statusText}`);
+          }
+
+          if (progressCallback) {
+            progressCallback({transferId, fileName, transfered: TransferedBytes, total: fileSize, isDirectory: false});
+          }
+
+        } catch (error) {
+          retryCount++;
+          console.error(`Error downloading chunk (attempt ${retryCount}/${MAX_RETRIES}):`, error);
+          
+          if (progressCallback) {
+            progressCallback({transferId, fileName, transfered: TransferedBytes, total: fileSize, isDirectory: false});
+          }
+
+          if (retryCount >= MAX_RETRIES) {
+            throw new Error(`Transfer failed after ${MAX_RETRIES} attempts: ${error}`);
+          }
+          
+          // Wait before retry
+          const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          
+          // Try to get current upload status before retry
+          try {
+            const statusResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${this.oauth2Client!.credentials.access_token}`,
+                'Range': `bytes=${chunkStart}-${chunkEnd}`,
+              },
+              signal: abortSignal 
+            });
+            
+            // If the status response is 308, it means we can resume
+            if (statusResponse.status === 308) {
+              const rangeHeader = statusResponse.headers.get('Range');
+              if (rangeHeader) {
+                const match = rangeHeader.match(/bytes=(\d+)-(\d+)/);
+                if (match) {
+                  const currentPosition = parseInt(match[2]) + 1; // Next byte to download
+                  console.log(`Resuming from byte: ${currentPosition}`);
+                  TransferedBytes = currentPosition; // Update current position
+                } else {
+                  console.warn('Failed to parse Range header:', rangeHeader);
+                }
+              } else {
+                console.warn('No Range header in response, resuming from last known position');
+              }
+            } else {
+              console.warn('Status response was not 308, resuming from last known position');
+            }
+          } catch (statusError) {
+            console.error('Error getting current upload status:', statusError);
+          }
+        }
+      }
+
+      console.log(`Transfer completed successfully: ${TransferedBytes}/${fileSize} bytes`);
+    } finally {
+      await fileHandle.close();
+    }
   }
 }

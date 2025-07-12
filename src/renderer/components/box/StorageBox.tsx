@@ -822,6 +822,7 @@ function StorageBoxInner({
                         onCurrentPathChange={handleCurrentPathChange} 
                         refreshToggle={refreshToggle}
                         silentRefresh={nextRefreshSilentRef.current}
+                        handleBoxFileTransfer={handleBoxFileTransfer} // for within box transfers...
                     />
                 ) : (
                     /* Cloud file explorer */
@@ -835,6 +836,7 @@ function StorageBoxInner({
                         onCurrentPathChange={handleCurrentPathChange} 
                         refreshToggle={refreshToggle} 
                         silentRefresh={nextRefreshSilentRef.current}
+                        handleBoxFileTransfer={handleBoxFileTransfer} // for within box transfers...
                     />
                 )}
             </div>

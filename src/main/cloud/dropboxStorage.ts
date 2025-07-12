@@ -1209,9 +1209,59 @@ export class DropboxStorage implements CloudStorage {
         });
 
         if (!closeResponse.ok) {
-            throw new Error(`Finalize Error`);
+            throw new Error(`Finalize Error for file ${targetFilePath}: ${closeResponse.status} - ${await closeResponse.text()}`);
         }
 
         console.log(`Upload session finalized successfully for file: ${targetFilePath}`);
+    }
+
+    async moveOrCopyItem(sourcePath: string, targetPath: string, itemName: string, copy: boolean, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            throw new Error('Dropbox client is not initialized');
+        }
+
+        let response;
+        const body = JSON.stringify({
+                    from_path: sourcePath,
+                    to_path: `${targetPath}/${itemName}`,
+                    allow_shared_folder: false,
+                    autorename: true,
+                });
+        console.log(`body: ${body}`);
+        if (copy) {
+            response = await fetch('https://api.dropboxapi.com/2/files/copy_v2', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.AuthToken?.access_token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: body,
+                signal: abortSignal,
+            });
+        } else {
+            // Move the item using the Dropbox API
+            response = await fetch('https://api.dropboxapi.com/2/files/move_v2', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.AuthToken?.access_token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: body,
+                signal: abortSignal,
+            });
+        }
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to move item: ${response.status} - ${errorText}`);
+        }
+
+        console.log(`Item moved successfully: ${sourcePath}/${itemName} to ${targetPath}/${itemName}`);
+    }
+
+    async  transferCloudToLocal(transferInfo: any, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+
     }
 }

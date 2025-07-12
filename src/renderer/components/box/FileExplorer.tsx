@@ -93,6 +93,9 @@ interface FileExplorerProps {
     refreshToggle?: boolean                                                                 // Toggle to refresh the file explorer
     silentRefresh?: boolean                                                                 // Whether to refresh silently without loading indicator
     onCurrentPathChange?: (currentPath: string) => void                                     // Callback when the current path changes
+    /** Optional drag and drop transfer handler box */
+    handleBoxFileTransfer?: (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => void;
+    
 }
 
 
@@ -109,7 +112,8 @@ export const FileExplorer = memo(function FileExplorer ({
                                                             isBoxToBoxTransfer = false, // Whether the transfer is between boxes
                                                             refreshToggle,              // Toggle to refresh the file explorer
                                                             silentRefresh = false,      // Whether to refresh silently without loading indicator
-                                                            onCurrentPathChange         // Callback when the current path changes
+                                                            onCurrentPathChange,       // Callback when the current path changes
+                                                            handleBoxFileTransfer,     // Function to handle file transfers between boxes
                                                         }: FileExplorerProps) {
    
     /** List of all files and folders in the current directory */                                               
@@ -1109,12 +1113,21 @@ export const FileExplorer = memo(function FileExplorer ({
                         draggedItemsRef.current.includes(item.id)
                     );
                     const filePaths = draggedFileItems.map(item => item.path);
-                    
-                    // Load file contents first
-                    await tempGetFile?.(filePaths, cloudType, accountId);
-                    
-                    // Then upload to target location
-                    await tempPostFile?.(targetItem.path, cloudType, accountId);
+
+
+                    //(filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string)
+                    if (handleBoxFileTransfer){
+                        console.log("handle Item Mouse Up - Moving files:", filePaths, "to target:", targetItem.path);
+                        await handleBoxFileTransfer(
+                            filePaths,
+                            cloudType,
+                            accountId,
+                            targetItem.path,
+                            cloudType,
+                            accountId
+                        );
+                    }
+
                     refreshDirectory(); // TODO: FIX SOMETIMES IT IS BUGGY AND DOES NOT REFRESH
                 } catch (error) {
                     // The transfer service already handles error display through the transfer manager

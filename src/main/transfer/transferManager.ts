@@ -4,6 +4,7 @@ import { StoredAccounts } from "../cloud/cloudManager";
 import mime from "mime-types";
 import { progressCallbackData } from "../../types/transfer";
 import { CloudStorage } from "../cloud/cloudStorage";
+import fs from "fs/promises";
 import path from "path";
 
 
@@ -11,7 +12,7 @@ export async function transferManager(transferInfo: any, progressCallback: (data
     // This function will handle the transfer operations based on the provided transferInfo
     // It will determine the source and target cloud types and accounts, and perform the transfer accordingly
 
-    const { transferId, fileName, sourcePath, sourceCloudType, sourceAccountId, targetCloudType, targetAccountId, targetPath } = transferInfo;
+    const { transferId, fileName, sourcePath, sourceCloudType, sourceAccountId, targetCloudType, targetAccountId, targetPath, copy } = transferInfo;
 
     const isSourceLocal = !sourceCloudType || !sourceAccountId;
 
@@ -50,15 +51,279 @@ export async function transferManager(transferInfo: any, progressCallback: (data
             if (isTargetLocal) {
                 // Handle cloud to local transfer
                 // download the file from cloud storage to local filesystem
+                await transferCloudToLocal(transferId, fileName, sourcePath, sourceCloudType, sourceAccountId, targetPath, progressCallback, abortSignal);
             } else {
                 // Handle cloud to cloud transfer
-                await transferCloudToCloud(transferId, fileName, sourceCloudType, sourceAccountId, targetCloudType, targetAccountId, sourcePath, targetPath, progressCallback, abortSignal);
+                await transferCloudToCloud(transferId, fileName, sourceCloudType, sourceAccountId, targetCloudType, targetAccountId, sourcePath, targetPath, copy, progressCallback, abortSignal);
             }
         }
         
     } catch (error) {
         console.error("Transfer failed:", error);
         throw new Error(`Transfer failed: ${error}`);
+    }
+}
+
+async function transferCloudToLocal(
+    transferId: string,
+    fileName: string,
+    sourcePath: string,
+    sourceCloudType: CloudType,
+    sourceAccountId: string,
+    targetPath: string,
+    progressCallback?: (data: progressCallbackData) => void,
+    abortSignal?: AbortSignal
+): Promise<void> {
+    console.log(`Transferring file from cloud to local: ${fileName} from ${sourceCloudType} account ${sourceAccountId} at path ${sourcePath} to local path ${targetPath}`);
+    // Implement the logic for transferring from cloud to local
+    sourcePath = sourcePath.replace(CLOUD_HOME, ""); 
+    const accounts = StoredAccounts.get(sourceCloudType);
+    if (accounts) {
+        for (const account of accounts) {
+            if (account.getAccountId() === sourceAccountId) {
+                const type = mime.lookup(fileName) || 'application/octet-stream'; // default to binary if no mime type found
+                // Handle local to cloud upload
+                await downloadItem(transferId, fileName, account, sourcePath, targetPath, abortSignal, progressCallback);
+            }
+        }
+    }
+}
+
+async function downloadItem(
+    transferId: string,
+    itemName: string,
+    sourceAccountInstance: CloudStorage,
+    sourcePath: string,
+    targetPath: string,
+    abortSignal?: AbortSignal,
+    progressCallback?: (data: progressCallbackData) => void
+): Promise<void> {
+    // Check if the source item is a directory
+    const isDirectory = await sourceAccountInstance.isDirectory(sourcePath);
+    
+    // TODO: maybe there is way to check if directory or file without making a request to the cloud storage?
+
+    if (isDirectory) {
+        // Notify progress for the initial state
+        if (progressCallback) {
+            progressCallback({
+                transferId,
+                fileName: itemName,
+                transfered: 0,
+                total: 1,
+                isDirectory: true,
+                isFetching: true
+            });
+        }
+        // If it's a directory, create a directory in the target cloud storage
+        const newTargetFolderPath = path.join(targetPath, itemName);
+        fs.mkdir(newTargetFolderPath, { recursive: true });
+
+        const items = await sourceAccountInstance.readDir(sourcePath);
+
+        const total_items = items.length;
+        let processed_items = 0;
+
+        // Call the progress callback if provided
+        if (progressCallback) {
+            progressCallback({
+                transferId,
+                fileName: itemName,
+                transfered: processed_items,
+                total: total_items,
+                isDirectory: true,
+                isFetching: true
+            });
+        }
+
+        const transferPromises = items.map(async (item) => {
+            if (abortSignal?.aborted) {
+                console.warn(`Transfer aborted for ${itemName}`);
+                console.log(`Stopping further processing of items in directory: ${sourcePath}`);
+                // If the transfer is aborted, stop processing further items
+                throw new Error(`User cancelled transfer`);
+            }
+            const sourceItemPath = path.join(sourcePath, item.name);
+            
+            try {
+                // Recursively transfer each item
+                // when transferring each item, we will call the downloadItem function again
+                // without progressCallback to avoid keeping track of progress for each item
+                const response = await downloadItem(
+                    transferId,
+                    item.name,
+                    sourceAccountInstance,
+                    sourceItemPath,
+                    newTargetFolderPath,
+                    abortSignal
+                );
+                processed_items++;
+                // Call the progress callback if provided
+                if (progressCallback) {
+                    progressCallback({
+                        transferId,
+                        fileName: itemName,
+                        transfered: processed_items,
+                        total: total_items,
+                        isDirectory: true,
+                        isFetching: false
+                    });
+                }
+
+                return { success: true, itemName: item.name };
+            } catch (error) {
+                if (progressCallback) {
+                    progressCallback({
+                        transferId,
+                        fileName: itemName,
+                        transfered: processed_items,
+                        total: total_items,
+                        isDirectory: false,
+                        isFetching: false,
+                        errorItemDirectory: `Failed to process file ${item.name}: skipping to next file`
+                    });
+                } else {
+                    // this is a folder under directory being transferred..
+                    throw new Error(`Failed to process folder ${item.name}: skipping to next folder`);
+                }
+
+                return { success: false, itemName: item.name };
+            }
+        });
+
+        // Wait for all transfers to complete
+        const result = await Promise.all(transferPromises);
+        
+        // Final progress callback - directory transfer complete
+        if (progressCallback) {
+            const successCount = result.filter(r => r.success).length;
+            const failCount = result.filter(r => !r.success).length;
+
+            const failedNames = result.filter(r => !r.success).map(r => r.itemName).join(', ');
+
+            progressCallback({
+                transferId,
+                fileName: itemName,
+                transfered: total_items,
+                total: total_items,
+                isDirectory: true,
+                isFetching: false,
+            });
+            console.log(`Directory transfer complete: ${itemName}`);
+            console.log(`Successfully transferred ${successCount} items, failed to transfer ${failCount} items.`);
+            if (failCount > 0) {
+                progressCallback({
+                    transferId,
+                    fileName: itemName,
+                    transfered: successCount,
+                    total: total_items,
+                    isDirectory: true,
+                    isFetching: false,
+                    errorItemDirectory: `Failed to process ${failCount} items: ${failedNames}`
+                });
+            }
+        }
+
+        console.log(`Directory ${itemName} transferred successfully to ${newTargetFolderPath}`);
+    } else {
+        // if it's a file
+        console.log(`Transferring file: ${sourcePath} to ${targetPath}`);
+
+        const fileSize = await sourceAccountInstance.getItemInfo(sourcePath).then(info => info.size || 0);
+        console.log(`File size: ${fileSize} bytes`);
+        
+        let CHUNK_SIZE: number;
+
+        if (fileSize < 10 * 1024 * 1024) { // < 10MB
+            CHUNK_SIZE = 512 * 1024; // 512KB
+        } else if (fileSize < 100 * 1024 * 1024) { // < 100MB
+            CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
+        } else if (fileSize < 1024 * 1024 * 1024) { // < 1GB
+            CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
+        } else { // > 1GB
+            CHUNK_SIZE = 32 * 1024 * 1024; // 32MB
+        }
+        
+        // Notify progress for the initial state
+        if (progressCallback) {
+            progressCallback({
+                transferId,
+                fileName: itemName,
+                transfered: 0,
+                total: fileSize,
+                isDirectory: false,
+                isFetching: true
+            });
+        }
+
+        const maxQueueSize = 10 * CHUNK_SIZE; // 10 chunks, adjust as needed
+
+        // create a read stream from the source cloud storage
+        // actually maxQueueSize is not used in the current implementation as chunk is read synchronously
+        const fileStream = await sourceAccountInstance.createReadStream(sourcePath, fileSize, CHUNK_SIZE, maxQueueSize);
+        // create a upload session in the target cloud storage
+        const type = mime.lookup(itemName) || 'application/octet-stream'; // default to binary if no mime type found
+        // assume it returns a sessionId or upload URL
+        let chunkOffset = 0;
+
+        const targetFilePath = path.join(targetPath, itemName);
+        const reader = fileStream.getReader();
+        try {
+            while (true) {
+                const { done, value: chunk } = await reader.read();
+                if (done) {
+                    console.log(`All chunks read for file: ${itemName}`);
+                    break;
+                }
+
+                if (abortSignal?.aborted) {
+                    console.warn(`Transfer aborted for ${itemName}`);
+                    // If the transfer is aborted, cancel the file stream
+                    fileStream.cancel();
+                    throw new Error(`User cancelled transfer`);
+                }
+                console.log(`Uploading chunk of size: ${chunk.length} bytes at offset: ${chunkOffset}`);
+                // upload the chunk to the target cloud storage with sessionId or upload URL
+                // targetPath + itemName is the target file path in the target cloud storage
+                // upload(sessionId, chunk, chunkOffset, fileSize, targetPath, itemName, progressCallback, abortSignal);
+                fs.writeFile(targetFilePath, chunk, { flag: 'a' }); // append chunk to the file
+                chunkOffset += chunk.length;
+
+                // Call the progress callback if provided
+                if (progressCallback) {
+                    progressCallback({
+                        transferId,
+                        fileName: itemName,
+                        transfered: chunkOffset,
+                        total: fileSize,
+                        isDirectory: false,
+                        isFetching: false
+                    });
+                }
+
+                if (chunkOffset >= fileSize) {
+                    console.log(`File ${itemName} transferred successfully to ${targetPath}/${itemName}`);
+                }
+            }
+        } catch (error: any) {
+            if (progressCallback) {
+                // skip to next file
+                progressCallback({
+                    transferId,
+                    fileName: itemName,
+                    transfered: 0,
+                    total: 0, 
+                    isDirectory: true,
+                    isFetching: true,
+                    errorItemDirectory: `Failed to process file ${itemName}: skipping to next file`
+                });
+                await new Promise((resolve) => setTimeout(resolve, 1000)); // wait for 1 second before throwing error
+            } else {
+                // this is a file under directory being transferred..
+                throw new Error(`Failed to process file ${itemName}: skipping to next file`);
+            }
+        }
+        console.log(`All chunks uploaded for file: ${itemName}`);
     }
 }
 
@@ -71,6 +336,7 @@ async function transferCloudToCloud(
     targetAccountId: string,
     sourcePath: string,
     targetPath: string,
+    copy: boolean,
     progressCallback?: (data: progressCallbackData) => void,
     abortSignal?: AbortSignal
 ): Promise<void> {
@@ -104,6 +370,16 @@ async function transferCloudToCloud(
         // move file within the same cloud storage account
         console.warn("Moving file within the same cloud storage account...");
         // TODO: Implement move logic
+        await transferItemWithinSameAccount(
+            transferId,
+            itemName,
+            sourceStorageInstance,
+            sourcePath,
+            targetPath,
+            copy,
+            progressCallback,
+            abortSignal
+        );
         return;
     }
     // move file from source cloud storage to target cloud storage
@@ -114,9 +390,45 @@ async function transferCloudToCloud(
         targetStorageInstance,
         sourcePath,
         targetPath,
-        progressCallback,
-        abortSignal
+        abortSignal,
+        progressCallback
     );
+}
+
+async function transferItemWithinSameAccount(
+    transferId: string,
+    itemName: string,
+    accountInstance: CloudStorage,
+    sourcePath: string,
+    targetPath: string,
+    copy: boolean,
+    progressCallback?: (data: progressCallbackData) => void,
+    abortSignal?: AbortSignal
+): Promise<void> {
+    // This function will handle the transfer of an item within the same cloud storage account
+    // It will move the item from sourcePath to targetPath
+    if (progressCallback) {
+        progressCallback({
+            transferId,
+            fileName: itemName,
+            transfered: 0,
+            total: 1, // total is 1 for directory creation
+            isDirectory: true,
+            isFetching: true
+        });
+    }
+    await accountInstance.moveOrCopyItem(sourcePath, targetPath, itemName, copy, progressCallback, abortSignal);
+
+    if (progressCallback) {
+        progressCallback({
+            transferId,
+            fileName: itemName,
+            transfered: 1,
+            total: 1, // total is 1 for directory creation
+            isDirectory: true,
+            isFetching: false
+        });
+    }
 }
 
 /*
@@ -130,8 +442,8 @@ async function transferItemCloudToCloud(
     targetAccountInstance: CloudStorage,
     sourcePath: string,
     targetPath: string,
-    progressCallback?: (data: progressCallbackData) => void,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    progressCallback?: (data: progressCallbackData) => void
 ): Promise<void> {
     // Check if the source item is a directory
     const isDirectory = await sourceAccountInstance.isDirectory(sourcePath);
@@ -139,38 +451,29 @@ async function transferItemCloudToCloud(
     // TODO: maybe there is way to check if directory or file without making a request to the cloud storage?
 
     if (isDirectory) {
-        // Notify progress for the initial state
-        if (progressCallback) {
-            progressCallback({
-                transferId,
-                fileName: itemName,
-                transfered: 0,
-                total: 1,
-                isDirectory: true,
-                isFetching: true
-            });
-        }
         // If it's a directory, create a directory in the target cloud storage
         const newTargetFolderPath = path.join(targetPath, itemName);
         await targetAccountInstance.createDirectory(newTargetFolderPath);
 
-        // Notify progress for the directory creation
+        // Read the source directory and get all items
+        const items = await sourceAccountInstance.readDir(sourcePath);
+
+        const total_items = items.length;
+        let processed_items = 0;
+
+        // Call the progress callback if provided
         if (progressCallback) {
             progressCallback({
                 transferId,
                 fileName: itemName,
-                transfered: 1,
-                total: 1,
+                transfered: processed_items,
+                total: total_items,
                 isDirectory: true,
-                isFetching: false
+                isFetching: true
             });
         }
-        // Read the source directory and get all items
-        const items = await sourceAccountInstance.readDir(sourcePath);
-        
-        console.log(`Transferring directory: ${sourcePath} to ${newTargetFolderPath}`);
-        // Iterate through each item in the source directory
-        for (const item of items) {
+
+        const transferPromises = items.map(async (item) => {
             if (abortSignal?.aborted) {
                 console.warn(`Transfer aborted for ${itemName}`);
                 console.log(`Stopping further processing of items in directory: ${sourcePath}`);
@@ -179,18 +482,104 @@ async function transferItemCloudToCloud(
             }
             const sourceItemPath = path.join(sourcePath, item.name);
             
-            // Recursively transfer each item
-            await transferItemCloudToCloud(
+            try {
+                // Recursively transfer each item
+                // when transferring each item, we will call the transferItemCloudToCloud function again 
+                // without progressCallback to avoid keeping track of progress for each item
+                const response = await transferItemCloudToCloud(
+                    transferId,
+                    item.name,
+                    sourceAccountInstance,
+                    targetAccountInstance,
+                    sourceItemPath,
+                    newTargetFolderPath,
+                    abortSignal
+                );
+                processed_items++;
+                // Call the progress callback if provided
+                if (progressCallback) {
+                    progressCallback({
+                        transferId,
+                        fileName: itemName,
+                        transfered: processed_items,
+                        total: total_items,
+                        isDirectory: true,
+                        isFetching: false
+                    });
+                }
+
+                return { success: true, itemName: item.name };
+            } catch (error) {
+                if (progressCallback) {
+                    progressCallback({
+                        transferId,
+                        fileName: itemName,
+                        transfered: processed_items,
+                        total: total_items,
+                        isDirectory: false,
+                        isFetching: false,
+                        errorItemDirectory: `Failed to process file ${item.name}: skipping to next file`
+                    });
+                } else {
+                    // this is a folder under directory being transferred..
+                    throw new Error(`Failed to process folder ${item.name}: skipping to next folder`);
+                }
+
+                return { success: false, itemName: item.name };
+            }
+        });
+
+        // Wait for all transfers to complete
+        const result = await Promise.all(transferPromises);
+
+        // Final progress callback - directory transfer complete
+        if (progressCallback) {
+            const successCount = result.filter(r => r.success).length;
+            const failCount = result.filter(r => !r.success).length;
+
+            const failedNames = result.filter(r => !r.success).map(r => r.itemName).join(', ');
+
+            progressCallback({
                 transferId,
-                item.name,
-                sourceAccountInstance,
-                targetAccountInstance,
-                sourceItemPath,
-                newTargetFolderPath,
-                progressCallback,
-                abortSignal
-            );
+                fileName: itemName,
+                transfered: total_items,
+                total: total_items,
+                isDirectory: true,
+                isFetching: false,
+            });
+            console.log(`Directory transfer complete: ${itemName}`);
+            console.log(`Successfully transferred ${successCount} items, failed to transfer ${failCount} items.`);
+            if (failCount > 0) {
+                progressCallback({
+                    transferId,
+                    fileName: itemName,
+                    transfered: total_items,
+                    total: total_items,
+                    isDirectory: true,
+                    isFetching: false,
+                    errorItemDirectory: `Failed to process ${failCount} items: ${failedNames}`
+                });
+                // TODO somethign needs to be changed that the progressCallback should display the failed items.
+                // Transfer Service does not delete if it includes failed items, but does not display that there is failed items.
+            }
         }
+        
+        // // Final progress callback - directory transfer complete
+        // if (progressCallback) {
+        //     const successCount = result.filter(r => r.success).length;
+        //     const failCount = result.filter(r => !r.success).length;
+
+        //     progressCallback({
+        //         transferId,
+        //         fileName: itemName,
+        //         transfered: total_items,
+        //         total: total_items,
+        //         isDirectory: true,
+        //         isFetching: false,
+        //     });
+        //     console.log(`Directory transfer complete: ${itemName}`);
+        //     console.log(`Successfully transferred ${successCount} items, failed to transfer ${failCount} items.`);
+        // }
         console.log(`Directory ${itemName} transferred successfully to ${newTargetFolderPath}`);
     } else {
         // if it's a file
@@ -273,11 +662,28 @@ async function transferItemCloudToCloud(
 
                 if (chunkOffset >= fileSize) {
                     console.log(`File ${itemName} transferred successfully to ${targetPath}/${itemName}`);
-                    await targetAccountInstance.finishResumableUpload(sessionId, targetFilePath, fileSize);
+                    let uploadTryCount = 0;
+                    // Finalize the upload session
+                    while (uploadTryCount < 3) {
+                        try {
+                            await targetAccountInstance.finishResumableUpload(sessionId, targetFilePath, fileSize);
+                            console.log(`File ${itemName} uploaded successfully to ${targetFilePath}`);
+                            break; // exit loop on success
+                        } catch (error) {
+                            console.error(`Error finalizing upload for file ${itemName}:`, error);
+                            uploadTryCount++;
+                            if (uploadTryCount >= 3) {
+                                throw new Error(`Failed to finalize upload for file ${itemName} after 3 attempts`);
+                            }
+                            await new Promise(resolve => setTimeout(resolve, 1000)); // wait for 1 second before retrying
+                        }
+                    }
                 }
             }
         } catch (error: any) {
+            console.error(`Error uploading file ${itemName}:`, error);
             if (progressCallback) {
+                // skip to next file
                 progressCallback({
                     transferId,
                     fileName: itemName,
@@ -287,9 +693,11 @@ async function transferItemCloudToCloud(
                     isFetching: true,
                     errorItemDirectory: `Failed to process file ${itemName}: skipping to next file`
                 });
+                await new Promise((resolve) => setTimeout(resolve, 1000)); // wait for 1 second before throwing error
+            } else {
+                // this is a file moved under directory transfer..
+                throw new Error(`Failed to process file ${itemName}: skipping to next file`);
             }
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // wait for 1 second before throwing error
-            // skip to next file
         }
         console.log(`All chunks uploaded for file: ${itemName}`);
     }

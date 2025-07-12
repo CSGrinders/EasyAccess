@@ -264,7 +264,6 @@ export class OneDriveStorage implements CloudStorage {
       console.log(`Querying OneDrive API path: ${apiPath}`);
 
       const response = await this.graphClient.api(apiPath).get();
-      console.log('Response from OneDrive API:', response);
 
       if (!response || !response.value || !Array.isArray(response.value)) {
         console.error('Unexpected response format from OneDrive API:', response);
@@ -302,7 +301,7 @@ export class OneDriveStorage implements CloudStorage {
         return fileItem;
       });
 
-      console.log(`Retrieved ${allFiles.length} items from OneDrive:`, allFiles);
+      // console.log(`Retrieved ${allFiles.length} items from OneDrive:`, allFiles);
       return allFiles;
 
     } catch (error) {
@@ -1433,4 +1432,61 @@ export class OneDriveStorage implements CloudStorage {
     async finishResumableUpload(sessionId: string, targetFilePath: string, fileSize: number): Promise<void> {
       console.log(`Finishing resumable upload for session ${sessionId} to file ${targetFilePath} with size ${fileSize}`);
     }
-}
+
+    async moveOrCopyItem(sourcePath: string, targetPath: string, itemName: string, copy: boolean, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+      if (!this.graphClient) {
+        await this.initAccount();
+      }
+      if (!this.graphClient) {
+        console.error('Graph client is not initialized');
+        throw new Error('Graph client is not initialized');
+      }
+
+      // Ensure sourcePath starts with a slash
+      sourcePath = sourcePath.startsWith('/') ? sourcePath : `/${sourcePath}`;
+      // Ensure targetPath starts with a slash
+      targetPath = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
+      
+      // get target id for the parent reference
+      const targetMetadata = await this.graphClient
+        .api(`/me/drive/root:${targetPath}`)
+        .get();
+
+      const targetId = targetMetadata.id;
+      const apiPath = `/me/drive/root:${sourcePath}`;
+
+      const body = {
+        parentReference: {
+          id: targetId,
+        },
+        name: itemName // or provide a new name to rename during move
+      };
+
+      console.log(`Moving or copying item ${itemName} from ${sourcePath} to ${targetPath} with copy=${copy}`);
+      console.log(`API Path: ${apiPath}`);
+
+      try {
+        // HEHHEHEHHEHEHEHEHEHEHEHEHHEHEHEHEHHE
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate some delay to allow user to cancel if needed
+        if (abortSignal?.aborted) {
+          console.log('Move or copy operation cancelled by user');
+          throw new Error('Move or copy operation cancelled by user');
+        }
+        // hmm.. Since it takes really short time to move or copy an item, we don't need to use progressCallback...?
+        if (copy) {
+          await this.graphClient.api(`${apiPath}:/copy`).post(body);
+          console.log(`Copied ${itemName} to ${targetPath}`);
+        } else {
+          await this.graphClient.api(apiPath).patch(body);
+          console.log(`Moved ${itemName} from ${sourcePath} to ${targetPath}`);
+        }
+      } catch (error) {
+        console.error('Error moving or copying item:', error);
+        throw error;
+      }
+    }
+
+
+    async  transferCloudToLocal(transferInfo: any, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+    }
+  }

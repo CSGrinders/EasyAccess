@@ -463,6 +463,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         // 1. Local to Cloud
                         // 2. Cloud to local
                         // 3. Cloud to Cloud
+                        const copy = confirmation.keepOriginal;
+                        const transferWithinSameAccount = sourceCloudType === targetCloudType && sourceAccountId === targetAccountId;
                         
                         // Prepare information for transfer
                         const transferInfo = {
@@ -474,6 +476,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             targetCloudType,
                             targetAccountId,
                             targetPath,
+                            copy
                         };
 
                         
@@ -492,7 +495,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                             currentCompletedFiles.push(fileName);
 
                             // delete from the source if not keeping original and not including failure
-                            if (!includeFailure && !confirmation.keepOriginal) {
+                            // transfer within the same account will automatically delete the source file if move
+                            if (!includeFailure && !confirmation.keepOriginal && !transferWithinSameAccount) {
                                 console.warn(`Deleting source file ${fileName} after transfer`);
                                 deleteFileFromSource({
                                     sourceCloudType,
