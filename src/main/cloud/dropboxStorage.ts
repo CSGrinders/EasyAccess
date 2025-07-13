@@ -1182,7 +1182,7 @@ export class DropboxStorage implements CloudStorage {
             const errorText = await response.text();
             throw new Error(`Failed to upload chunk: ${response.status} - ${errorText}`);
         }
-        console.log(`Chunk uploaded successfully: ${offset}-${offset + chunk.length - 1}/${totalSize}`);
+        // console.log(`Chunk uploaded successfully: ${offset}-${offset + chunk.length - 1}/${totalSize}`);
     }
 
     // Dropbox requires to send the sessionId and targetFilePath to api to finalize the upload session

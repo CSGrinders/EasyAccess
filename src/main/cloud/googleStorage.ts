@@ -1310,7 +1310,7 @@ export class GoogleDriveStorage implements CloudStorage {
           }
         }
 
-        console.log(`Pulling chunk from position: ${currentPosition}, file size: ${fileSize}`);
+        // console.log(`Pulling chunk from position: ${currentPosition}, file size: ${fileSize}`);
 
 
         try {

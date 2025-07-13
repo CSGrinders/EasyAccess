@@ -7,6 +7,40 @@ import { CloudStorage } from "../cloud/cloudStorage";
 import fs from "fs/promises";
 import path from "path";
 
+// Semaphore class to limit concurrent operations
+class Semaphore {
+    private maxConcurrent: number;
+    private current: number;
+    private queue: (() => void)[];
+    constructor(maxConcurrent: number) {
+        this.maxConcurrent = maxConcurrent;
+        this.current = 0;
+        this.queue = [];
+    }
+    
+    async acquire() {
+        return new Promise<void>((resolve) => {
+            if (this.current < this.maxConcurrent) {
+                this.current++;
+                resolve();
+            } else {
+                this.queue.push(resolve);
+            }
+        });
+    }
+    
+    release() {
+        this.current--;
+        if (this.queue.length > 0) {
+            this.current++;
+            const resolve = this.queue.shift();
+            if (resolve) {
+                resolve();
+            }
+        }
+    }
+}
+
 
 export async function transferManager(transferInfo: any, progressCallback: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
     // This function will handle the transfer operations based on the provided transferInfo
@@ -136,7 +170,14 @@ async function downloadItem(
             });
         }
 
+
+        // Create semaphore with desired concurrency limit
+        const semaphore = new Semaphore(3); // Max 3 concurrent transfers
+
         const transferPromises = items.map(async (item) => {
+            // Acquire semaphore to limit concurrent transfers
+            await semaphore.acquire();
+
             if (abortSignal?.aborted) {
                 console.warn(`Transfer aborted for ${itemName}`);
                 console.log(`Stopping further processing of items in directory: ${sourcePath}`);
@@ -188,18 +229,21 @@ async function downloadItem(
                 }
 
                 return { success: false, itemName: item.name };
+            } finally {
+                // Always release semaphore
+                semaphore.release();
             }
         });
 
         // Wait for all transfers to complete
-        const result = await Promise.all(transferPromises);
+        const result = await Promise.allSettled(transferPromises);
         
         // Final progress callback - directory transfer complete
         if (progressCallback) {
-            const successCount = result.filter(r => r.success).length;
-            const failCount = result.filter(r => !r.success).length;
+            const successCount = result.filter(r => r.status === 'fulfilled').length;
+            const failCount = result.filter(r => r.status === 'rejected').length;
 
-            const failedNames = result.filter(r => !r.success).map(r => r.itemName).join(', ');
+            const failedNames = result.filter(r => r.status === 'rejected').map(r => r.reason.itemName).join(', ');
 
             progressCallback({
                 transferId,
@@ -449,12 +493,43 @@ async function transferItemCloudToCloud(
     const isDirectory = await sourceAccountInstance.isDirectory(sourcePath);
     
     // TODO: maybe there is way to check if directory or file without making a request to the cloud storage?
-
+    
+    const RETRY_LIMIT = 4;
     if (isDirectory) {
         // If it's a directory, create a directory in the target cloud storage
         const newTargetFolderPath = path.join(targetPath, itemName);
-        await targetAccountInstance.createDirectory(newTargetFolderPath);
 
+        // create directory in the target cloud storage
+        // retry logic for the case of directory creation failure due to limitations or network issues
+        let createDirectoryTryCount = 0;
+        while (createDirectoryTryCount < RETRY_LIMIT) {
+            try {
+                await targetAccountInstance.createDirectory(newTargetFolderPath);
+                break; // Exit loop if successful
+            } catch (error: any) {
+                console.log("YeeeeeeeYeeeeeeeYeeeeeeeYeeeeeeeYeeeeeeeYeeeeeeeYeeeeeee")
+                const message = error?.message || '';
+                const status = error?.status || '';
+                console.log(status);
+                const shouldRetry =
+                    status === 429 || // Too Many Requests
+                    status === 403 || // Forbidden (quota exceeded)
+                    status === 500 || // Internal Server Error
+                    status == 503; // Service Unavailable
+
+                if (shouldRetry) {
+                    console.warn(`Retrying to create directory ${newTargetFolderPath} due to error: ${status}`);
+                    // Wait exponentially before retrying
+                    await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, createDirectoryTryCount)));
+                    createDirectoryTryCount++;
+                    if (createDirectoryTryCount >= RETRY_LIMIT) {
+                        throw new Error(`Failed to create directory ${newTargetFolderPath} after ${RETRY_LIMIT} attempts`);
+                    }
+                } else {
+                    throw new Error(`Failed to create directory ${newTargetFolderPath}: ${error.message || 'Unknown error'}`);
+                }
+            }
+        }
         // Read the source directory and get all items
         const items = await sourceAccountInstance.readDir(sourcePath);
 
@@ -473,7 +548,14 @@ async function transferItemCloudToCloud(
             });
         }
 
+
+        // Create semaphore with desired concurrency limit
+        const semaphore = new Semaphore(3); // Max 3 concurrent transfers
+
         const transferPromises = items.map(async (item) => {
+            // Acquire semaphore to limit concurrent transfers
+            await semaphore.acquire();
+
             if (abortSignal?.aborted) {
                 console.warn(`Transfer aborted for ${itemName}`);
                 console.log(`Stopping further processing of items in directory: ${sourcePath}`);
@@ -526,18 +608,23 @@ async function transferItemCloudToCloud(
                 }
 
                 return { success: false, itemName: item.name };
+            } finally {
+                // Always release semaphore, even if operation fails
+                semaphore.release();
             }
         });
 
         // Wait for all transfers to complete
-        const result = await Promise.all(transferPromises);
+        const result = await Promise.allSettled(transferPromises);
+
+        // all uploads are done, some might have failed.
 
         // Final progress callback - directory transfer complete
         if (progressCallback) {
-            const successCount = result.filter(r => r.success).length;
-            const failCount = result.filter(r => !r.success).length;
+            const successCount = result.filter(r => r.status === 'fulfilled').length;
+            const failCount = result.filter(r => r.status === 'rejected').length;
 
-            const failedNames = result.filter(r => !r.success).map(r => r.itemName).join(', ');
+            const failedNames = result.filter(r => r.status === 'rejected').map(r => r.reason.itemName).join(', ');
 
             progressCallback({
                 transferId,
@@ -641,11 +728,38 @@ async function transferItemCloudToCloud(
                     fileStream.cancel();
                     throw new Error(`User cancelled transfer`);
                 }
-                console.log(`Uploading chunk of size: ${chunk.length} bytes at offset: ${chunkOffset}`);
+                // console.log(`Uploading chunk of size: ${chunk.length} bytes at offset: ${chunkOffset}`);
+
                 // upload the chunk to the target cloud storage with sessionId or upload URL
                 // targetPath + itemName is the target file path in the target cloud storage
                 // upload(sessionId, chunk, chunkOffset, fileSize, targetPath, itemName, progressCallback, abortSignal);
-                await targetAccountInstance.uploadChunk(sessionId, chunk, chunkOffset, fileSize);
+                // retry logic for the case of upload chunk failure due to limitations or network issues
+                let uploadTryCount = 0;
+                while (uploadTryCount < RETRY_LIMIT) {
+                    try {
+                        await targetAccountInstance.uploadChunk(sessionId, chunk, chunkOffset, fileSize);
+                        break; // exit loop on success
+                    } catch (error: any) {
+                        const message = error?.message || '';
+                        const status = error?.status || '';
+                        console.log(status);
+                        const shouldRetry =
+                            status === 429 || // Too Many Requests
+                            status === 403 || // Forbidden (quota exceeded)
+                            status === 500 || // Internal Server Error
+                            status == 503; // Service Unavailable
+                        if (shouldRetry) {
+                            console.warn(`Retrying upload chunk for file ${itemName} due to error: ${status}`);
+                            uploadTryCount++;
+                            if (uploadTryCount >= RETRY_LIMIT) {
+                                throw new Error(`Failed to upload chunk for file ${itemName} after ${RETRY_LIMIT} attempts`);
+                            }
+                            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, uploadTryCount)));
+                        } else {
+                            throw new Error(`Failed to upload chunk for file ${itemName}: ${error.message || 'Unknown error'}`);
+                        }
+                    }
+                }
                 chunkOffset += chunk.length;
 
                 // Call the progress callback if provided
@@ -664,18 +778,32 @@ async function transferItemCloudToCloud(
                     console.log(`File ${itemName} transferred successfully to ${targetPath}/${itemName}`);
                     let uploadTryCount = 0;
                     // Finalize the upload session
-                    while (uploadTryCount < 3) {
+                    // Dropbox requires finalizing the upload session after all chunks are uploaded
+                    // retry logic for the case of upload session finalization failure due to limitations or network issues
+                    while (uploadTryCount < RETRY_LIMIT) {
                         try {
                             await targetAccountInstance.finishResumableUpload(sessionId, targetFilePath, fileSize);
                             console.log(`File ${itemName} uploaded successfully to ${targetFilePath}`);
                             break; // exit loop on success
-                        } catch (error) {
-                            console.error(`Error finalizing upload for file ${itemName}:`, error);
-                            uploadTryCount++;
-                            if (uploadTryCount >= 3) {
-                                throw new Error(`Failed to finalize upload for file ${itemName} after 3 attempts`);
+                        } catch (error: any) {
+                            const message = error?.message || '';
+                            const status = error?.status || '';
+                            console.log(status);
+                            const shouldRetry =
+                                status === 429 || // Too Many Requests
+                                status === 403 || // Forbidden (quota exceeded)
+                                status === 500 || // Internal Server Error
+                                status == 503; // Service Unavailable
+                            if (shouldRetry) {
+                                uploadTryCount++;
+                                console.warn(`Retrying finalize upload for file ${itemName} due to error: ${status}`);
+                                if (uploadTryCount >= RETRY_LIMIT) {
+                                    throw new Error(`Failed to finalize upload for file ${itemName} after ${RETRY_LIMIT} attempts`);
+                                }
+                                await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, uploadTryCount)));
+                            } else {
+                                throw new Error(`Failed to finalize upload for file ${itemName}: ${error.message || 'Unknown error'}`);
                             }
-                            await new Promise(resolve => setTimeout(resolve, 1000)); // wait for 1 second before retrying
                         }
                     }
                 }
