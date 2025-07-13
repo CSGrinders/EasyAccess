@@ -391,6 +391,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     });
 
                     let progressListener: any = null;
+                    // for the case of folder transfer, we need to track the progress of each item within the folder
+                    // if folder transfer includes at least one file transfer failure, it will be true
                     let includeFailure = false;
                     try {
                         // progressListener to track download/upload progress
@@ -407,11 +409,13 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
 
                             console.log("Progress update for transfer:", latestTransfer, "data:", data);
                            
+                            // not sure... need to change..
                             if (transfer && data.transferId == transfer.id) {
                                 if (data.errorItemDirectory) {
                                     // the transfer includes a failure
                                     currentFailedFiles.push({ file: data.fileName, error: data.errorItemDirectory });
                                     includeFailure = true;
+                                    console.error(`Error in transfer for file ${data.fileName}:`, data.errorItemDirectory);
                                 }
                                 if (data.isFetching) {
                                     batchUpdateTransfer(transfer.id, {
@@ -434,6 +438,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                             directoryName: data.isDirectory ? fileName : "unknown",
                                             isCurrentDirectory: data.isDirectory,
                                             status: transfer.keepOriginal ? "copying" : "moving",
+                                            cancelledMessage: data.errorItemDirectory || "",
                                             progress: Math.min(overallProgress, 100)
                                         })
                                     } else if (isLocaltoCloud){
@@ -442,6 +447,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                             directoryName: data.isDirectory ? fileName : "unknown",
                                             isCurrentDirectory: data.isDirectory,
                                             status: transfer.keepOriginal ? "copying" : "uploading",
+                                            cancelledMessage: data.errorItemDirectory || "",
                                             progress: Math.min(overallProgress, 100)
                                         });
                                     } else if (isCloudToLocal) {
@@ -450,6 +456,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                                             directoryName: data.isDirectory ? fileName : "unknown",
                                             isCurrentDirectory: data.isDirectory,
                                             status: transfer.keepOriginal ? "copying" : "downloading",
+                                            cancelledMessage: data.errorItemDirectory || "",
                                             progress: Math.min(overallProgress, 100)
                                         });
                                     }; 
@@ -554,13 +561,25 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     } 
                 }
 
-
-                // Success
-                batchUpdateTransfer(transfer.id, {
-                    progress: 100,
-                    status: "completed",
-                    endTime: Date.now()
-                });
+                // I understand that currentFailedFiles include any failed files under the directory item that is being transferred
+                // The error field of currentFailedFiles will be the name of the file that failed to be transferred.
+                if (currentFailedFiles.length > 0) {
+                    console.error("Transfer completed with errors:", currentFailedFiles);
+                    batchUpdateTransfer(transfer.id, {
+                        status: "completed",
+                        endTime: Date.now(),
+                        cancelledMessage: `Failed to transfer: ${currentFailedFiles.map(f => f.error).join(', ')}`,
+                        completedFiles: currentCompletedFiles,
+                        failedFiles: currentFailedFiles
+                    });
+                } else {
+                    // Success
+                    batchUpdateTransfer(transfer.id, {
+                        progress: 100,
+                        status: "completed",
+                        endTime: Date.now()
+                    });
+                }
 
                 setTimeout(() => {
                     // Create fake file content cache for refresh function

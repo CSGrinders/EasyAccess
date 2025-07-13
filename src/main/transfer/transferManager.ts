@@ -236,14 +236,14 @@ async function downloadItem(
         });
 
         // Wait for all transfers to complete
-        const result = await Promise.allSettled(transferPromises);
+        const result = await Promise.all(transferPromises);
         
         // Final progress callback - directory transfer complete
         if (progressCallback) {
-            const successCount = result.filter(r => r.status === 'fulfilled').length;
-            const failCount = result.filter(r => r.status === 'rejected').length;
+            const successCount = result.filter(r => r.success === true).length;
+            const failCount = result.filter(r => r.success === false).length;
 
-            const failedNames = result.filter(r => r.status === 'rejected').map(r => r.reason.itemName).join(', ');
+            const failedNames = result.filter(r => r.success === false).map(r => r.itemName).join(', ');
 
             progressCallback({
                 transferId,
@@ -564,6 +564,7 @@ async function transferItemCloudToCloud(
             }
             const sourceItemPath = path.join(sourcePath, item.name);
             
+            processed_items++;
             try {
                 // Recursively transfer each item
                 // when transferring each item, we will call the transferItemCloudToCloud function again 
@@ -577,7 +578,6 @@ async function transferItemCloudToCloud(
                     newTargetFolderPath,
                     abortSignal
                 );
-                processed_items++;
                 // Call the progress callback if provided
                 if (progressCallback) {
                     progressCallback({
@@ -592,6 +592,7 @@ async function transferItemCloudToCloud(
 
                 return { success: true, itemName: item.name };
             } catch (error) {
+                // if the current folder is the one transferrred, and this item is under that folder
                 if (progressCallback) {
                     progressCallback({
                         transferId,
@@ -600,7 +601,7 @@ async function transferItemCloudToCloud(
                         total: total_items,
                         isDirectory: false,
                         isFetching: false,
-                        errorItemDirectory: `Failed to process file ${item.name}: skipping to next file`
+                        errorItemDirectory: `${item.name}`
                     });
                 } else {
                     // this is a folder under directory being transferred..
@@ -615,16 +616,16 @@ async function transferItemCloudToCloud(
         });
 
         // Wait for all transfers to complete
-        const result = await Promise.allSettled(transferPromises);
+        const result = await Promise.all(transferPromises);
 
         // all uploads are done, some might have failed.
 
         // Final progress callback - directory transfer complete
         if (progressCallback) {
-            const successCount = result.filter(r => r.status === 'fulfilled').length;
-            const failCount = result.filter(r => r.status === 'rejected').length;
+            const successCount = result.filter(r => r.success === true).length;
+            const failCount = result.filter(r => r.success === false).length;
 
-            const failedNames = result.filter(r => r.status === 'rejected').map(r => r.reason.itemName).join(', ');
+            const failedNames = result.filter(r => r.success === false).map(r => r.itemName).join(', ');
 
             progressCallback({
                 transferId,
@@ -824,6 +825,7 @@ async function transferItemCloudToCloud(
                 await new Promise((resolve) => setTimeout(resolve, 1000)); // wait for 1 second before throwing error
             } else {
                 // this is a file moved under directory transfer..
+                console.log(`Under the folder transfer, this file failed: ${itemName}`);
                 throw new Error(`Failed to process file ${itemName}: skipping to next file`);
             }
         }
