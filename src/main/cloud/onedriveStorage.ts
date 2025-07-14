@@ -1,7 +1,7 @@
 import { CloudStorage, AuthTokens, isValidToken } from './cloudStorage';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { Client, FileUpload, OneDriveLargeFileUploadOptions, OneDriveLargeFileUploadTask, ResponseType, UploadResult } from "@microsoft/microsoft-graph-client";
-import { CLOUD_HOME, CloudType } from '../../types/cloudType';
+import { CLOUD_HOME, CloudType, StorageError } from '../../types/cloudType';
 import dotenv from 'dotenv';
 import { minimatch } from 'minimatch';
 import { v4 as uuidv4 } from 'uuid';
@@ -499,10 +499,14 @@ export class OneDriveStorage implements CloudStorage {
         }
       }
     } catch (error: any) {
-      const err = new Error(`Failed to create OneDrive folder: ${error.message || 'Unknown error'}`);
-      (err as any).status = error.statusCode || 500;
-      (err as any).body = error.message || 'Unknown error';
-      throw err;
+      const err: StorageError = {
+        status: error.statusCode || 500,
+        message: `Failed to create OneDrive folder: ${error.message || 'Unknown error'}`,
+        body: error.response?.data || error.message || 'No additional details available'
+      };
+      console.error('Error creating directory in OneDrive:', err);
+      console.error(`Failed to create directory ${dirPath} in OneDrive:`, error);
+      return Promise.reject(err);
     }
   }
 
@@ -1428,9 +1432,14 @@ export class OneDriveStorage implements CloudStorage {
             (err as any).body = await response.text();
             throw err;
           }
-        } catch (error) {
+        } catch (error: any) {
+          const err: StorageError = {
+            status: error.status || 500,
+            message: `Failed to upload chunk: ${error.message}`,
+            body: error.response?.data || error.message || 'No additional details available'
+          };
           console.error('Error uploading chunk:', error);
-          throw error;
+          return Promise.reject(err);
         }
     }
 

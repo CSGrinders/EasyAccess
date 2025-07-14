@@ -5,7 +5,7 @@ import { saveCloudAccountLocaStorage } from './cloudManager';
 import { OAuth2Client } from 'google-auth-library';
 import { drive_v3, google } from 'googleapis';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
-import { CLOUD_HOME, CloudType } from '../../types/cloudType';
+import { CLOUD_HOME, CloudType, StorageError } from '../../types/cloudType';
 import { shell } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 const { Readable } = require('stream');
@@ -1108,11 +1108,13 @@ export class GoogleDriveStorage implements CloudStorage {
       } catch (error: any) {
         const status = error.response?.status || error.status || 500 ;
         const message = error instanceof Error ? error.message : 'Unknown error';
-        const err = new Error(`Failed to create directory ${folderName} in Google Drive: ${message}`);
-        (err as any).status = status; // Attach status code to error
-        (err as any).body = message; // Attach code to error
-        throw err; // Re-throw the error to be handled by the caller
-
+        const err: StorageError = {
+          status: status,
+          message: message,
+          body: error.response?.data || message
+        };
+        console.error('Error creating directory in Google Drive:', err);
+        return Promise.reject(err);
       }
     }
   }
@@ -1408,10 +1410,12 @@ export class GoogleDriveStorage implements CloudStorage {
     } else if (response.status === 200 || response.status === 201) {
       console.log('Upload completed successfully');
     } else {
-      const err = new Error(`Upload chunk failed: ${response.status} ${response.statusText}`);
-      (err as any).status = response.status;
-      (err as any).body = await response.text();
-      throw err;
+      const err: StorageError = {
+        status: response.status,
+        message: `Upload chunk failed: ${response.status}`,
+        body: await response.text()
+      };
+      return Promise.reject(err);
     }
     console.log(`Chunk uploaded successfully: ${offset}-${offset + chunk.length - 1}/${totalSize}`);
   }

@@ -17,5 +17,11 @@ export enum CloudType {
     OneDrive = 'OneDrive',
 }
 
+export interface StorageError {
+    status: number; // HTTP status code
+    message: string; // Error message
+    body?: string; // Optional response body for more details
+}
+
 /** Represents the root/home folder in cloud storage file explorers */
 export const CLOUD_HOME = "Home";

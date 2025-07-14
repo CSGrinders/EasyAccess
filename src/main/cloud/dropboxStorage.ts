@@ -1,7 +1,7 @@
 import { CloudStorage,AuthTokens, isValidToken, generateCodes } from './cloudStorage';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { Client } from "@microsoft/microsoft-graph-client";
-import { CLOUD_HOME, CloudType } from '../../types/cloudType';
+import { CLOUD_HOME, CloudType, StorageError } from '../../types/cloudType';
 import { BrowserWindow, shell } from 'electron';
 import { Dropbox } from 'dropbox';
 import { v4 as uuidv4 } from 'uuid';
@@ -581,9 +581,15 @@ export class DropboxStorage implements CloudStorage {
                 console.log(`Dropbox folder "${dirPath}" already exists`);
                 return; 
             }
-            
-            console.error('Failed to create Dropbox folder:', error);
-            throw error;
+
+            const err: StorageError = {
+                status: error.status || 500,
+                message: `Failed to create Dropbox folder: ${error.message || 'Unknown error'}`,
+                body: error.response ? await error.response.text() : undefined
+            };
+
+            console.error('Failed to create Dropbox folder:', err);
+            return Promise.reject(err);
         }
     }
 
@@ -1180,10 +1186,12 @@ export class DropboxStorage implements CloudStorage {
 
         if (!response.ok) {
             const errorText = await response.text();
-            const err = new Error(`Failed to upload chunk: ${response.status} - ${errorText}`);
-            (err as any).status = response.status;
-            (err as any).body = errorText;
-            throw err;
+            const err: StorageError = {
+                status: response.status,
+                message: `Failed to upload chunk: ${response.status} - ${errorText}`,
+                body: errorText
+            };
+            return Promise.reject(err);
         }
         // console.log(`Chunk uploaded successfully: ${offset}-${offset + chunk.length - 1}/${totalSize}`);
     }
@@ -1217,10 +1225,12 @@ export class DropboxStorage implements CloudStorage {
 
         if (!closeResponse.ok) {
             const errorText = await closeResponse.text();
-            const err = new Error(`Failed to finalize upload session: ${closeResponse.status} - ${errorText}`);
-            (err as any).status = closeResponse.status;
-            (err as any).body = errorText;
-            throw err;
+            const err: StorageError = {
+                status: closeResponse.status,
+                message: `Failed to finalize upload session: ${errorText}`,
+                body: errorText
+            };
+            return Promise.reject(err);
         }
 
         console.log(`Upload session finalized successfully for file: ${targetFilePath}`);
