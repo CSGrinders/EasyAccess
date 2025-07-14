@@ -510,7 +510,7 @@ async function transferItemCloudToCloud(
                 console.log("YeeeeeeeYeeeeeeeYeeeeeeeYeeeeeeeYeeeeeeeYeeeeeeeYeeeeeee")
                 const message = error?.message || '';
                 const status = error?.status || '';
-                console.log(status);
+                console.log(`Creating directory ${newTargetFolderPath} failed with status: ${status}`);
                 const shouldRetry =
                     status === 429 || // Too Many Requests
                     status === 403 || // Forbidden (quota exceeded)
@@ -520,12 +520,13 @@ async function transferItemCloudToCloud(
                 if (shouldRetry) {
                     console.warn(`Retrying to create directory ${newTargetFolderPath} due to error: ${status}`);
                     // Wait exponentially before retrying
-                    await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, createDirectoryTryCount)));
+                    await new Promise(resolve => setTimeout(resolve, 3500 * Math.pow(2, createDirectoryTryCount)));
                     createDirectoryTryCount++;
                     if (createDirectoryTryCount >= RETRY_LIMIT) {
                         throw new Error(`Failed to create directory ${newTargetFolderPath} after ${RETRY_LIMIT} attempts`);
                     }
                 } else {
+                    console.log(`Retry limit reached for creating directory ${newTargetFolderPath}: ${message}`);
                     throw new Error(`Failed to create directory ${newTargetFolderPath}: ${error.message || 'Unknown error'}`);
                 }
             }
@@ -743,7 +744,7 @@ async function transferItemCloudToCloud(
                     } catch (error: any) {
                         const message = error?.message || '';
                         const status = error?.status || '';
-                        console.log(status);
+                        console.log(`Uploading chunk for file ${itemName} failed with status: ${status}`);
                         const shouldRetry =
                             status === 429 || // Too Many Requests
                             status === 403 || // Forbidden (quota exceeded)
@@ -755,7 +756,7 @@ async function transferItemCloudToCloud(
                             if (uploadTryCount >= RETRY_LIMIT) {
                                 throw new Error(`Failed to upload chunk for file ${itemName} after ${RETRY_LIMIT} attempts`);
                             }
-                            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, uploadTryCount)));
+                            await new Promise(resolve => setTimeout(resolve, 3500 * Math.pow(2, uploadTryCount)));
                         } else {
                             throw new Error(`Failed to upload chunk for file ${itemName}: ${error.message || 'Unknown error'}`);
                         }
@@ -783,13 +784,14 @@ async function transferItemCloudToCloud(
                     // retry logic for the case of upload session finalization failure due to limitations or network issues
                     while (uploadTryCount < RETRY_LIMIT) {
                         try {
+                            // only for dropbox...
                             await targetAccountInstance.finishResumableUpload(sessionId, targetFilePath, fileSize);
                             console.log(`File ${itemName} uploaded successfully to ${targetFilePath}`);
                             break; // exit loop on success
                         } catch (error: any) {
                             const message = error?.message || '';
                             const status = error?.status || '';
-                            console.log(status);
+                            console.log(`Finalizing upload for file ${itemName} failed with status: ${status}`);
                             const shouldRetry =
                                 status === 429 || // Too Many Requests
                                 status === 403 || // Forbidden (quota exceeded)
@@ -801,7 +803,7 @@ async function transferItemCloudToCloud(
                                 if (uploadTryCount >= RETRY_LIMIT) {
                                     throw new Error(`Failed to finalize upload for file ${itemName} after ${RETRY_LIMIT} attempts`);
                                 }
-                                await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, uploadTryCount)));
+                                await new Promise(resolve => setTimeout(resolve, 3500 * Math.pow(2, uploadTryCount)));
                             } else {
                                 throw new Error(`Failed to finalize upload for file ${itemName}: ${error.message || 'Unknown error'}`);
                             }

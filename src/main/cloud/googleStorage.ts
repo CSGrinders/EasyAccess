@@ -1105,9 +1105,14 @@ export class GoogleDriveStorage implements CloudStorage {
           currentParentId = res.data.id || '';
           console.log(`Created Google Drive folder: ${folderName} with ID: ${currentParentId}`);
         }
-      } catch (error) {
-        console.error(`Error creating folder ${folderName}:`, error);
-        throw error;
+      } catch (error: any) {
+        const status = error.response?.status || error.status || 500 ;
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        const err = new Error(`Failed to create directory ${folderName} in Google Drive: ${message}`);
+        (err as any).status = status; // Attach status code to error
+        (err as any).body = message; // Attach code to error
+        throw err; // Re-throw the error to be handled by the caller
+
       }
     }
   }
@@ -1403,7 +1408,10 @@ export class GoogleDriveStorage implements CloudStorage {
     } else if (response.status === 200 || response.status === 201) {
       console.log('Upload completed successfully');
     } else {
-      throw new Error(`Upload chunk failed: ${response.status} ${response.statusText}`);
+      const err = new Error(`Upload chunk failed: ${response.status} ${response.statusText}`);
+      (err as any).status = response.status;
+      (err as any).body = await response.text();
+      throw err;
     }
     console.log(`Chunk uploaded successfully: ${offset}-${offset + chunk.length - 1}/${totalSize}`);
   }

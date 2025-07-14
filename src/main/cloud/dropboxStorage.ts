@@ -1180,13 +1180,20 @@ export class DropboxStorage implements CloudStorage {
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Failed to upload chunk: ${response.status} - ${errorText}`);
+            const err = new Error(`Failed to upload chunk: ${response.status} - ${errorText}`);
+            (err as any).status = response.status;
+            (err as any).body = errorText;
+            throw err;
         }
         // console.log(`Chunk uploaded successfully: ${offset}-${offset + chunk.length - 1}/${totalSize}`);
     }
 
     // Dropbox requires to send the sessionId and targetFilePath to api to finalize the upload session
     async finishResumableUpload(sessionId: string, targetFilePath: string, fileSize: number): Promise<void> {
+        // ensure starts with a slash: specific to dropbox...
+        if (!targetFilePath.startsWith('/')) {
+            targetFilePath = '/' + targetFilePath;
+        }
         const closeResponse = await fetch('https://content.dropboxapi.com/2/files/upload_session/finish', {
             method: 'POST',
             headers: {
@@ -1209,7 +1216,11 @@ export class DropboxStorage implements CloudStorage {
         });
 
         if (!closeResponse.ok) {
-            throw new Error(`Finalize Error for file ${targetFilePath}: ${closeResponse.status} - ${await closeResponse.text()}`);
+            const errorText = await closeResponse.text();
+            const err = new Error(`Failed to finalize upload session: ${closeResponse.status} - ${errorText}`);
+            (err as any).status = closeResponse.status;
+            (err as any).body = errorText;
+            throw err;
         }
 
         console.log(`Upload session finalized successfully for file: ${targetFilePath}`);

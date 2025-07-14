@@ -498,9 +498,11 @@ export class OneDriveStorage implements CloudStorage {
           }
         }
       }
-    } catch (error) {
-      console.error('Failed to create OneDrive folder:', error);
-      throw error;
+    } catch (error: any) {
+      const err = new Error(`Failed to create OneDrive folder: ${error.message || 'Unknown error'}`);
+      (err as any).status = error.statusCode || 500;
+      (err as any).body = error.message || 'Unknown error';
+      throw err;
     }
   }
 
@@ -1421,7 +1423,10 @@ export class OneDriveStorage implements CloudStorage {
           console.log(`Uploaded chunk from ${offset} to ${offset + chunk.length - 1}/${totalSize}`);
           console.log('Response:', response);
           if (!response.ok) {
-            throw new Error(`Failed to upload chunk: ${response.statusText}`);
+            const err = new Error(`Failed to upload chunk: ${response.statusText}`);
+            (err as any).status = response.status;
+            (err as any).body = await response.text();
+            throw err;
           }
         } catch (error) {
           console.error('Error uploading chunk:', error);
