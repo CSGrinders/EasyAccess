@@ -11,7 +11,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport";
 
 import dotenv from "dotenv";
-import { triggerAgentWorkStop, triggerCallingFunctionMessage, triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerRefreshAgentMessage, triggerSendTextDelta } from "../main";
+import { triggerAgentWorkStop, triggerCallingFunctionMessage, triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerGracefulClose, triggerOpenAccountWindow, triggerRefreshAgentMessage, triggerSendTextDelta } from "../main";
 import { CloudType } from "../../types/cloudType";
 import fs from 'fs';
 import { getConnectedCloudAccounts } from "../cloud/cloudManager";
@@ -87,24 +87,49 @@ class MCPClient {
     async processQuery(query: string, access_token: string): Promise<string> {
         console.log("Processing query:", query);
 
-        // // temp: just testing rendering messages in renderer process
-        // const characters = `Hi, my name is Hojin. Hi, my name is Hojin. Hi, my name is Hojin. Hi, my name is Hojin. Hi, my name is Hojin.`;
-        // for (let i = 0; i < Math.floor(characters.length / 3); i++) {
-        //     await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 50)));
-        //     await triggerSendTextDelta(characters.substring(i * 3, i * 3 + 3));
-        //     if (i % 50 == 0) {
-        //         const response = await this.mcp.callTool({
-        //             name: "get_information_from_user",
-        //             arguments: {
-        //                 question: "what the fuck is this?",
-        //             },
-        //         });
-        //         console.log("Response from get_information_from_user:", response);
-        //         await triggerCallingFunctionMessage("get_information_from_user", {});
-        //     }
-        // }
-        // return "s";
+        // temp: just testing rendering messages in renderer process
+        const characters = `"The House on Thornhill Road"
+Chapter 1: The Letter
 
+When Eleanor Grange received the letter, she thought it was a joke.
+
+The envelope was thick, the paper creamy and smooth. Her name, written in an elegant, almost calligraphic hand, danced across the front: Miss Eleanor L. Grange, 52 Roseland Lane, Apt. 3C. No return address. Just a red wax seal stamped with a rose and thorn.
+
+She opened it out of curiosity. Inside, a letter:
+
+Dearest Eleanor,
+
+I trust this reaches you in good health. You are the last surviving heir to the Grange estate in Windmere. The house on Thornhill Road now belongs to you.
+
+Your grandfather, Alaric Grange, left strict instructions in the event of his passing. You must come alone. Do not delay. The house is waiting.
+
+Yours in utmost sincerity,
+Samuel Thorne, Executor
+
+Eleanor blinked. Her grandfather had died twenty-five years ago. She’d been ten years old, and remembered only fragments—his peculiar voice, the scent of pipe smoke, the locked study that no one was ever allowed to enter.
+
+“Windmere,” she whispered. “I haven’t heard that name in years.”
+
+The town had vanished from her memory, like a dream forgotten upon waking. But now, something stirred—an image of a gray house, choked in ivy, windows like dark eyes.
+
+And so, without truly knowing why, she packed a bag and boarded a train.`;
+        for (let i = 0; i < Math.floor(characters.length / 3); i++) {
+            await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 50)));
+            await triggerSendTextDelta(characters.substring(i * 3, i * 3 + 3));
+            // if (i % 50 == 0) {
+            //     const response = await this.mcp.callTool({
+            //         name: "get_information_from_user",
+            //         arguments: {
+            //             question: "what the fuck is this?",
+            //         },
+            //     });
+            //     console.log("Response from get_information_from_user:", response);
+            //     await triggerCallingFunctionMessage("get_information_from_user", {});
+            // }
+        }
+        return "s";
+
+        /*
         const connectedAccountsText = await this.getConnectedAccountsText();
 
         const jwt: string | null = access_token;
@@ -197,6 +222,8 @@ class MCPClient {
         };
         ws.onclose = () => {
             console.log('WebSocket connection closed');
+            triggerGracefulClose(); // Call a function to handle graceful close if needed
+            // Handle WebSocket close if needed
         };
 
 

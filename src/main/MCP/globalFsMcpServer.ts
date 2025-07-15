@@ -186,7 +186,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
 
   const SearchFilesArgsSchema = z.object({
     path: z.string(),
-    pattern: z.string(),
+    patterns: z.array(z.string()).describe("Use wildcards like *.txt or specific names like 'report'"),
     excludePatterns: z.array(z.string()).optional().default([]),
     provider: z.string().optional(), // Optional provider for cloud storage
     accountId: z.string().optional(), // Optional account ID for cloud storage
@@ -993,10 +993,21 @@ export const createFsServer = async (allowedDirs: string[]) => {
     }
     const provider = parsed.data.provider;
     const accountId = parsed.data.accountId;
+    const patterns = parsed.data.patterns || [];
+    const excludePatterns = parsed.data.excludePatterns || [];
+    if (patterns.length === 0) {
+      throw new Error("At least one pattern is required for local file search");
+    }
     if (!provider || !accountId || provider.toLowerCase() === 'local') {
       // local storage
       const validPath = await validatePath(parsed.data.path);
-      const results = await searchFiles(validPath, parsed.data.pattern, parsed.data.excludePatterns);
+      // Exclude patterns are optional
+      const results: string[] = [];
+      for (const pattern of patterns) {
+        const matches = await searchFiles(validPath, pattern, excludePatterns);
+        results.push(...matches);
+      }
+      // const results = await searchFiles(validPath, parsed.data.pattern, parsed.data.excludePatterns);
       return {
         content: [{ type: "text", text: results.length > 0 ? results.join("\n") : "No matches found" }],
       };
@@ -1005,7 +1016,12 @@ export const createFsServer = async (allowedDirs: string[]) => {
     const directoryPath = parsed.data.path;
     const cloudType = await validateProvider(provider);
     // search files in the cloud storage
-    const cloudResults: FileSystemItem[] = await searchFilesFromStorageAccount(cloudType, accountId, directoryPath, parsed.data.pattern, parsed.data.excludePatterns);
+    const cloudResults: FileSystemItem[] = [];
+    for (const pattern of parsed.data.patterns) {
+      const matches = await searchFilesFromStorageAccount(cloudType, accountId, directoryPath, pattern, excludePatterns);
+      cloudResults.push(...matches);
+    }
+    // const cloudResults: FileSystemItem[] = await searchFilesFromStorageAccount(cloudType, accountId, directoryPath, parsed.data.pattern, parsed.data.excludePatterns);
     if (!cloudResults || cloudResults.length === 0) {
       return {
         content: [{ type: "text", text: "No matches found" }],

@@ -3,7 +3,7 @@ import React, { useState, useRef, useCallback, useEffect, memo } from "react";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { RendererIpcCommandDispatcher } from "@/services/AgentControlService";
-import {supabase} from "@/supbaseClient";
+import { supabase } from "@/supbaseClient";
 import { FaGoogle } from "react-icons/fa";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 
@@ -52,7 +52,7 @@ const AgentAction = memo(function AgentAction() {
 
         if (!isCmdOrCtrl) return;
 
-        switch(e.key) {
+        switch (e.key) {
             case 'Shift':
                 setAgentWorkVisibility(!agentWorkVisibilityRef.current);
                 break;
@@ -64,8 +64,8 @@ const AgentAction = memo(function AgentAction() {
         if (!containerRef.current) return;
 
         const MOVE_AMOUNT = 60; // pixels to move per keypress
-        
-        switch(e.key) {
+
+        switch (e.key) {
             case 'ArrowLeft':
                 positionRef.current.x -= MOVE_AMOUNT;
                 break;
@@ -75,8 +75,8 @@ const AgentAction = memo(function AgentAction() {
             default:
                 return;
         }
-        
-        containerRef.current.style.transform = 
+
+        containerRef.current.style.transform =
             `translate(${positionRef.current.x}px, 0px)`;
         e.preventDefault();
 
@@ -102,7 +102,7 @@ const AgentAction = memo(function AgentAction() {
     // Add keyboard event listener
     useEffect(() => {
         window.addEventListener('keydown', handleKeyDown);
-        
+
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
@@ -125,7 +125,7 @@ const AgentAction = memo(function AgentAction() {
         if (isTyping.current) return;
         setAgentWorkVisibility(true);
         isTyping.current = true;
-        
+
         while (queueRef.current.length > 0) {
             const currentDelta = queueRef.current.shift()!;
             await processDelta(currentDelta);
@@ -198,6 +198,16 @@ const AgentAction = memo(function AgentAction() {
         return response;
     }, [waitForResponse]);
 
+    const handleGracefulSessionClose = useCallback(async () => {
+        console.log("Handling graceful session close");
+        // Perform any cleanup or finalization tasks here
+        while (isTyping.current) {
+            await new Promise((res) => setTimeout(res, 2000));
+        }
+
+        setIsLoading(false);
+    }, []);
+
     useEffect(() => {
         // Update container height based on content
         if (messagesRef.current && containerRef.current && headerRef.current) {
@@ -212,12 +222,14 @@ const AgentAction = memo(function AgentAction() {
         dispatcher.register('sendTextDeltaMessage', handleTextDeltaMessage);
         dispatcher.register('agentWorkStop', handleAgentWorkStop);
         dispatcher.register('requestClarification', handleRequestClarification);
+        dispatcher.register('gracefulClose', handleGracefulSessionClose);
 
         return () => {
             dispatcher.unregister('callingFunctionMessage');
             dispatcher.unregister('sendTextDeltaMessage');
             dispatcher.unregister('agentWorkStop');
             dispatcher.unregister('requestClarification');
+            dispatcher.unregister('gracefulClose');
         };
     }, [handleAgentToolCallingMessage, handleTextDeltaMessage]);
 
@@ -239,7 +251,7 @@ const AgentAction = memo(function AgentAction() {
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
         if (!containerRef.current) return;
-        
+
         if (isMoving) {
             const newX = e.clientX - dragStartRef.current.x;
             positionRef.current.x = newX;
@@ -380,18 +392,18 @@ const AgentAction = memo(function AgentAction() {
     async function checkUserLimit(user: any) {
         // Need to make sure that the user email is unique to each user to avoid conflicts
         const { data: userRequestsTrack, error: userRequestsError } = await supabase.from('userRequestTrack').select('*')
-        .eq('user_email', user.email)
-        .limit(1);
+            .eq('user_email', user.email)
+            .limit(1);
 
         if (userRequestsError) {
             console.error("Error fetching user requests:", userRequestsError);
             return false;
         }
-            // last_request_date YYYY-MM-DD format
-            console.log("User request track:", userRequestsTrack);
-            const lastRequestDate = userRequestsTrack.length > 0 ? userRequestsTrack[0].last_request_date : null;
-            const parsedDate: number | null = lastRequestDate ? new Date(lastRequestDate).getTime() : null;
-            if (userRequestsTrack.length === 0 || !parsedDate || parsedDate < Date.now() - 24 * 60 * 60 * 1000 || userRequestsTrack[0].requests < 5) {
+        // last_request_date YYYY-MM-DD format
+        console.log("User request track:", userRequestsTrack);
+        const lastRequestDate = userRequestsTrack.length > 0 ? userRequestsTrack[0].last_request_date : null;
+        const parsedDate: number | null = lastRequestDate ? new Date(lastRequestDate).getTime() : null;
+        if (userRequestsTrack.length === 0 || !parsedDate || parsedDate < Date.now() - 24 * 60 * 60 * 1000 || userRequestsTrack[0].requests < 5) {
             console.log("User request track not found or request limit not reached");
             // Insert or update the user request track
             return true;
@@ -410,14 +422,6 @@ const AgentAction = memo(function AgentAction() {
             <div
                 ref={containerRef}
                 className="agentResponse absolute top-1 z-50 w-full max-w-300 pointer-events-auto transition-all duration-300 ease-in-out"
-                style={{ 
-                    minHeight: '200px',
-                    width: '400px',
-                    willChange: 'left, height',
-                    height: 'fit-content',
-                    maxHeight: '500px',
-                    overflow: 'hidden',
-                }}
             >
                 {/* Move handle */}
                 <div
@@ -431,50 +435,62 @@ const AgentAction = memo(function AgentAction() {
                     <div className="w-8 h-1 bg-white/30 rounded-full" />
                 </div>
 
-                <div className="flex flex-col h-full p-4">
-                    <div  ref={headerRef}>
-                        <div className="flex items-center justify-between mb-2">
-                            <p className="text-md font-normal text-black dark:text-white">
-                                {isLoading ? "Working..." : "Agent Response"}
-                            </p>
+                <div ref={headerRef}>
+                    <div className="flex items-center justify-between mb-2 mt-3 mx-5">
+                        <p className="text-md font-normal text-black dark:text-white">
+                            {isLoading ? "Working..." : "Agent Response"}
+                        </p>
 
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={toggleToolCalls}
-                                    className="flex flex-row gap-1 p-1 hover:bg-white/10 rounded border border-white/20 text-xs text-black dark:text-white transition-colors"
-                                >
-                                    {showToolCalls ? (
-                                        <Eye className="w-4 h-4" />
-                                    ) : (
-                                        <EyeOff className="w-4 h-4" />
-                                    )}
-                                    Agent Actions
-                                </button>
-                                <button
-                                    onClick={handleClose}
-                                    className="p-1 hover:bg-white/10 rounded transition-colors"
-                                >
-                                    <X className="text-black w-4 h-4 dark:text-white hover:text-red-500" />
-                                </button>
-                            </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={toggleToolCalls}
+                                className="flex flex-row gap-1 p-1 hover:bg-white/10 rounded border border-white/20 text-xs text-black dark:text-white transition-colors"
+                            >
+                                {showToolCalls ? (
+                                    <Eye className="w-4 h-4" />
+                                ) : (
+                                    <EyeOff className="w-4 h-4" />
+                                )}
+                                Agent Actions
+                            </button>
+                            <button
+                                onClick={handleClose}
+                                className="p-1 hover:bg-white/10 rounded transition-colors"
+                            >
+                                <X className="text-black w-4 h-4 dark:text-white hover:text-red-500" />
+                            </button>
                         </div>
-                        
-                        <hr className="border-black/10 dark:border-white/10 w-full" />
                     </div>
 
+                    <hr className="border-black/10 dark:border-white/10 w-full" />
+                </div>
+                <div
+                    style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
+                        padding: '12px 16px',
+                        minHeight: '200px',
+                        width: '100%',
+                        willChange: 'left, height',
+                        maxHeight: '500px',
+                        overflow: 'hidden',
+                    }}
+                >
+
+
                     <div className="flex-1 relative transition-all duration-300 ease-in-out"
-                                ref={messagesRef}
-                                style={{
-                                    minHeight: '100px',
-                                    // follow the height of the container
-                                    maxHeight: 'calc(100% - 20px)', // Adjust for header and
-                                    overflowY: 'auto',
-                                }}
+                        ref={messagesRef}
+                        style={{
+                            minHeight: '100px',
+                            width: '100%',
+                            overflowY: 'auto', // Enables scrolling
+                        }}
                     >
                         <div className="flex justify-end pl-5 pr-3 my-2">
                             <p className="userQuery text-sm ">{userQuery}</p>
                         </div>
-                        <div 
+                        <div
                             className="h-full pr-2"
                         >
                             <p className="break-normal whitespace-pre-wrap text-black dark:text-white/90 text-sm leading-relaxed">
@@ -503,17 +519,7 @@ const AgentAction = memo(function AgentAction() {
                         </div>
                     </div>
 
-                    {/* Resize handle */}
-                    <div
-                        onMouseDown={handleMouseDown}
-                        className="absolute bottom-0 w-full h-4 cursor-s-resize bg-transparent hover:bg-blue-500/20 z-10 transition-colors duration-200 flex items-center justify-center rounded-b-[32px]"
-                        style={{
-                            touchAction: 'none',
-                            userSelect: 'none',
-                        }}
-                    >
-                        <div className="w-8 h-1 bg-white/30 rounded-full" />
-                    </div>
+
 
                     {isLoading && (
                         <div className="absolute bottom-2 right-2 p-2">
@@ -521,11 +527,22 @@ const AgentAction = memo(function AgentAction() {
                         </div>
                     )}
                 </div>
+                {/* Resize handle */}
+                <div
+                    onMouseDown={handleMouseDown}
+                    className="absolute bottom-0 w-full h-4 cursor-s-resize bg-transparent hover:bg-blue-500/20 z-10 transition-colors duration-200 flex items-center justify-center rounded-b-[32px]"
+                    style={{
+                        touchAction: 'none',
+                        userSelect: 'none',
+                    }}
+                >
+                    <div className="w-8 h-1 bg-white/30 rounded-full" />
+                </div>
             </div>
             {/* User Input */}
             {/* Enhanced Chat Interface */}
             <div className="absolute pointer-events-auto bottom-8 left-1/2 transform -translate-x-1/2 w-full max-w-4xl">
-                <span ref={questionRef} 
+                <span ref={questionRef}
                     className={`text-center text-xs text-gray-500 mb-4`}
                 >
                     waiting for your response on agent question...
@@ -534,7 +551,7 @@ const AgentAction = memo(function AgentAction() {
                     {/* Chat Form */}
                     <form onSubmit={handleSubmit} className="relative">
                         <div className="flex items-center gap-3 p-2 bg-gray-50/50 dark:bg-gray-800/50 rounded-xl border border-gray-200/50 dark:border-gray-700/50 focus-within:border-blue-500/50 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all duration-200">
-                            
+
                             {/* Input Field */}
                             <div className="flex-1 relative">
                                 <Input
@@ -551,7 +568,7 @@ const AgentAction = memo(function AgentAction() {
                                         }
                                     }}
                                 />
-                                
+
                                 {/* Character count or status indicator */}
                                 {query.length > 0 && (
                                     <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-xs text-gray-400 dark:text-gray-500">
@@ -587,7 +604,7 @@ const AgentAction = memo(function AgentAction() {
                                     <>
                                         <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
                                         <span>Sign in to continue</span>
-                                        <button 
+                                        <button
                                             onClick={signUp}
                                             type="button"
                                             className="group relative ml-1 overflow-hidden bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold px-2 py-1 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg active:scale-95"
@@ -601,7 +618,7 @@ const AgentAction = memo(function AgentAction() {
                                     </>
                                 )}
                             </div>
-                            
+
                             <div className="flex items-center gap-5">
                                 <div className="flex items-center gap-1">
                                     <kbd className="p-1 bg-gray-100 dark:bg-gray-700 rounded text-xs">Enter</kbd>

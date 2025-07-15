@@ -460,6 +460,11 @@ export async function triggerAgentWorkStop(reason: string) {
     return await invokeRendererFunction('agentWorkStop', reason);
 }
 
+// prevent hang on the renderer
+export async function triggerGracefulClose() {
+    return await invokeRendererFunction('gracefulClose');
+}
+
 export async function triggerCallingFunctionMessage(toolName: string, toolArgs: { [x: string]: unknown }, toolId?: string) {
     let message: string;
 
@@ -495,7 +500,7 @@ export async function triggerCallingFunctionMessage(toolName: string, toolArgs: 
         break;
 
     case "search_files":
-        message = `The agent is searching in "${toolArgs.path}" for "${toolArgs.pattern}".`;
+        message = `The agent is searching in "${toolArgs.path}" for "${toolArgs.patterns}".`;
         break;
 
     case "get_file_info":
