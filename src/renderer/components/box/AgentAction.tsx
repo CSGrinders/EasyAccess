@@ -34,7 +34,7 @@ const AgentAction = memo(function AgentAction() {
     const queueRef = useRef<string[]>([]);
     const isTyping = useRef(false);
 
-    const MAX_HEIGHT = 500; // Maximum height of the container
+    const MAX_HEIGHT = 450; // Maximum height of the container
     const MIN_HEIGHT = 200; // Minimum height of the container
 
     const [session, setSession] = useState<any | null>(null);
@@ -422,6 +422,10 @@ const AgentAction = memo(function AgentAction() {
             <div
                 ref={containerRef}
                 className="agentResponse absolute top-1 z-50 w-full max-w-300 pointer-events-auto transition-all duration-300 ease-in-out"
+                style={{
+                    maxHeight: `${MAX_HEIGHT}px`,
+                    minHeight: `${MIN_HEIGHT}px`,
+                }}
             >
                 {/* Move handle */}
                 <div
@@ -434,109 +438,96 @@ const AgentAction = memo(function AgentAction() {
                 >
                     <div className="w-8 h-1 bg-white/30 rounded-full" />
                 </div>
-
-                <div ref={headerRef}>
-                    <div className="flex items-center justify-between mb-2 mt-3 mx-5">
-                        <p className="text-md font-normal text-black dark:text-white">
-                            {isLoading ? "Working..." : "Agent Response"}
-                        </p>
-
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={toggleToolCalls}
-                                className="flex flex-row gap-1 p-1 hover:bg-white/10 rounded border border-white/20 text-xs text-black dark:text-white transition-colors"
-                            >
-                                {showToolCalls ? (
-                                    <Eye className="w-4 h-4" />
-                                ) : (
-                                    <EyeOff className="w-4 h-4" />
-                                )}
-                                Agent Actions
-                            </button>
-                            <button
-                                onClick={handleClose}
-                                className="p-1 hover:bg-white/10 rounded transition-colors"
-                            >
-                                <X className="text-black w-4 h-4 dark:text-white hover:text-red-500" />
-                            </button>
-                        </div>
-                    </div>
-
-                    <hr className="border-black/10 dark:border-white/10 w-full" />
-                </div>
-                <div
-                    style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'flex-start',
-                        padding: '12px 16px',
-                        minHeight: '200px',
-                        width: '100%',
-                        willChange: 'left, height',
-                        maxHeight: '500px',
-                        overflow: 'hidden',
-                    }}
-                >
-
-
-                    <div className="flex-1 relative transition-all duration-300 ease-in-out"
-                        ref={messagesRef}
-                        style={{
-                            minHeight: '100px',
-                            width: '100%',
-                            overflowY: 'auto', // Enables scrolling
-                        }}
-                    >
-                        <div className="flex justify-end pl-5 pr-3 my-2">
-                            <p className="userQuery text-sm ">{userQuery}</p>
-                        </div>
-                        <div
-                            className="h-full pr-2"
-                        >
-                            <p className="break-normal whitespace-pre-wrap text-black dark:text-white/90 text-sm leading-relaxed">
-                                {response}
+                <div className="flex flex-col h-full">
+                    {/* Header - Fixed height */}
+                    <div ref={headerRef} className="flex-shrink-0">
+                        <div className="flex items-center justify-between mb-2 mt-3 mx-5">
+                            <p className="text-md font-normal text-black dark:text-white">
+                                {isLoading ? "Working..." : "Agent Response"}
                             </p>
 
-                            {showToolCalls && (
-                                <div className="mt-4 px-2 py-2 rounded bg-black/10 dark:bg-white/10 text-xs text-black dark:text-white/80 max-w-xl">
-                                    <p className="font-semibold mb-1">Tool Calls</p>
-                                    <ul className="list-disc ml-5 space-y-1">
-                                        {agentWorkingMessages.length > 0 ? (
-                                            agentWorkingMessages.map((msg: string, idx: number) => (
-                                                <li
-                                                    key={idx}
-                                                    className="whitespace-pre-wrap break-normal"
-                                                >
-                                                    {msg}
-                                                </li>
-                                            ))
-                                        ) : (
-                                            <li>No tool calls yet.</li>
-                                        )}
-                                    </ul>
-                                </div>
-                            )}
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={toggleToolCalls}
+                                    className="flex flex-row gap-1 p-1 hover:bg-white/10 rounded border border-white/20 text-xs text-black dark:text-white transition-colors"
+                                >
+                                    {showToolCalls ? (
+                                        <Eye className="w-4 h-4" />
+                                    ) : (
+                                        <EyeOff className="w-4 h-4" />
+                                    )}
+                                    Agent Actions
+                                </button>
+                                <button
+                                    onClick={handleClose}
+                                    className="p-1 hover:bg-white/10 rounded transition-colors"
+                                >
+                                    <X className="text-black w-4 h-4 dark:text-white hover:text-red-500" />
+                                </button>
+                            </div>
                         </div>
+                        <hr className="border-black/10 dark:border-white/10 w-full" />
                     </div>
+                    
+                    {/* Content - Flexible height with scrolling */}
+                    <div className="flex-1 flex flex-col min-h-0 relative px-4 py-3">
+                        <div 
+                            className="flex-1 overflow-y-auto pr-2"
+                            ref={messagesRef}
+                            style={{
+                                minHeight: `${MIN_HEIGHT - 100}px`,
+                                maxHeight: `${MAX_HEIGHT - 100}px`,
+                            }}
+                        >
+                            <div className="flex justify-end pl-1 pr-3 my-2">
+                                <p className="userQuery text-sm">{userQuery}</p>
+                            </div>
+                            
+                            <div className="pb-2">
+                                <p className="break-normal whitespace-pre-wrap text-black dark:text-white/90 text-sm leading-relaxed">
+                                    {response}
+                                </p>
 
-
-
-                    {isLoading && (
-                        <div className="absolute bottom-2 right-2 p-2">
-                            <Loader2 className="animate-spin w-4 h-4 text-black dark:text-white" />
+                                {showToolCalls && (
+                                    <div className="mt-4 px-2 py-2 rounded bg-black/10 dark:bg-white/10 text-xs text-black dark:text-white/80 max-w-xl">
+                                        <p className="font-semibold mb-1">Tool Calls</p>
+                                        <ul className="list-disc ml-5 space-y-1">
+                                            {agentWorkingMessages.length > 0 ? (
+                                                agentWorkingMessages.map((msg: string, idx: number) => (
+                                                    <li
+                                                        key={idx}
+                                                        className="whitespace-pre-wrap break-normal"
+                                                    >
+                                                        {msg}
+                                                    </li>
+                                                ))
+                                            ) : (
+                                                <li>No tool calls yet.</li>
+                                            )}
+                                        </ul>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    )}
-                </div>
-                {/* Resize handle */}
-                <div
-                    onMouseDown={handleMouseDown}
-                    className="absolute bottom-0 w-full h-4 cursor-s-resize bg-transparent hover:bg-blue-500/20 z-10 transition-colors duration-200 flex items-center justify-center rounded-b-[32px]"
-                    style={{
-                        touchAction: 'none',
-                        userSelect: 'none',
-                    }}
-                >
-                    <div className="w-8 h-1 bg-white/30 rounded-full" />
+
+                        {isLoading && (
+                            <div className="absolute bottom-2 right-2 p-2">
+                                <Loader2 className="animate-spin w-4 h-4 text-black dark:text-white" />
+                            </div>
+                        )}
+                    </div>
+                    
+                    {/* Resize handle */}
+                    <div
+                        onMouseDown={handleMouseDown}
+                        className="absolute bottom-0 w-full h-4 cursor-s-resize bg-transparent hover:bg-blue-500/20 z-10 transition-colors duration-200 flex items-center justify-center rounded-b-[32px] flex-shrink-0"
+                        style={{
+                            touchAction: 'none',
+                            userSelect: 'none',
+                        }}
+                    >
+                        <div className="w-8 h-1 bg-white/30 rounded-full" />
+                    </div>
                 </div>
             </div>
             {/* User Input */}
