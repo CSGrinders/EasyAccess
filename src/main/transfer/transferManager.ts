@@ -213,6 +213,7 @@ async function downloadItem(
 
                 return { success: true, itemName: item.name };
             } catch (error) {
+                processed_items++;
                 if (progressCallback) {
                     progressCallback({
                         transferId,
@@ -494,7 +495,7 @@ async function transferItemCloudToCloud(
     
     // TODO: maybe there is way to check if directory or file without making a request to the cloud storage?
     
-    const RETRY_LIMIT = 4;
+    const RETRY_LIMIT = 5;
     if (isDirectory) {
         // If it's a directory, create a directory in the target cloud storage
         const newTargetFolderPath = path.join(targetPath, itemName);
@@ -520,13 +521,13 @@ async function transferItemCloudToCloud(
                 if (shouldRetry) {
                     console.warn(`Retrying to create directory ${newTargetFolderPath} due to error: ${status}`);
                     // Wait exponentially before retrying
-                    await new Promise(resolve => setTimeout(resolve, 3500 * Math.pow(2, createDirectoryTryCount)));
+                    await new Promise(resolve => setTimeout(resolve, 4000 * Math.pow(2, createDirectoryTryCount)));
                     createDirectoryTryCount++;
                     if (createDirectoryTryCount >= RETRY_LIMIT) {
+                        console.log(`Retry limit reached for creating directory ${newTargetFolderPath}: ${message}`);
                         throw new Error(`Failed to create directory ${newTargetFolderPath} after ${RETRY_LIMIT} attempts`);
                     }
                 } else {
-                    console.log(`Retry limit reached for creating directory ${newTargetFolderPath}: ${message}`);
                     throw new Error(`Failed to create directory ${newTargetFolderPath}: ${error.message || 'Unknown error'}`);
                 }
             }
@@ -565,7 +566,6 @@ async function transferItemCloudToCloud(
             }
             const sourceItemPath = path.join(sourcePath, item.name);
             
-            processed_items++;
             try {
                 // Recursively transfer each item
                 // when transferring each item, we will call the transferItemCloudToCloud function again 
@@ -579,8 +579,10 @@ async function transferItemCloudToCloud(
                     newTargetFolderPath,
                     abortSignal
                 );
+                processed_items++;
                 // Call the progress callback if provided
                 if (progressCallback) {
+                    console.log(`YEYEYEYEYEYEYEYYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEY ${processed_items}`)
                     progressCallback({
                         transferId,
                         fileName: itemName,
@@ -593,6 +595,7 @@ async function transferItemCloudToCloud(
 
                 return { success: true, itemName: item.name };
             } catch (error) {
+                processed_items++;
                 // if the current folder is the one transferrred, and this item is under that folder
                 if (progressCallback) {
                     progressCallback({
@@ -653,22 +656,6 @@ async function transferItemCloudToCloud(
             }
         }
         
-        // // Final progress callback - directory transfer complete
-        // if (progressCallback) {
-        //     const successCount = result.filter(r => r.success).length;
-        //     const failCount = result.filter(r => !r.success).length;
-
-        //     progressCallback({
-        //         transferId,
-        //         fileName: itemName,
-        //         transfered: total_items,
-        //         total: total_items,
-        //         isDirectory: true,
-        //         isFetching: false,
-        //     });
-        //     console.log(`Directory transfer complete: ${itemName}`);
-        //     console.log(`Successfully transferred ${successCount} items, failed to transfer ${failCount} items.`);
-        // }
         console.log(`Directory ${itemName} transferred successfully to ${newTargetFolderPath}`);
     } else {
         // if it's a file
@@ -756,7 +743,7 @@ async function transferItemCloudToCloud(
                             if (uploadTryCount >= RETRY_LIMIT) {
                                 throw new Error(`Failed to upload chunk for file ${itemName} after ${RETRY_LIMIT} attempts`);
                             }
-                            await new Promise(resolve => setTimeout(resolve, 3500 * Math.pow(2, uploadTryCount)));
+                            await new Promise(resolve => setTimeout(resolve, 4000 * Math.pow(2, uploadTryCount)));
                         } else {
                             throw new Error(`Failed to upload chunk for file ${itemName}: ${error.message || 'Unknown error'}`);
                         }
@@ -803,7 +790,7 @@ async function transferItemCloudToCloud(
                                 if (uploadTryCount >= RETRY_LIMIT) {
                                     throw new Error(`Failed to finalize upload for file ${itemName} after ${RETRY_LIMIT} attempts`);
                                 }
-                                await new Promise(resolve => setTimeout(resolve, 3500 * Math.pow(2, uploadTryCount)));
+                                await new Promise(resolve => setTimeout(resolve, 4000 * Math.pow(2, uploadTryCount)));
                             } else {
                                 throw new Error(`Failed to finalize upload for file ${itemName}: ${error.message || 'Unknown error'}`);
                             }

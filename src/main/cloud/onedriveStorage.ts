@@ -1416,6 +1416,7 @@ export class OneDriveStorage implements CloudStorage {
         }
 
         try {
+          console.log(`start the one drive api for uploading chunk from ${offset} to ${offset + chunk.length - 1}/${totalSize}`);
           const response = await fetch(uploadUrl, {
             method: 'PUT',
             headers: {
@@ -1427,10 +1428,13 @@ export class OneDriveStorage implements CloudStorage {
           console.log(`Uploaded chunk from ${offset} to ${offset + chunk.length - 1}/${totalSize}`);
           console.log('Response:', response);
           if (!response.ok) {
-            const err = new Error(`Failed to upload chunk: ${response.statusText}`);
-            (err as any).status = response.status;
-            (err as any).body = await response.text();
-            throw err;
+            const err: StorageError = {
+              status: response.status,
+              message: `Failed to upload chunk: ${response.statusText}`,
+              body: await response.text()
+            };
+            console.error('Error uploading chunk:', err);
+            return Promise.reject(err);
           }
         } catch (error: any) {
           const err: StorageError = {
