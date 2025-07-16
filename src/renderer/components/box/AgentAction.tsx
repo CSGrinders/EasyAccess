@@ -479,7 +479,7 @@ const AgentAction = memo(function AgentAction() {
                 {/* Move handle */}
                 <div
                     onMouseDown={handleMouseDownMoveBox}
-                    className="absolute top-0 w-full h-6 bg-transparent hover:bg-blue-500/20 z-10 cursor-move transition-colors duration-200 flex items-center justify-center rounded-t-[32px]"
+                    className="absolute top-0 w-full h-6 bg-transparent z-10 cursor-move transition-colors duration-200 flex items-center justify-center rounded-t-[32px]"
                     style={{
                         touchAction: 'none',
                         userSelect: 'none',
@@ -562,7 +562,7 @@ const AgentAction = memo(function AgentAction() {
                     {/* Resize handle */}
                     <div
                         onMouseDown={handleMouseDown}
-                        className="absolute bottom-0 w-full h-4 cursor-s-resize bg-transparent hover:bg-blue-500/20 z-10 transition-colors duration-200 flex items-center justify-center rounded-b-[32px] flex-shrink-0"
+                        className="absolute bottom-0 w-full h-4 cursor-s-resize bg-transparent z-10 transition-colors duration-200 flex items-center justify-center rounded-b-[32px] flex-shrink-0"
                         style={{
                             touchAction: 'none',
                             userSelect: 'none',
@@ -629,7 +629,7 @@ const AgentAction = memo(function AgentAction() {
                         {/* Status indicators */}
                         <div className="flex items-center justify-between mt-3 text-xs text-gray-500 dark:text-white">
                             <div className="flex items-center gap-2">
-                                {!session ? (
+                                {session ? (
                                     <>
                                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                                         <span>Connected</span>

@@ -124,7 +124,7 @@ class MCPClient {
 //                     },
 //                 });
 //                 console.log("Response from get_information_from_user:", response);
-//                 await triggerToolResultMessage("get_information_from_user", { question: "Testing user input" }, [{ text: response }]);
+//                 await triggerToolResultMessage("get_information_from_user", { question: "Testing user input" }, response.content, response.error);
 //             }
 //         }
 //         return "s";
