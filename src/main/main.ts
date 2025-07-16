@@ -465,69 +465,74 @@ export async function triggerGracefulClose() {
     return await invokeRendererFunction('gracefulClose');
 }
 
-export async function triggerCallingFunctionMessage(toolName: string, toolArgs: { [x: string]: unknown }, toolId?: string) {
-    let message: string;
-
-    switch (toolName) {
-    case "read_file":
-        message = `The agent is reading the file at "${toolArgs.path}".`;
-        break;
-
-    case "read_multiple_files":
-        message = `The agent is accessing multiple files: ${
-            Array.isArray(toolArgs.paths) ? toolArgs.paths.join(", ") : ""
-        }.`;
-        break;
-
-    case "write_file":
-        message = `The agent is writing content to "${toolArgs.path}".`;
-        break;
-
-    case "create_directory":
-        message = `The agent is creating a directory at "${toolArgs.path}".`;
-        break;
-
-    case "list_directory":
-        message = `The agent is listing the contents of "${toolArgs.path}".`;
-        break;
-
-    case "directory_tree":
-        message = `The agent is generating a directory tree for "${toolArgs.path}".`;
-        break;
-
-    case "move_file":
-        message = `The agent is moving a file from "${toolArgs.source}" to "${toolArgs.destination}".`;
-        break;
-
-    case "search_files":
-        message = `The agent is searching in "${toolArgs.path}" for "${toolArgs.patterns}".`;
-        break;
-
-    case "get_file_info":
-        message = `The agent is retrieving information for the file at "${toolArgs.path}".`;
-        break;
-
-    case "get_folder_info":
-        message = `The agent is retrieving details for the folder at "${toolArgs.path}".`;
-        break;
-
-    case "list_allowed_directories":
-        message = `The agent is listing all allowed directories.`;
-        break;
-
-    case "list_connected_cloud_accounts":
-        message = `The agent is checking connected cloud accounts for "${toolArgs.provider}".`;
-        break;
-
-    case "get_information_from_user":
-        message = `The agent is asking the user: "${toolArgs.question}".`;
-        break;
-
-    default:
-        message = `The agent is attempting to handle an unknown tool: "${toolName}".`;
-        break;
+export async function triggerToolResultMessage(toolName: string, toolArgs: any, resultContent: any, error?: any) {
+    // implement rendering the tool result in readable format
+    console.log("Triggering tool result message:", toolName, toolArgs, resultContent, error);
+    if (error) {
+        return await invokeRendererFunction('toolResultMessage', "Something went wrong while processing the tool...");
     }
-    return await invokeRendererFunction('callingFunctionMessage', message);
+    let message: string;
+    switch (toolName) {
+        case "read_file":
+            message = `I read a file at "${toolArgs.path}".`;
+            break;
+
+        case "read_multiple_files":
+            message = `I read files: ${
+                Array.isArray(toolArgs.paths) ? toolArgs.paths.join(", ") : ""
+            }.`;
+            break;
+
+        case "write_file":
+            message = `I wrote content to "${toolArgs.path}".`;
+            break;
+
+        case "create_directory":
+            message = `I created a directory at "${toolArgs.path}".`;
+            break;
+
+        case "list_directory":
+            message = `Contents under "${toolArgs.path}":\n${resultContent.map((item: any) => item.text).join("\n")}.`;
+            break;
+
+        case "directory_tree":
+            message = `Directory tree for "${toolArgs.path}":\n${resultContent.map((item: any) => item.text).join("\n")}.`;
+            break;
+
+        case "move_file":
+            message = `I started moving a file from "${toolArgs.source}" to "${toolArgs.destination}".`;
+            break;
+
+        case "search_files":
+            message = `Search "${toolArgs.path}" for "${toolArgs.patterns}":\n${resultContent.map((item: any) => item.text).join("\n")}.`;
+            break;
+
+        case "get_file_info":
+            message = `Get file info for "${toolArgs.path}".\nDetails:\n${resultContent.map((item: any) => item.text).join("\n")}`;
+            break;
+
+        case "get_folder_info":
+            message = `Get folder info for "${toolArgs.path}".\nDetails:\n${resultContent.map((item: any) => item.text).join("\n")}`;
+            break;
+
+        case "list_allowed_directories":
+            message = `Allowed directories:\n${resultContent.map((item: any) => item.text).join("\n")}`;
+            break;
+
+        case "list_connected_cloud_accounts":
+            message = `Connected cloud accounts for "${toolArgs.provider}":\n${resultContent.map((item: any) => item.text).join("\n")}`;
+            break;
+
+        case "get_information_from_user":
+            message = `${toolArgs.question}\n • ${resultContent.map((item: any) => item.text).join("\n")}`;
+            break;
+
+        default:
+            message = `I attempted to handle an unknown tool: "${toolName}".`;
+            break;
+    }
+
+    return await invokeRendererFunction('toolResultMessage', message);
 }
 
 // Handler for creating new directories in local file system

@@ -1,4 +1,4 @@
-import { ArrowUp, Loader2, X, Eye, EyeOff } from "lucide-react";
+import { ArrowUp, Loader2, X, Eye, EyeOff, Command, CornerDownLeft } from "lucide-react";
 import React, { useState, useRef, useCallback, useEffect, memo } from "react";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
@@ -53,9 +53,6 @@ const AgentAction = memo(function AgentAction() {
         if (!isCmdOrCtrl) return;
 
         switch (e.key) {
-            case 'Shift':
-                setAgentWorkVisibility(!agentWorkVisibilityRef.current);
-                break;
             case 'Enter':
                 toggleVisibility();
                 break;
@@ -128,6 +125,12 @@ const AgentAction = memo(function AgentAction() {
 
         while (queueRef.current.length > 0) {
             const currentDelta = queueRef.current.shift()!;
+            if (currentDelta.startsWith("\n<tool_result>")) {
+                // Handle tool result messages
+                const toolResult = currentDelta;
+                setResponse((prev) => prev + toolResult);
+                continue;
+            }
             await processDelta(currentDelta);
         }
 
@@ -139,7 +142,7 @@ const AgentAction = memo(function AgentAction() {
 
         // Type out the delta character by character
         for (let i = 0; i < delta.length; i++) {
-            await new Promise((resolve) => setTimeout(resolve, 5));
+            await new Promise((resolve) => setTimeout(resolve, 1));
             setResponse((prev) => prev + delta[i]);
         }
     }, []);
@@ -208,6 +211,52 @@ const AgentAction = memo(function AgentAction() {
         setIsLoading(false);
     }, []);
 
+    const handleToolResultMessage = useCallback(async (message: string) => {
+        console.log("Handling tool result message:", message);
+        queueRef.current.push("\n<tool_result>" + message + "</tool_result>\n");
+        processQueue();
+    }, []);
+
+    function parseMixedResponse(response: string) {
+        const regex = /<tool_result>([\s\S]*?)<\/tool_result>/g;
+        const result: { type: "agent" | "tool"; content: string }[] = [];
+
+        let lastIndex = 0;
+        let match;
+
+        while ((match = regex.exec(response)) !== null) {
+            const start = match.index;
+            const end = regex.lastIndex;
+
+            // Agent part before this tool result
+            if (start > lastIndex) {
+            result.push({
+                type: "agent",
+                content: response.slice(lastIndex, start).trim()
+            });
+            }
+
+            // Tool result
+            result.push({
+            type: "tool",
+            content: match[1].trim()
+            });
+
+            lastIndex = end;
+        }
+
+        // Final agent message after last tool result
+        if (lastIndex < response.length) {
+            result.push({
+            type: "agent",
+            content: response.slice(lastIndex).trim()
+            });
+        }
+
+        return result;
+    }
+    const parsed = parseMixedResponse(response);
+
     useEffect(() => {
         // Update container height based on content
         if (messagesRef.current && containerRef.current && headerRef.current) {
@@ -218,18 +267,18 @@ const AgentAction = memo(function AgentAction() {
     useEffect(() => {
         const dispatcher = RendererIpcCommandDispatcher.getInstance();
 
-        dispatcher.register('callingFunctionMessage', handleAgentToolCallingMessage);
         dispatcher.register('sendTextDeltaMessage', handleTextDeltaMessage);
         dispatcher.register('agentWorkStop', handleAgentWorkStop);
         dispatcher.register('requestClarification', handleRequestClarification);
         dispatcher.register('gracefulClose', handleGracefulSessionClose);
+        dispatcher.register('toolResultMessage', handleToolResultMessage);
 
         return () => {
-            dispatcher.unregister('callingFunctionMessage');
             dispatcher.unregister('sendTextDeltaMessage');
             dispatcher.unregister('agentWorkStop');
             dispatcher.unregister('requestClarification');
             dispatcher.unregister('gracefulClose');
+            dispatcher.unregister('toolResultMessage');
         };
     }, [handleAgentToolCallingMessage, handleTextDeltaMessage]);
 
@@ -484,29 +533,23 @@ const AgentAction = memo(function AgentAction() {
                             </div>
                             
                             <div className="pb-2">
-                                <p className="break-normal whitespace-pre-wrap text-black dark:text-white/90 text-sm leading-relaxed">
+                                {/* <p className="break-normal whitespace-pre-wrap text-black dark:text-white/90 text-sm leading-relaxed">
                                     {response}
-                                </p>
+                                </p> */}
+                                <div className="space-y-3">
+                                    {parsed.map((part, index) =>
+                                    part.type === "tool" ? (
+                                        <div key={index} className="tool-part p-2 text-sm">
+                                            <pre className="whitespace-pre-wrap">{part.content}</pre>
+                                        </div>
+                                    ) : (
+                                        <p key={index} className="text-sm leading-relaxed whitespace-pre-wrap text-black dark:text-white/90">
+                                        {part.content}
+                                        </p>
+                                    )
+                                    )}
+                                </div>
 
-                                {showToolCalls && (
-                                    <div className="mt-4 px-2 py-2 rounded bg-black/10 dark:bg-white/10 text-xs text-black dark:text-white/80 max-w-xl">
-                                        <p className="font-semibold mb-1">Tool Calls</p>
-                                        <ul className="list-disc ml-5 space-y-1">
-                                            {agentWorkingMessages.length > 0 ? (
-                                                agentWorkingMessages.map((msg: string, idx: number) => (
-                                                    <li
-                                                        key={idx}
-                                                        className="whitespace-pre-wrap break-normal"
-                                                    >
-                                                        {msg}
-                                                    </li>
-                                                ))
-                                            ) : (
-                                                <li>No tool calls yet.</li>
-                                            )}
-                                        </ul>
-                                    </div>
-                                )}
                             </div>
                         </div>
 
@@ -516,7 +559,6 @@ const AgentAction = memo(function AgentAction() {
                             </div>
                         )}
                     </div>
-                    
                     {/* Resize handle */}
                     <div
                         onMouseDown={handleMouseDown}
@@ -532,24 +574,24 @@ const AgentAction = memo(function AgentAction() {
             </div>
             {/* User Input */}
             {/* Enhanced Chat Interface */}
-            <div className="absolute pointer-events-auto bottom-8 left-1/2 transform -translate-x-1/2 w-full max-w-4xl">
+            <div className="absolute pointer-events-auto bottom-8 left-1/2 transform -translate-x-1/2 w-[75%]">
                 <span ref={questionRef}
                     className={`text-center text-xs text-gray-500 mb-4`}
                 >
                     waiting for your response on agent question...
                 </span>
-                <div className="bg-white/80 dark:bg-gray-900/80 rounded-2xl border border-gray-200/50 dark:border-gray-700/50 backdrop-blur-xl shadow-lg p-2 transition-all duration-300 hover:shadow-3xl">
+                <div className="bg-white/80 dark:bg-stone-950/30 rounded-xl border border-gray-200/50 dark:border-gray-700/50 backdrop-blur-xl shadow-lg p-2 transition-all duration-300 hover:shadow-3xl">
                     {/* Chat Form */}
                     <form onSubmit={handleSubmit} className="relative">
-                        <div className="flex items-center gap-3 p-2 bg-gray-50/50 dark:bg-gray-800/50 rounded-xl border border-gray-200/50 dark:border-gray-700/50 focus-within:border-blue-500/50 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all duration-200">
+                        <div className="flex items-center gap-3 p-1 bg-gray-50/50 dark:bg-gray-800/50 rounded-xl border border-gray-200/50 dark:border-gray-700/50 focus-within:border-blue-500/50 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all duration-200">
 
                             {/* Input Field */}
                             <div className="flex-1 relative">
-                                <Input
+                                <input
                                     value={query}
                                     onChange={(e) => setQuery(e.target.value)}
                                     placeholder="Talk to your helpful agent!"
-                                    className="w-full bg-transparent border-0 placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-gray-100 px-4 py-3 text-base focus:outline-none focus:ring-0 focus:ring-transparent focus:border-transparent"
+                                    className="h-1 text-sm w-full bg-transparent border-0 placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-gray-100 px-4 py-3 text-base focus:outline-none focus:ring-0 focus:ring-transparent focus:border-transparent"
                                     disabled={isLoading || !session}
                                     autoComplete="off"
                                     onKeyDown={(e) => {
@@ -572,7 +614,8 @@ const AgentAction = memo(function AgentAction() {
                             <Button
                                 type="submit"
                                 disabled={isLoading || !query.trim()}
-                                className="relative overflow-hidden bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-500 text-white font-medium p-3 rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95 disabled:scale-100 disabled:opacity-50 group"
+                                size="sm"
+                                className="relative overflow-hidden bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-500 text-white font-medium p-3 rounded-lg transition-all duration-200 transform active:scale-95 disabled:scale-100 disabled:opacity-50 group"
                             >
                                 {isLoading ? (
                                     <Loader2 className="animate-spin w-5 h-5" />
@@ -584,9 +627,9 @@ const AgentAction = memo(function AgentAction() {
                         </div>
 
                         {/* Status indicators */}
-                        <div className="flex items-center justify-between mt-3 text-xs text-gray-500 dark:text-gray-400">
+                        <div className="flex items-center justify-between mt-3 text-xs text-gray-500 dark:text-white">
                             <div className="flex items-center gap-2">
-                                {session ? (
+                                {!session ? (
                                     <>
                                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                                         <span>Connected</span>
@@ -598,9 +641,9 @@ const AgentAction = memo(function AgentAction() {
                                         <button
                                             onClick={signUp}
                                             type="button"
-                                            className="group relative ml-1 overflow-hidden bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold px-2 py-1 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg active:scale-95"
+                                            className="group relative ml-1 overflow-hidden bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold px-2 py-[1px] rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg active:scale-95"
                                         >
-                                            <span className="relative z-10 flex items-center gap-2 text-xs">
+                                            <span className="relative z-10 flex items-center gap-2 text-xs transform group-hover:translate-y-[-2px] transition-transform duration-200">
                                                 <FaGoogle />
                                                 Sign Up with Google to use Agent
                                             </span>
@@ -612,16 +655,19 @@ const AgentAction = memo(function AgentAction() {
 
                             <div className="flex items-center gap-5">
                                 <div className="flex items-center gap-1">
-                                    <kbd className="p-1 bg-gray-100 dark:bg-gray-700 rounded text-xs">Enter</kbd>
-                                    <span>to send</span>
+                                    <span>Send</span>
+                                    <div className="flex items-center p-1 bg-gray-100 dark:bg-gray-600 rounded">
+                                        <CornerDownLeft className="w-3 h-3"/>
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-1">
-                                    <kbd className="p-1 bg-gray-100 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd + Enter</kbd>
-                                    <span>to show/hide</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    <kbd className="p-1 bg-gray-100 dark:bg-gray-700 rounded text-xs">Shift + Enter</kbd>
-                                    <span>to show/hide agent work</span>
+                                    <span>Show/Hide</span>
+                                    <div className="flex items-center p-1 bg-gray-100 dark:bg-gray-600 rounded">
+                                        <Command className="w-3 h-3"/>
+                                    </div>
+                                    <div className="flex items-center p-1 bg-gray-100 dark:bg-gray-600 rounded">
+                                        <CornerDownLeft className="w-3 h-3"/>
+                                    </div>
                                 </div>
                             </div>
                         </div>
