@@ -372,56 +372,50 @@ export class DropboxStorage implements CloudStorage {
 
         const result: FileSystemItem[] = [];
 
-        try {
-            if (rootPath === '/') {
-                rootPath = '';
-            } // DROPBOX API HOME
-            const response = await this.client.filesListFolder({ path: rootPath, recursive: true, include_media_info: false, include_deleted: false }); 
-            const entries = response.result.entries;
-
-            console.log('Dropbox search response:', response);
-            console.log('Dropbox search entries:', entries);
-
-            for (const entry of entries) {
-                try {
-                    if (entry['.tag'] === 'file') {
-                        const fileName = entry.name;
-                        const filePath = entry.path_lower || '';
-                        const fileNameCheck = fileName.toLowerCase();
-                        const folderNameCheck = filePath.toLowerCase();
-                        // Check if the file matches the pattern and does not match any exclude patterns
-                        if ((fileNameCheck.includes(pattern.toLowerCase()) || 
-                            (pattern.includes("*") && minimatch(fileNameCheck, pattern.toLowerCase(), { dot: true })))
-                            && !excludePatterns.some(exclude => fileNameCheck.includes(exclude.toLowerCase()))) {
-                            result.push({
-                                id: entry.id,
-                                name: fileName,
-                                isDirectory: false,
-                                path: filePath,
-                            });
-                        }
-                    } else if (entry['.tag'] === 'folder') {
-                        const folderPath = entry.path_lower || '';
-                        const folderNameCheck = folderPath.toLowerCase();
-                        // Check if the folder matches the pattern and does not match any exclude patterns
-                        if ((folderNameCheck.includes(pattern.toLowerCase()) || pattern.includes("*") && minimatch(folderNameCheck, pattern.toLowerCase(), { dot: true }))
-                            && !excludePatterns.some(exclude => folderNameCheck.includes(exclude.toLowerCase()))) {
-                            result.push({
-                                id: entry.id,
-                                name: entry.name,
-                                isDirectory: true,
-                                path: folderPath,
-                            });
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error processing entry:', entry, error);
-                    console.log('Skipping entry due to error');
-                }
+        let baseQueries = pattern.replace(/\*/g, '').split(/[^a-zA-Z0-9]/);
+        baseQueries = baseQueries.filter(query => query.length >= 2); // Filter out empty queries
+        const matchesList = await Promise.all(baseQueries.map(async (baseQuery) => {
+            if (!this.client) {
+                console.error('Dropbox client is not initialized');
+                return [];
             }
-        } catch (error) {
-            console.error('Error searching Dropbox folder:', error);
-        }
+            const response = await this.client.filesSearchV2({
+                query: baseQuery,
+                options: {
+                    filename_only: true,
+                    path: rootPath,
+                }
+            });
+            return response.result.matches;
+        }));
+        const matches = matchesList.flat(); // Flatten the array of matches
+
+        matches.map((match: any) => {
+            const metadata = match.metadata.metadata;
+            if (metadata['.tag'] === 'deleted') {
+                console.warn(`Skipping deleted file: ${metadata.name}`);
+                return;
+            }
+
+            // Check if the file matches any exclude patterns
+            const filePath = metadata.path_display || '';
+            if (excludePatterns.some(excludePattern => minimatch(filePath, excludePattern))) {
+                console.log(`Excluding file: ${filePath} due to exclude pattern`);
+                return;
+            }
+
+            // Create FileSystemItem for the matched file
+            const fileSystemItem: FileSystemItem = {
+                id: metadata.id || uuidv4(),
+                name: metadata.name,
+                isDirectory: metadata['.tag'] === 'folder',
+                path: filePath,
+                size: metadata.size || 0,
+                modifiedTime: metadata.server_modified ? new Date(metadata.server_modified).getTime() : undefined,
+            };
+            result.push(fileSystemItem);
+        });
+
         return result;
     }
 

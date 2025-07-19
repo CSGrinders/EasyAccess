@@ -509,14 +509,15 @@ export const createFsServer = async (allowedDirs: string[]) => {
             required: [],
           },
         },
-        {
-          name: "list_connected_cloud_accounts",
-          description:
-            "Retrieve all connected cloud accounts (Google Drive, OneDrive, Dropbox) for the current user. " +
-            "Use this tool when you need to identify which accounts are available before performing any cloud file operations. " +
-            "This should be called proactively if a user requests an action involving cloud storage but has not specified an account.",
-          inputSchema: zodToJsonSchema(GetConnectedAccountArgsSchema) as ToolInput,
-        },    
+        // Injected in system prompt so no need to define here
+        // {
+        //   name: "list_connected_cloud_accounts",
+        //   description:
+        //     "Retrieve all connected cloud accounts (Google Drive, OneDrive, Dropbox) for the current user. " +
+        //     "Use this tool when you need to identify which accounts are available before performing any cloud file operations. " +
+        //     "This should be called proactively if a user requests an action involving cloud storage but has not specified an account.",
+        //   inputSchema: zodToJsonSchema(GetConnectedAccountArgsSchema) as ToolInput,
+        // },    
         {
           name: "get_information_from_user",
           description:

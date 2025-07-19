@@ -132,7 +132,7 @@ body {
         --star-color: black;
         --BreadcrumbItem-text: var(--foreground);
 
-        --font-helvetica: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        --font-helvetica: '', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
 
     .dark {

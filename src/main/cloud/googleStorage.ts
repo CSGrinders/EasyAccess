@@ -11,7 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 const { Readable } = require('stream');
 import * as http from 'http';
 import { URL } from 'url';
-import { normalize } from 'path';
+import path, { normalize } from 'path';
 import { minimatch } from 'minimatch';
 
 dotenv.config();
@@ -619,67 +619,78 @@ export class GoogleDriveStorage implements CloudStorage {
   }
     // Implement missing methods from CloudStorage interface
 
+    /*
+    Search for files in a specific folder matching a pattern.
+    This method searches recursively through subfolders.
+    */
+    async searchFilesRecursive(folderId: string, folderPath: string, pattern: string): Promise<FileSystemItem[]> {
+        await this.refreshOAuthClientIfNeeded();
+        if (!this.oauth2Client) {
+            throw new Error('OAuth2 client is not initialized');
+        }
+        const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+        const result: FileSystemItem[] = [];
+        
+        try {
+          // include modifiedTime in the fields
+            const res = await drive.files.list({
+                q: `'${folderId}' in parents and name contains '${pattern}' and trashed = false`,
+                fields: 'nextPageToken, files(id, name, mimeType, modifiedTime) ',
+            });
+            const files = res.data.files || [];
+            for (const file of files) {
+                if (!file.name) continue; // Skip files without a name
+                result.push({
+                    id: file.id || '',
+                    name: file.name || '',
+                    isDirectory: file.mimeType === 'application/vnd.google-apps.folder',
+                    path: folderPath ? `${path.join(folderPath, file.name)}` : file.name,
+                    modifiedTime: file.modifiedTime ? new Date(file.modifiedTime).getTime() : undefined,
+                });
+            }
+            const subFolderRes = await drive.files.list({
+                q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+                fields: 'files(id, name)',
+            });
+            const filesInSubfolders = subFolderRes.data.files || [];
+            const matchInSubfolders = await Promise.all(
+                filesInSubfolders.map((folder) => {
+                    if (folder.id && folder.name) {
+                        const subfolderResults = this.searchFilesRecursive(folder.id, path.join(folderPath, folder.name), pattern);
+                        return subfolderResults;
+                    }
+                    return [];
+                })
+            );
+            result.push(...matchInSubfolders.flat());
+        } catch (error) {
+            console.error('Error searching files:', error);
+            throw error;
+        }
+        return result;
+    }
+
     async searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]> {
-        // Not implemented for Google Drive yet
       await this.refreshOAuthClientIfNeeded();
       if (!this.oauth2Client) {
         throw new Error('OAuth2 client is not initialized');
       }
       const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
       const result: FileSystemItem[] = [];
-
-      const search = async (currentPath: string): Promise<void> => {
-        try {
-          const folderId = currentPath ? await this.getFolderId(currentPath) : 'root';
-          const res = await drive.files.list({
-            q: `'${folderId}' in parents and trashed = false`,
+      try {
+        const folderId = await this.getFolderId(rootPath);
+        const res: FileSystemItem[] = await this.searchFilesRecursive(folderId, rootPath, pattern);
+        // Filter out files that match any of the exclude patterns
+        const filteredResults = res.filter(file => {
+          return !excludePatterns.some(excludePattern => {
+            return minimatch(file.name, excludePattern, { matchBase: true });
           });
-
-          console.log(`Searching in folder: ${currentPath}`);
-          console.log(`Found files:`, res.data.files);
-
-          const files = res.data.files || [];
-          for (const file of files) {
-            // check if the file matches any of the exclude patterns
-            const matchesExclude = excludePatterns.some(excludePattern => {
-              return file.name?.toLowerCase().includes(excludePattern.toLowerCase()) || 
-                      (excludePattern.includes("*") && minimatch(file.name?.toLowerCase() || '', excludePattern.toLowerCase(), { dot: true }));
-            });
-            if (matchesExclude) {
-              continue; // Skip files that match exclude patterns
-            }
-            // Check if the file matches the search pattern
-            const matchesPattern = file.name?.toLowerCase().includes(pattern.toLowerCase()) || 
-                      (pattern.includes("*") && minimatch(file.name?.toLowerCase() || '', pattern.toLowerCase(), { dot: true }));
-            if (matchesPattern) {
-              const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
-              // skip if the filePath is empty or undefined
-              if (!filePath || filePath.trim() === '') {
-                continue;
-              }
-              result.push({
-                id: file.id || '',
-                name: file.name || '',
-                isDirectory: file.mimeType === 'application/vnd.google-apps.folder',
-                path: filePath,
-              });
-            }
-            // If it's a directory, search recursively
-            if (file.mimeType === 'application/vnd.google-apps.folder') {
-              if (currentPath === '/') {
-                currentPath = ''; // If root, set currentPath to empty string
-              }
-              await search(currentPath ? `${currentPath}/${file.name ?? ''}` : (file.name ?? ''));
-            }
-          }
-        } catch (error) {
-          console.error('Error searching files:', error);
-          console.log('skipping search for path:', currentPath);
-        }
+        });
+        return filteredResults;
+      } catch (error) {
+        console.error('Error searching files:', error);
+        throw error;
       }
-
-      await search(rootPath);
-      return result;
     }
 
     async getFileInfo(filePath: string): Promise<FileSystemItem> {
