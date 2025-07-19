@@ -465,30 +465,30 @@ export async function triggerGracefulClose() {
     return await invokeRendererFunction('gracefulClose');
 }
 
-export async function triggerToolResultMessage(toolName: string, toolArgs: any, resultContent: any, error?: any) {
+export async function triggerToolResultMessage(toolName: string, toolArgs: any, resultContent: any, isError: boolean) {
     // implement rendering the tool result in readable format
-    console.log("Triggering tool result message:", toolName, toolArgs, resultContent, error);
-    if (error) {
-        return await invokeRendererFunction('toolResultMessage', "Something went wrong while processing the tool...");
+    console.log("Triggering tool result message:", toolName, toolArgs, resultContent, isError);
+    if (isError) {
+        return await invokeRendererFunction('toolResultMessage', "Something went wrong while processing the request...");
     }
     let message: string;
     switch (toolName) {
         case "read_file":
-            message = `I read a file at "${toolArgs.path}".`;
+            message = `Read a file at "${toolArgs.path}".`;
             break;
 
         case "read_multiple_files":
-            message = `I read files: ${
+            message = `Read files: ${
                 Array.isArray(toolArgs.paths) ? toolArgs.paths.join(", ") : ""
             }.`;
             break;
 
         case "write_file":
-            message = `I wrote content to "${toolArgs.path}".`;
+            message = `Wrote content to "${toolArgs.path}".`;
             break;
 
         case "create_directory":
-            message = `I created a directory at "${toolArgs.path}".`;
+            message = `Created a directory at "${toolArgs.path}".`;
             break;
 
         case "list_directory":
@@ -500,7 +500,7 @@ export async function triggerToolResultMessage(toolName: string, toolArgs: any, 
             break;
 
         case "move_file":
-            message = `I started moving a file from "${toolArgs.source}" to "${toolArgs.destination}".`;
+            message = `Started moving a file from "${toolArgs.source}" to "${toolArgs.destination}".`;
             break;
 
         case "search_files":
@@ -528,7 +528,7 @@ export async function triggerToolResultMessage(toolName: string, toolArgs: any, 
             break;
 
         default:
-            message = `I attempted to handle an unknown tool: "${toolName}".`;
+            message = `Attempted to handle an unknown tool: "${toolName}".`;
             break;
     }
 

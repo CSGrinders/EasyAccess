@@ -16,28 +16,22 @@ import { CloudType } from "../../types/cloudType";
 import fs from 'fs';
 import { getConnectedCloudAccounts } from "../cloud/cloudManager";
 
-import Store from 'electron-store';
-
 dotenv.config({ path: '.env' });
-const store = new Store();
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-if (!ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY is not set");
-}
-
-const getSupabaseJwt = async (email: string) => {
-}
+// const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+// if (!ANTHROPIC_API_KEY) {
+//     throw new Error("ANTHROPIC_API_KEY is not set");
+// }
 
 class MCPClient {
     private mcp: Client;
-    private llm: Anthropic;
+    // private llm: Anthropic;
     private tools: Tool[] = [];
 
     constructor() {
-        this.llm = new Anthropic({
-            apiKey: ANTHROPIC_API_KEY,
-        });
+        // this.llm = new Anthropic({
+        //     apiKey: ANTHROPIC_API_KEY,
+        // });
         this.mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
     }
 
@@ -178,8 +172,13 @@ class MCPClient {
                             connected_accounts: connectedAccountsText,
                         }));
                         console.log("Tool result:", result);
+                        let isError = false;
+                        if (result.isError) {
+                            isError = true;
+                            console.error("Tool error:", result.isError);
+                        }
                         // check if the result is error
-                        triggerToolResultMessage(toolName, toolArgs, result.content, result.error);
+                        triggerToolResultMessage(toolName, toolArgs, result.content, isError);
                     }
                 } else if (response.type === "content_stop") {
                     console.warn("Content stop detected in response:", response);

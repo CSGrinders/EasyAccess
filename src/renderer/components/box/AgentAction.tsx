@@ -1,6 +1,5 @@
-import { ArrowUp, Loader2, X, Eye, EyeOff, Command, CornerDownLeft } from "lucide-react";
+import { ArrowUp, Loader2, X, Command, CornerDownLeft } from "lucide-react";
 import React, { useState, useRef, useCallback, useEffect, memo } from "react";
-import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { RendererIpcCommandDispatcher } from "@/services/AgentControlService";
 import { supabase } from "@/supbaseClient";
@@ -339,8 +338,7 @@ const AgentAction = memo(function AgentAction() {
 
         // reset agent work visibility
         setAgentWorkVisibility(false);
-
-        console.log("current session:", session);
+        setAgentWorkVisibility(true);
 
         if (!query.trim()) return;
 
@@ -364,10 +362,6 @@ const AgentAction = memo(function AgentAction() {
         setAgentWorkVisibility(false);
         setResponse('');
         setUserQuery('');
-    }, []);
-
-    const toggleToolCalls = useCallback(() => {
-        setShowToolCalls(prev => !prev);
     }, []);
 
     // Add event listeners for mouse move and up
@@ -423,20 +417,6 @@ const AgentAction = memo(function AgentAction() {
         // Open the sign up URL in a new tab
         window.open(data.url, '_blank');
     };
-
-    const tryUpdatingTable = async () => {
-        const { data, error } = await supabase
-            .from('userRequestTrack')
-            .update({ requests: 10 })
-            .eq('user_email', 'sohn5312@gmail.com');
-
-        if (error) {
-            console.error("Error updating table:", error);
-            return;
-        }
-        console.log("Table updated successfully:", data);
-    }
-
 
     async function checkUserLimit(user: any) {
         // Need to make sure that the user email is unique to each user to avoid conflicts
@@ -496,17 +476,6 @@ const AgentAction = memo(function AgentAction() {
                             </p>
 
                             <div className="flex items-center gap-2">
-                                <button
-                                    onClick={toggleToolCalls}
-                                    className="flex flex-row gap-1 p-1 hover:bg-white/10 rounded border border-white/20 text-xs text-black dark:text-white transition-colors"
-                                >
-                                    {showToolCalls ? (
-                                        <Eye className="w-4 h-4" />
-                                    ) : (
-                                        <EyeOff className="w-4 h-4" />
-                                    )}
-                                    Agent Actions
-                                </button>
                                 <button
                                     onClick={handleClose}
                                     className="p-1 hover:bg-white/10 rounded transition-colors"
