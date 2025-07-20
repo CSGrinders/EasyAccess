@@ -961,7 +961,9 @@ export class DropboxStorage implements CloudStorage {
                         'Content-Type': 'application/octet-stream',
                         },
                         body: chunkData, // or stream if file is large
+                        signal: abortSignal,
                     });
+                
 
                     if (!response.ok) {
                         const errorText = await response.text();
@@ -985,6 +987,11 @@ export class DropboxStorage implements CloudStorage {
                     }
 
                     if (TransferedBytes >= fileSize) {
+                        // Check for cancellation before finalization
+                        if (abortSignal?.aborted) {
+                            console.log('Transfer cancelled by user during finalization');
+                            throw new Error('Transfer cancelled by user');
+                        }
                         // Finalize the upload session
                         const closeResponse = await fetch('https://content.dropboxapi.com/2/files/upload_session/finish', {
                             method: 'POST',
@@ -1018,7 +1025,12 @@ export class DropboxStorage implements CloudStorage {
                     }
                     
                     retryCount = 0; // Reset retry count on success
-                } catch (error) {
+                } catch (error: any) {
+
+                    if (error.name === 'AbortError' || abortSignal?.aborted) {
+                        console.log('Transfer cancelled by user');
+                        throw new Error('Transfer cancelled by user');
+                    }
                     retryCount++;
                     console.error(`Chunk upload error (attempt ${retryCount}/${MAX_RETRIES}):`, error);
                     
@@ -1034,8 +1046,12 @@ export class DropboxStorage implements CloudStorage {
                     // skip the checking where it failed and continue with the next chunk
                 }
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error(`Error during chunked upload: ${error}`);
+            if (error.message?.includes('cancelled') || error.name === 'AbortError') {
+                throw error;
+            }
+            throw new Error(`Upload failed: ${error.message}`);
         } finally {
             if (fileHandle) {
                 await fileHandle.close();

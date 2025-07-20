@@ -1048,6 +1048,11 @@ export class OneDriveStorage implements CloudStorage {
         const file = await fs.readFile(sourcePath);
 
 
+        if (abortSignal?.aborted) {
+          console.log('Upload cancelled by user');
+          throw new Error('Upload cancelled by user');
+        }
+
         let CHUNK_SIZE: number;
         
         if (fileSize < 10 * 1024 * 1024) { // < 10MB
@@ -1068,7 +1073,12 @@ export class OneDriveStorage implements CloudStorage {
             uploadEventHandlers: {
                 // Called as each "slice" of the file is uploaded
                 progress: (range, _) => {
+                    if (abortSignal?.aborted) {
+                      console.log('Upload cancelled by user during progress update');
+                      throw new Error('Upload cancelled by user');
+                  }
                     console.log(`Uploaded bytes ${range?.minValue} to ${range?.maxValue}`);
+                    
                     if (progressCallback) {
                         progressCallback({
                             transferId,
@@ -1104,8 +1114,25 @@ export class OneDriveStorage implements CloudStorage {
 
         try {
             const uploadResult: UploadResult = await uploadTask.upload();
+
+            // Check for cancellation after upload completes
+            if (abortSignal?.aborted) {
+              console.log('Upload cancelled by user after completion');
+              throw new Error('Upload cancelled by user');
+          }
             const driveItem = uploadResult.responseBody as any;
             console.log(`Uploaded file with ID: ${driveItem.id}`);
+        } catch (error: any) {
+          if (abortSignal?.aborted || 
+              error?.error?.code === 'itemNotFound' || 
+              error?.code === 'itemNotFound' ||
+              error?.message?.includes('cancelled') ||
+              error?.message?.includes('aborted') ||
+              error?.name === 'AbortError') {
+              console.log('Transfer cancelled by user');
+              throw new Error('Transfer cancelled by user');
+          }
+          throw error;
         } finally {
             if (abortSignal) {
                 abortSignal.removeEventListener("abort", onAbort);
@@ -1158,6 +1185,7 @@ export class OneDriveStorage implements CloudStorage {
         }
     }
 
+    /* Never used... */
     async uploadFileInChunks(
         transferId: string,
         fileName: string,
@@ -1214,15 +1242,16 @@ export class OneDriveStorage implements CloudStorage {
                 console.log(`Uploading chunk from ${chunkStart} to ${chunkEnd} (${length} bytes)`);
 
                 try {
-                    /*
-                    Important: Your app must ensure the total file size specified in the Content-Range 
-                    header is the same for all requests. If a byte range declares a different file
-                     size, the request will fail.
-                    */
                     // Upload the chunk to OneDrive
-                    const response = await this.graphClient.api(uploadUrl)
-                        .header('Content-Range', `bytes ${chunkStart}-${chunkEnd - 1}/${fileSize}`)
-                        .put(chunkData);
+                    const response = await fetch(uploadUrl, {
+                      method: 'PUT',
+                      headers: {
+                          'Content-Range': `bytes ${chunkStart}-${chunkEnd - 1}/${fileSize}`,
+                          'Content-Length': chunkData.length.toString(),
+                      },
+                      body: chunkData,
+                      signal: abortSignal 
+                   });
 
                     console.log(`Chunk uploaded successfully. Response:`, response);
                 
@@ -1234,26 +1263,28 @@ export class OneDriveStorage implements CloudStorage {
                     if (response.status === 202) {
                         // successful and more chunks need to be uploaded
                         console.log(`Chunk ${chunkStart}-${chunkEnd} uploaded successfully.`);
-                        const nextExpectedRanges = response.nextExpectedRanges;
-                        if (nextExpectedRanges && nextExpectedRanges.length > 0) {
-                            // "nextExpectedRanges": ["26-"]
-                            console.log(`Next expected ranges: ${nextExpectedRanges}`);
+                        const nextExpectedRanges = response.headers.get('Range') || 
+                                             (await response.json()).nextExpectedRanges;
+                        if (nextExpectedRanges && Array.isArray(nextExpectedRanges) && nextExpectedRanges.length > 0) {
                             const match = nextExpectedRanges[0].match(/(\d+)-/);
                             if (match) {
                                 const nextChunkStart = parseInt(match[1], 10);
-                                TransferedBytes = nextChunkStart; // Update the transferred bytes to the next expected start
+                                TransferedBytes = nextChunkStart;
                                 console.log(`Next chunk start updated to: ${TransferedBytes}`);
                             } else {
                                 console.warn(`No valid next expected range found in response: ${nextExpectedRanges}`);
-                                TransferedBytes = chunkEnd + 1; // Fallback to next chunk end
+                                TransferedBytes = chunkEnd; // Fallback to next chunk end
                             }
-
-                            if (progressCallback) {
-                                progressCallback({transferId, fileName: fileName, transfered: TransferedBytes, total: fileSize, isDirectory: (isDirectory || false)});
-                            }
-
-                            retryCount = 0; // Reset retry count on successful upload
+                        } else {
+                            TransferedBytes = chunkEnd; // Default increment
                         }
+
+                        if (progressCallback) {
+                            progressCallback({transferId, fileName: fileName, transfered: TransferedBytes, total: fileSize, isDirectory: (isDirectory || false)});
+                        }
+
+                        retryCount = 0; // Reset retry count on successful upload
+                        
                     } else if (response.status === 201 || response.status === 200) {
                         // upload completed
                         console.log(`Upload completed for file: ${fileName}`);
@@ -1268,46 +1299,68 @@ export class OneDriveStorage implements CloudStorage {
                         console.error(`Unexpected response status for chunk ${chunkStart}-${chunkEnd}:`, response.status);
                         throw new Error(`Unexpected response status for chunk ${chunkStart}-${chunkEnd}: ${response.status}`);
                     }
-                } catch (error) {
-                    retryCount++;
-                    console.error(`Error uploading chunk from ${chunkStart} to ${chunkEnd}:`, error);
-                    
-                    if (retryCount >= MAX_RETRIES) {
-                        throw new Error(`Upload failed after ${MAX_RETRIES} attempts: ${error}`);
-                    }
-                    
-                    // Wait before retry
-                    const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
-                    console.log(`Retrying in ${delay}ms...`);
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                    
-                    // Try to get current upload status before retrying
-                    try {
-                        const statusResponse = await this.graphClient.api(uploadUrl).get();
-                        console.log(`Current upload status for chunk ${chunkStart}-${chunkEnd}:`, statusResponse);
-                        // Update TransferedBytes based on the current status
-                        if (statusResponse.nextExpectedRanges && statusResponse.nextExpectedRanges.length > 0) {
-                            const nextRange = statusResponse.nextExpectedRanges[0];
-                            const match = nextRange.match(/(\d+)-/);
-                            if (match) {
-                                TransferedBytes = parseInt(match[1], 10);
-                                console.log(`TransferedBytes updated to: ${TransferedBytes}`);
+                  } catch (error: any) {
+                      // Check if error is due to cancellation
+                      if (error.name === 'AbortError' || abortSignal?.aborted) {
+                          console.log('Transfer cancelled by user');
+                          throw new Error('Transfer cancelled by user');
+                      }
+
+                      retryCount++;
+                      console.error(`Error uploading chunk from ${chunkStart} to ${chunkEnd}:`, error);
+                      
+                      if (retryCount >= MAX_RETRIES) {
+                          throw new Error(`Upload failed after ${MAX_RETRIES} attempts: ${error}`);
+                      }
+                      
+                      // Wait before retry
+                      const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
+                      console.log(`Retrying in ${delay}ms...`);
+                      await new Promise(resolve => setTimeout(resolve, delay));
+                      
+                      // Try to get current upload status before retrying
+                      try {
+                          const statusResponse = await fetch(uploadUrl, {
+                              method: 'PUT',
+                              headers: {
+                                  'Content-Range': `bytes */${fileSize}`,
+                              },
+                              signal: abortSignal
+                          });
+                          
+                          if (statusResponse.status === 308) {
+                              const rangeHeader = statusResponse.headers.get('Range');
+                              if (rangeHeader) {
+                                  const match = rangeHeader.match(/bytes=0-(\d+)/);
+                                  if (match) {
+                                      TransferedBytes = parseInt(match[1]) + 1;
+                                      console.log(`TransferedBytes updated to: ${TransferedBytes}`);
+                                  }
+                              }
+                          }
+                        } catch (statusError: any) {
+                            // Add cancellation check for status error as well
+                            if (statusError.name === 'AbortError' || abortSignal?.aborted) {
+                                console.log('Transfer cancelled by user during status check');
+                                throw new Error('Transfer cancelled by user');
                             }
+                            console.error(`Error getting upload status for chunk ${chunkStart}-${chunkEnd}:`, statusError);
                         }
-                    } catch (statusError) {
-                        console.error(`Error getting upload status for chunk ${chunkStart}-${chunkEnd}:`, statusError);
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Error uploading file:', error);
-        } finally {
-            // Close the file handle
-            await fileHandle.close();
-            console.log(`File handle for ${sourcePath} closed.`);
-        }
-    }
-  
+                  }
+              }
+          } catch (error: any) {
+              console.error('Error uploading file:', error);
+              if (error.message?.includes('cancelled') || error.name === 'AbortError') {
+                  throw error;
+              }
+              throw new Error(`Upload failed: ${error.message}`);
+          } finally {
+              // Close the file handle
+              await fileHandle.close();
+              console.log(`File handle for ${sourcePath} closed.`);
+          }
+      }
+
     // https://learn.microsoft.com/en-us/graph/api/driveitem-get-content?view=graph-rest-1.0&tabs=http
     async createReadStream(filePath: string, chunkSize?: number, maxQueueSize?: number): Promise<ReadableStream> {
         if (!this.graphClient) {
