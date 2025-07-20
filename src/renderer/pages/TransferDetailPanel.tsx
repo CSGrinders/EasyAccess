@@ -74,8 +74,8 @@ export function TransferDetailPanel({
     if (transfer.status === "completed") return <CheckCircle className="h-7 w-7 text-green-500 animate-pulse" />;
     if (transfer.status === "downloading") return <CloudDownload className="h-7 w-7 text-blue-500 animate-bounce" />;
     if (transfer.status === "uploading") return <CloudUpload className="h-7 w-7 text-orange-500 animate-bounce" />;
-    if (transfer.status === "moving") return <ArrowLeftRight className="h-7 w-7 text-purple-500 animate-pulse" />;
-    if (transfer.status === "copying") return <ArrowLeftRight className="h-7 w-7 text-purple-500 animate-pulse" />;
+    if (transfer.status === "moving") return <ArrowLeftRight className="h-7 w-7 text-indigo-500 animate-pulse" />;
+    if (transfer.status === "copying") return <ArrowLeftRight className="h-7 w-7 text-teal-500 animate-pulse" />;
     return <Loader2 className="h-7 w-7 text-purple-500 animate-spin" />;
   };
 
@@ -209,8 +209,8 @@ export function TransferDetailPanel({
           transfer.status === "completed" && "border-green-200 dark:border-green-800 bg-gradient-to-br from-green-50/50 to-white dark:from-green-900/10 dark:to-slate-800",
           transfer.status === "downloading" && "border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50/50 to-white dark:from-blue-900/10 dark:to-slate-800",
           transfer.status === "uploading" && "border-orange-200 dark:border-orange-800 bg-gradient-to-br from-orange-50/50 to-white dark:from-orange-900/10 dark:to-slate-800",
-          transfer.status === "moving" && "border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-50/50 to-white dark:from-purple-900/10 dark:to-slate-800", // TO CHOOSE
-          transfer.status === "copying" && "border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-50/50 to-white dark:from-purple-900/10 dark:to-slate-800 ", // TO CHOOSE
+          transfer.status === "moving" && "border-indigo-200 dark:border-indigo-800 bg-gradient-to-br from-indigo-50/50 to-white dark:from-indigo-900/10 dark:to-slate-800", // TO CHOOSE
+          transfer.status === "copying" && "border-teal-200 dark:border-teal-800 bg-gradient-to-br from-teal-50/50 to-white dark:from-teal-900/10 dark:to-slate-800 ", // TO CHOOSE
           transfer.status === "fetching" && "border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-50/50 to-white dark:from-purple-900/10 dark:to-slate-800"
         )}
       >
@@ -225,8 +225,8 @@ export function TransferDetailPanel({
                   transfer.status === "completed" ? "text-green-700 dark:text-green-300" :
                   transfer.status === "downloading" ? "text-blue-700 dark:text-blue-300" :
                   transfer.status === "uploading" ? "text-orange-700 dark:text-orange-300" :
-                  transfer.status === "moving" ? "text-purple-700 dark:text-purple-300" :
-                  transfer.status === "copying" ? "text-purple-700 dark:text-purple-300" :
+                  transfer.status === "moving" ? "text-indigo-700 dark:text-indigo-300" :
+                  transfer.status === "copying" ? "text-teal-700 dark:text-teal-300" :
                   transfer.status === "fetching" ? "text-purple-700 dark:text-purple-300" :
                   "text-blue-700 dark:text-blue-300"
                 )}>
@@ -249,8 +249,8 @@ export function TransferDetailPanel({
                       transfer.status === "completed" ? "text-green-700 dark:text-green-300" :
                       transfer.status === "downloading" ? "text-blue-700 dark:text-blue-300" :
                       transfer.status === "uploading" ? "text-orange-700 dark:text-orange-300" :
-                      transfer.status === "moving" ? "text-purple-700 dark:text-purple-300" :
-                      transfer.status === "copying" ? "text-purple-700 dark:text-purple-300" :
+                      transfer.status === "moving" ? "text-indigo-700 dark:text-indigo-300" :
+                      transfer.status === "copying" ? "text-teal-700 dark:text-teal-300" :
                       transfer.status === "fetching" ? "text-purple-700 dark:text-purple-300" :
                       "text-blue-700 dark:text-blue-300"
                     )}>
@@ -271,8 +271,8 @@ export function TransferDetailPanel({
                       transfer.status === "completed" ? "text-green-700 dark:text-green-300" :
                       transfer.status === "downloading" ? "text-blue-700 dark:text-blue-300" :
                       transfer.status === "uploading" ? "text-orange-700 dark:text-orange-300" :
-                      transfer.status === "moving" ? "text-purple-700 dark:text-purple-300" :
-                      transfer.status === "copying" ? "text-purple-700 dark:text-purple-300" :
+                      transfer.status === "moving" ? "text-indigo-700 dark:text-indigo-300" :
+                      transfer.status === "copying" ? "text-teal-700 dark:text-teal-300" :
                       transfer.status === "fetching" ? "text-purple-700 dark:text-purple-300" :
                       "text-blue-700 dark:text-blue-300"
                     )}>
@@ -348,8 +348,8 @@ export function TransferDetailPanel({
                         cn(
                           transfer.status === "downloading" ? "h-2 w-2 bg-blue-500 rounded-full flex-shrink-0 animate-pulse" :
                           transfer.status === "uploading" ? "h-2 w-2 bg-orange-500 rounded-full flex-shrink-0 animate-pulse" :
-                          transfer.status === "moving" ? "h-2 w-2 bg-purple-500 rounded-full flex-shrink-0 animate-pulse" :
-                          transfer.status === "copying" ? "h-2 w-2 bg-purple-500 rounded-full flex-shrink-0 animate-pulse" :
+                          transfer.status === "moving" ? "h-2 w-2 bg-indigo-500 rounded-full flex-shrink-0 animate-pulse" :
+                          transfer.status === "copying" ? "h-2 w-2 bg-teal-500 rounded-full flex-shrink-0 animate-pulse" :
                           transfer.status === "fetching" ? "h-2 w-2 bg-purple-500 rounded-full flex-shrink-0 animate-pulse" :
                           "h-2 w-2 bg-blue-500 rounded-full flex-shrink-0")} />}
                       {!isCompleted && !isFailed && !isInProgress && <div className="h-2 w-2 bg-gray-700 dark:bg-gray-500 rounded-full flex-shrink-0" />}
@@ -359,8 +359,8 @@ export function TransferDetailPanel({
                         isFailed && "text-red-700 dark:text-red-300",
                         isInProgress && (transfer.status === "downloading" ? "text-blue-700 dark:text-blue-300" :
                           transfer.status === "uploading" ? "text-orange-700 dark:text-orange-300" :
-                          transfer.status === "moving" ? "text-purple-700 dark:text-purple-300" :
-                          transfer.status === "copying" ? "text-purple-700 dark:text-purple-300" :
+                          transfer.status === "moving" ? "text-indigo-700 dark:text-indigo-300" :
+                          transfer.status === "copying" ? "text-teal-700 dark:text-teal-300" :
                           transfer.status === "fetching" ? "text-purple-700 dark:text-purple-300" :
                           "text-blue-700 dark:text-blue-300") 
                       )}>
@@ -382,8 +382,8 @@ export function TransferDetailPanel({
                 className={cn(
                   transfer.status === "downloading" ? "bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500 ease-out relative overflow-hidden" :
                   transfer.status === "uploading" ? "bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600 h-3 rounded-full transition-all duration-500 ease-out relative overflow-hidden" :  
-                  transfer.status === "moving" ? "bg-gradient-to-r from-purple-400 via-purple-500 to-purple-600 h-3 rounded-full transition-all duration-500 ease-out relative overflow-hidden" :
-                  transfer.status === "copying" ? "bg-gradient-to-r from-purple-400 via-purple-500 to-purple-600 h-3 rounded-full transition-all duration-500 ease-out relative overflow-hidden" :
+                  transfer.status === "moving" ? "bg-gradient-to-r from-indigo-400 via-indigo-500 to-indigo-600 h-3 rounded-full transition-all duration-500 ease-out relative overflow-hidden" :
+                  transfer.status === "copying" ? "bg-gradient-to-r from-teal-400 via-teal-500 to-teal-600 h-3 rounded-full transition-all duration-500 ease-out relative overflow-hidden" :
                   transfer.status === "fetching" ? "bg-gradient-to-r from-purple-400 via-purple-500 to-purple-600 h-3 rounded-full transition-all duration-500 ease-out relative overflow-hidden" :
                   transfer.status === "cancelled" ? "bg-gradient-to-r from-red-400 via-red-500 to-red-600 h-3 rounded-full transition-all duration-500 ease-out relative overflow-hidden" : 
                 "bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500 ease-out relative overflow-hidden")}
@@ -396,8 +396,8 @@ export function TransferDetailPanel({
             transfer.status === "cancelled" ? "text-red-700 dark:text-red-300" :
             transfer.status === "downloading" ? "text-blue-700 dark:text-blue-300" :
             transfer.status === "uploading" ? "text-orange-700 dark:text-orange-300" :
-            transfer.status === "moving" ? "text-purple-700 dark:text-purple-300" :
-            transfer.status === "copying" ? "text-purple-700 dark:text-purple-300" :
+            transfer.status === "moving" ? "text-indigo-700 dark:text-indigo-300" :
+            transfer.status === "copying" ? "text-teal-700 dark:text-teal-300" :
             transfer.status === "fetching" ? "text-purple-700 dark:text-purple-300" : 
              "text-slate-600 dark:text-slate-400")}>
               <span className="font-medium">{Math.round((transfer.progress ?? 0))}% complete</span>
@@ -406,8 +406,8 @@ export function TransferDetailPanel({
                   transfer.status === "cancelled" ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700 text-red-700 dark:text-red-300" :
                   transfer.status === "downloading" ? "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 " :
                   transfer.status === "uploading" ? "bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-700 text-orange-700 dark:text-orange-300" :
-                  transfer.status === "moving" ? "bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-700 text-purple-700 dark:text-purple-300" :
-                  transfer.status === "copying" ? "bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-700 text-purple-700 dark:text-purple-300" :
+                  transfer.status === "moving" ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300" :
+                  transfer.status === "copying" ? "bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-700 text-teal-700 dark:text-teal-300" :
                   transfer.status === "fetching" ? "bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-700 text-purple-700 dark:text-purple-300" : 
                   "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700")}>
                   {transfer.status !== "cancelled" ? "Completed" : "Partial Transfer"} {transfer.completedFiles?.length} of {transfer.itemCount} items

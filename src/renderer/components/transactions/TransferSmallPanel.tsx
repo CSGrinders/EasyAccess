@@ -162,8 +162,8 @@ export function TransferManager({
       if (transfer.status === "completed") return <CheckCircle className="h-7 w-7 text-green-500 animate-pulse" />;
       if (transfer.status === "downloading") return <CloudDownload className="h-7 w-7 text-blue-500 animate-bounce" />;
       if (transfer.status === "uploading") return <CloudUpload className="h-7 w-7 text-orange-500 animate-bounce" />;
-      if (transfer.status === "moving") return <ArrowLeftRight className="h-7 w-7 text-purple-500 animate-pulse" />;
-      if (transfer.status === "copying") return <ArrowLeftRight className="h-7 w-7 text-purple-500 animate-pulse" />;
+      if (transfer.status === "moving") return <ArrowLeftRight className="h-7 w-7 text-indigo-500 animate-pulse" />;
+      if (transfer.status === "copying") return <ArrowLeftRight className="h-7 w-7 text-teal-500 animate-pulse" />;
       return <Loader2 className="h-7 w-7 text-purple-500 animate-spin" />;
     };
 
@@ -196,8 +196,8 @@ export function TransferManager({
         transfer.status === "completed" ? "border-green-500 bg-green-50/50 dark:bg-green-900/10" :
         transfer.status === "downloading" ? "border-blue-500 bg-blue-50/50 dark:bg-blue-900/10" :
         transfer.status === "uploading" ? "border-orange-500 bg-orange-50/50 dark:bg-orange-900/10" :
-        transfer.status === "moving" ? "" :
-        transfer.status === "copying" ? "" :
+        transfer.status === "moving" ? "border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/10" :
+        transfer.status === "copying" ? "border-teal-500 bg-teal-50/50 dark:bg-teal-900/10" :
         "border-purple-500 bg-purple-50/50 dark:bg-purple-900/10" //fetching
       )}>
         <div className="flex items-center justify-between">
@@ -222,8 +222,8 @@ export function TransferManager({
               transfer.status === "completed" ? "text-green-700 bg-green-100 dark:text-green-300 dark:bg-green-900/30" :
               transfer.status === "downloading" ? "text-blue-700 bg-blue-100 dark:text-blue-300 dark:bg-blue-900/30" :
               transfer.status === "uploading" ? "text-orange-700 bg-orange-100 dark:text-orange-300 dark:bg-orange-900/30" :
-              transfer.status === "moving" ? "text-purple-700 bg-purple-100 dark:text-purple-300 dark:bg-purple-900/30" : //PENDING color
-              transfer.status === "copying" ? "text-purple-700 bg-purple-100 dark:text-purple-300 dark:bg-purple-900/30" :
+              transfer.status === "moving" ? "text-indigo-700 bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-900/30" : //PENDING color
+              transfer.status === "copying" ? "text-teal-700 bg-teal-100 dark:text-teal300 dark:bg-teal-900/30" :
               "text-purple-700 bg-purple-100 dark:text-purple-300 dark:bg-purple-900/30"
             )}>
               {getStatusText()}
@@ -278,9 +278,9 @@ export function TransferManager({
                   transfer.status === "downloading" ?
                     "bg-gradient-to-r from-blue-400 to-blue-500" :  
                   transfer.status === "moving" ?
-                    "bg-gradient-to-r from-purple-400 to-purple-500" :
+                    "bg-gradient-to-r from-indigo-400 to-indigo-500" :
                   transfer.status === "copying" ?
-                    "bg-gradient-to-r from-purple-400 to-purple-500" :
+                    "bg-gradient-to-r from-teal-400 to-teal-500" :
                     "bg-gradient-to-r from-purple-500 to-purple-600" //Fetching
                 )}
                 style={{ width: `${Math.min(100, Math.max(0, transfer.progress ?? 0))}%` }}

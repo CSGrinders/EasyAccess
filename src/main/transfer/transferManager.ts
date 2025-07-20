@@ -8,7 +8,7 @@ import fs from "fs/promises";
 import path from "path";
 
 // Semaphore class to limit concurrent operations
-class Semaphore {
+export class Semaphore {
     private maxConcurrent: number;
     private current: number;
     private queue: (() => void)[];
