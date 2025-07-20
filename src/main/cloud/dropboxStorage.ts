@@ -18,6 +18,8 @@ const DROPBOX_APP_KEY = process.env.DROPBOX_KEY;
 const PORT = 53685; // Port for the local server to handle Dropbox OAuth redirect
 const REDIRECT_URI = 'http://localhost:' + PORT;
 
+import { Semaphore } from '../transfer/transferManager';
+
 export class DropboxStorage implements CloudStorage {
     accountId?: string | undefined;
     AuthToken?: AuthTokens | null | undefined;
@@ -748,7 +750,11 @@ export class DropboxStorage implements CloudStorage {
 
         const items = await fs.readdir(sourcePath, { withFileTypes: true });
 
-        for (const item of items) {
+        const semaphore = new Semaphore(3); // Max 3 concurrent transfers
+
+        const transferPromises = items.map(async (item) => {
+            await semaphore.acquire();
+
             if (abortSignal?.aborted) {
                 console.log('Transfer cancelled by user');
                 throw new Error('Transfer cancelled by user');
@@ -794,7 +800,6 @@ export class DropboxStorage implements CloudStorage {
                     await new Promise(resolve => setTimeout(resolve, 5000));
                     console.log(`Continuing with next item after error: ${errorMessage}`);
                     // Skip this directory and continue with the next item
-                    continue;
                 }
             } else if (item.isFile()) {
                 try {
@@ -849,10 +854,13 @@ export class DropboxStorage implements CloudStorage {
                     await new Promise(resolve => setTimeout(resolve, 5000));
                     console.log(`Continuing with next item after error: ${errorMessage}`);
                     // Skip this file and continue with the next item
-                    continue;
-                }
+            } finally {
+                // Always release semaphore
+                semaphore.release();
             }
-        }
+        }})
+        await Promise.all(transferPromises);
+        console.log(`All items in directory ${sourcePath} transferred successfully to ${targetFolderPath}`);
     }
 
     /*

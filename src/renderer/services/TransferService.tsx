@@ -48,28 +48,8 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
     
     // Transfer queue state
     const [transferQueue, setTransferQueue] = useState<TransferQueueState>({
-        transfers: [
-            // Initial transfer item for demonstration purposes
-            {
-                id: uuidv4(),
-                currentItem: "file1.txt",
-                itemCount: 1,
-                progress: 50,
-                status: "uploading",
-                startTime: Date.now(),
-                keepOriginal: false,
-                sourceStorageType: CloudType.GoogleDrive,
-                sourceAccountId: "te",
-                targetStorageType: CloudType.GoogleDrive,
-                targetAccountId: "tes",
-                sourcePath: "te",
-                targetPath: "te",
-                fileList: ["file1.txt", "file2.txt"],
-                completedFiles: [],
-                failedFiles: [],
-            }
-        ],
-        nextId: 2
+        transfers: [],
+        nextId: 1
     });
 
     // Add a ref to store current transfer queue state

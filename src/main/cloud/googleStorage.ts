@@ -16,6 +16,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import mime from "mime-types";
 import { progressCallbackData } from '../../types/transfer';
+import { Semaphore } from '../transfer/transferManager';
 
 dotenv.config();
 
@@ -571,13 +572,20 @@ export class GoogleDriveStorage implements CloudStorage {
   ): Promise<void> {
     const items = await fs.readdir(sourcePath, { withFileTypes: true });
 
-    for (const item of items) {
+    // Create semaphore with desired concurrency limit
+    const semaphore = new Semaphore(3); // Max 3 concurrent transfers
+
+    const transferPromises = items.map(async (item) => {
+      // Acquire semaphore to limit concurrent transfers
+      await semaphore.acquire();
+
       if (abortSignal?.aborted) {
         console.log('Transfer cancelled by user');
         throw new Error('Transfer cancelled by user');
       }
 
       const itemPath = path.join(sourcePath, item.name);
+
       if (item.isDirectory()) {
         try {
           console.log(`Processing directory: ${item.name}`);
@@ -644,7 +652,6 @@ export class GoogleDriveStorage implements CloudStorage {
           await new Promise(resolve => setTimeout(resolve, 5000));
           console.log(`Continuing with next item after error: ${errorMessage}`);
           // Skip this directory and continue with the next item
-          continue;
         }
       }
       else if (item.isFile()) {
@@ -699,10 +706,15 @@ export class GoogleDriveStorage implements CloudStorage {
           await new Promise(resolve => setTimeout(resolve, 5000));
           console.log(`Continuing with next item after error: ${errorMessage}`);
           // Skip this file and continue with the next item
-          continue;
+        } finally {
+          // Release semaphore after processing each item
+          semaphore.release();
         }
       }
-    }
+    });
+
+    await Promise.all(transferPromises);
+    console.log(`All items in directory ${sourcePath} processed successfully.`);
   }
 
   async initiateResumableUpload(fileName: string, mimeType: string, parentFolderPath: string): Promise<string> {

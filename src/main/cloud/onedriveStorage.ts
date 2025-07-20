@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { minimatch } from 'minimatch';
 import { v4 as uuidv4 } from 'uuid';
 import { progressCallbackData } from '@Types/transfer';
+import { Semaphore } from '../transfer/transferManager';
 dotenv.config();
 
 import mime from "mime-types";
@@ -914,8 +915,13 @@ export class OneDriveStorage implements CloudStorage {
         }
 
         const items = await fs.readdir(sourcePath, { withFileTypes: true });
+        // Create semaphore with desired concurrency limit
+        const semaphore = new Semaphore(3); // Max 3 concurrent transfers
 
-        for (const item of items) {
+        const transferPromises = items.map(async (item) => {
+            // Acquire semaphore to limit concurrent transfers
+            await semaphore.acquire();
+
             if (abortSignal?.aborted) {
                 console.log('Transfer cancelled by user');
                 throw new Error('Transfer cancelled by user');
@@ -962,7 +968,6 @@ export class OneDriveStorage implements CloudStorage {
                     await new Promise(resolve => setTimeout(resolve, 5000));
                     console.log(`Continuing with next item after error: ${errorMessage}`);
                     // Skip this directory and continue with the next item
-                    continue;
                 }
             } else if (item.isFile()) {
                 try {
@@ -1017,10 +1022,15 @@ export class OneDriveStorage implements CloudStorage {
                     await new Promise(resolve => setTimeout(resolve, 5000));
                     console.log(`Continuing with next item after error: ${errorMessage}`);
                     // Skip this file and continue with the next item
-                    continue;
+                } finally {
+                    // Release the semaphore after processing the item
+                    semaphore.release();
                 }
             }
-        }
+        });
+
+        await Promise.all(transferPromises);
+        console.log(`All items in directory ${sourcePath} transferred successfully to ${targetPath}`);
     }
 
     // use SDK to upload large files in chunks
