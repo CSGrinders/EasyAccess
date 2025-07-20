@@ -118,7 +118,12 @@ class MCPClient {
 //                     },
 //                 });
 //                 console.log("Response from get_information_from_user:", response);
-//                 await triggerToolResultMessage("get_information_from_user", { question: "Testing user input" }, response.content, response.error);
+//                 let isError = false;
+//                 if (response.isError) {
+//                     isError = true;
+//                     console.error("Tool error:", response.isError);
+//                 }
+//                 await triggerToolResultMessage("search_files", { provider: "GoogleDrive", accountId: "sohn5312@gmail.com", path: "/", patterns: ["yee"] }, response.content, isError);
 //             }
 //         }
 //         return "s";

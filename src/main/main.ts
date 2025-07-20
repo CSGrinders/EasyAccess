@@ -472,51 +472,57 @@ export async function triggerToolResultMessage(toolName: string, toolArgs: any, 
         return await invokeRendererFunction('toolResultMessage', "Something went wrong while processing the request...");
     }
     let message: string;
+
+    if (toolArgs.provider && toolArgs.provider !== "local" && toolArgs.accountId) {
+        message = `<tool_header><provider>${toolArgs.provider}</provider>\t<accountId>${toolArgs.accountId}</accountId></tool_header>`;
+    } else {
+        message = `<tool_header>Local file system</tool_header>`;
+    }
     switch (toolName) {
         case "read_file":
-            message = `Read a file at "${toolArgs.path}".`;
+            message += `\nRead a file at "${toolArgs.path}".`;
             break;
 
         case "read_multiple_files":
-            message = `Read files: ${
+            message += `\nRead files: ${
                 Array.isArray(toolArgs.paths) ? toolArgs.paths.join(", ") : ""
             }.`;
             break;
 
         case "write_file":
-            message = `Wrote content to "${toolArgs.path}".`;
+            message += `\nWrote content to "${toolArgs.path}".`;
             break;
 
         case "create_directory":
-            message = `Created a directory at "${toolArgs.path}".`;
+            message += `\nCreated a directory at "${toolArgs.path}".`;
             break;
 
         case "list_directory":
-            message = `Contents under "${toolArgs.path}":\n${resultContent.map((item: any) => item.text).join("\n")}.`;
+            message += `\nContents under "${toolArgs.path}":\n${resultContent.map((item: any) => item.text).join("\n")}.`;
             break;
 
         case "directory_tree":
-            message = `Directory tree for "${toolArgs.path}":\n${resultContent.map((item: any) => item.text).join("\n")}.`;
+            message += `\nDirectory tree for "${toolArgs.path}":\n${resultContent.map((item: any) => item.text).join("\n")}.`;
             break;
 
         case "move_file":
-            message = `Started moving a file from "${toolArgs.source}" to "${toolArgs.destination}".`;
+            message += `\nStarted moving a file from "${toolArgs.source}" to "${toolArgs.destination}".`;
             break;
 
         case "search_files":
-            message = `Search "${toolArgs.path}" for "${toolArgs.patterns}":\n${resultContent.map((item: any) => item.text).join("\n")}.`;
+            message += `\nSearch "${toolArgs.path}" for "${toolArgs.patterns}":\n${resultContent.map((item: any) => item.text).join("\n")}`;
             break;
 
         case "get_file_info":
-            message = `Get file info for "${toolArgs.path}".\nDetails:\n${resultContent.map((item: any) => item.text).join("\n")}`;
+            message += `Get file info for "${toolArgs.path}".\nDetails:\n${resultContent.map((item: any) => item.text).join("\n")}`;
             break;
 
         case "get_folder_info":
-            message = `Get folder info for "${toolArgs.path}".\nDetails:\n${resultContent.map((item: any) => item.text).join("\n")}`;
+            message += `Get folder info for "${toolArgs.path}".\nDetails:\n${resultContent.map((item: any) => item.text).join("\n")}`;
             break;
 
         case "list_allowed_directories":
-            message = `Allowed directories:\n${resultContent.map((item: any) => item.text).join("\n")}`;
+            message += `${resultContent.map((item: any) => item.text).join("\n")}`;
             break;
 
         case "list_connected_cloud_accounts":
@@ -528,7 +534,7 @@ export async function triggerToolResultMessage(toolName: string, toolArgs: any, 
             break;
 
         default:
-            message = `Attempted to handle an unknown tool: "${toolName}".`;
+            message += `Attempted to handle an unknown tool: "${toolName}".`;
             break;
     }
 

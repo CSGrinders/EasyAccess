@@ -5,6 +5,7 @@ import { RendererIpcCommandDispatcher } from "@/services/AgentControlService";
 import { supabase } from "@/supbaseClient";
 import { FaGoogle } from "react-icons/fa";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+import ToolResult from "./ToolResult";
 
 const AgentAction = memo(function AgentAction() {
     const [isResizing, setIsResizing] = useState(false);
@@ -42,6 +43,8 @@ const AgentAction = memo(function AgentAction() {
 
     const waitForResponseRef = useRef<boolean>(false);
     const questionRef = useRef<HTMLDivElement>(null);
+
+    const MONTHLY_REQUEST_LIMIT = 50; // Monthly request limit for the user
 
     // Add keyboard movement handler
     const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -134,6 +137,7 @@ const AgentAction = memo(function AgentAction() {
         }
 
         setIsLoading(false);
+        console.log(response);
         isTyping.current = false;
     }, []);
 
@@ -237,8 +241,8 @@ const AgentAction = memo(function AgentAction() {
 
             // Tool result
             result.push({
-            type: "tool",
-            content: match[1].trim()
+                type: "tool",
+                content: match[1].trim()
             });
 
             lastIndex = end;
@@ -432,7 +436,17 @@ const AgentAction = memo(function AgentAction() {
         console.log("User request track:", userRequestsTrack);
         const lastRequestDate = userRequestsTrack.length > 0 ? userRequestsTrack[0].last_request_date : null;
         const parsedDate: number | null = lastRequestDate ? new Date(lastRequestDate).getTime() : null;
-        if (userRequestsTrack.length === 0 || !parsedDate || parsedDate < Date.now() - 24 * 60 * 60 * 1000 || userRequestsTrack[0].requests < 5) {
+
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+
+        const lastRequestMonth = parsedDate ? new Date(parsedDate).getMonth() : null;
+        const lastYear = parsedDate ? new Date(parsedDate).getFullYear() : null;
+
+        const isNewMonth = currentMonth !== lastRequestMonth || currentYear !== lastYear;
+
+        if (userRequestsTrack.length === 0 || isNewMonth || userRequestsTrack[0].requests < MONTHLY_REQUEST_LIMIT) {
             console.log("User request track not found or request limit not reached");
             // Insert or update the user request track
             return true;
@@ -508,9 +522,10 @@ const AgentAction = memo(function AgentAction() {
                                 <div className="space-y-3">
                                     {parsed.map((part, index) =>
                                     part.type === "tool" ? (
-                                        <div key={index} className="tool-part p-2 text-sm">
-                                            <pre className="whitespace-pre-wrap">{part.content}</pre>
-                                        </div>
+                                        <ToolResult content={part.content} />
+                                        // <div key={index} className="tool-part p-2 text-sm">
+                                        //     <pre className="whitespace-pre-wrap">{part.content}</pre>
+                                        // </div>
                                     ) : (
                                         <p key={index} className="text-sm leading-relaxed whitespace-pre-wrap text-black dark:text-white/90">
                                         {part.content}
