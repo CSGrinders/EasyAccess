@@ -1183,90 +1183,7 @@ export class GoogleDriveStorage implements CloudStorage {
   }
 
 
-
-
-  /* download file in chunks, used when large files */
-  private async downloadFileInChunks(fileId: string, totalSize: number, progressCallback: (downloaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<Buffer> {
-    let CHUNK_SIZE: number;
-    
-    if (totalSize < 10 * 1024 * 1024) { // < 10MB
-        CHUNK_SIZE = 512 * 1024; // 512KB
-    } else if (totalSize < 100 * 1024 * 1024) { // < 100MB
-        CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
-    } else if (totalSize < 1024 * 1024 * 1024) { // < 1GB
-        CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
-    } else { // > 1GB
-        CHUNK_SIZE = 32 * 1024 * 1024; // 32MB
-    }
-
-    let downloadedBytes = 0;
-    let retryCount = 0;
-    const MAX_RETRIES = 3;
-    const chunks: Buffer[] = [];
-
-    console.log(`Starting chunked download. Total size: ${totalSize}, Chunk size: ${CHUNK_SIZE}`);
-
-    while (downloadedBytes < totalSize) {
-      // Check for cancellation before each chunk
-      if (abortSignal?.aborted) {
-        console.log('Download cancelled by user');
-        throw new Error('Download cancelled by user');
-      }
-
-      const chunkStart = downloadedBytes;
-      const chunkEnd = Math.min(downloadedBytes + CHUNK_SIZE, totalSize) - 1;
-      
-      console.log(`Downloading chunk: ${chunkStart}-${chunkEnd}/${totalSize - 1}`);
-
-      try {
-        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${this.oauth2Client!.credentials.access_token}`,
-            'Range': `bytes=${chunkStart}-${chunkEnd}`,
-          },
-          signal: abortSignal 
-        });
-
-        if (response.status === 206 || response.status === 200) {
-          // Partial content or full content received
-          const chunkBuffer = Buffer.from(await response.arrayBuffer());
-          chunks.push(chunkBuffer);
-          
-          downloadedBytes += chunkBuffer.length;
-          
-          // Update progress
-          progressCallback(downloadedBytes, totalSize);
-          
-          retryCount = 0; // Reset retry count on successful chunk
-          
-          if (response.status === 200) {
-            // Full file downloaded in one request
-            break;
-          }
-        } else {
-          throw new Error(`Download chunk failed: ${response.status} ${response.statusText}`);
-        }
-      } catch (error) {
-        retryCount++;
-        console.error(`Chunk download error (attempt ${retryCount}/${MAX_RETRIES}):`, error);
-        
-        if (retryCount >= MAX_RETRIES) {
-          throw new Error(`Download failed after ${MAX_RETRIES} attempts: ${error}`);
-        }
-        
-        // Wait before retry
-        const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
-        console.log(`Retrying in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-
-    // Combine all chunks into a single buffer
-    return Buffer.concat(chunks);
-  }
-
-  async createReadStream(filePath: string, fileSize: number, chunkSize?: number, maxQueueSize?: number): Promise<ReadableStream> {
+  async downloadInChunks(filePath: string, fileSize: number, chunkSize?: number, maxQueueSize?: number, abortSignal?: AbortSignal): Promise<ReadableStream> {
     await this.refreshOAuthClientIfNeeded();
     if (!this.oauth2Client) {
       throw new Error('OAuth2 client is not initialized');
@@ -1295,11 +1212,21 @@ export class GoogleDriveStorage implements CloudStorage {
     // Create a ReadableStream that downloads the file in chunks
     const stream = new ReadableStream({
       async start(controller) {
+          if (abortSignal?.aborted) {
+              console.log('Download cancelled during pull');
+              controller.error(new Error('Download cancelled by user'));
+              return;
+          }
         // Stream started
         console.log('Google read stream started');
       },
 
       async pull(controller) {
+        if (abortSignal?.aborted) {
+                console.log('Download cancelled during pull');
+                controller.error(new Error('Download cancelled by user'));
+                return;
+        }
         if (isStreamClosed) {
           console.log('Stream is already closed');
           controller.close();
@@ -1341,6 +1268,7 @@ export class GoogleDriveStorage implements CloudStorage {
               'Authorization': `Bearer ${accessToken}`,
               'Range': `bytes=${currentPosition}-${endPosition}`,
             },
+            signal: abortSignal 
           });
 
           if (response.status === 206 || response.status === 200) {
@@ -1361,7 +1289,12 @@ export class GoogleDriveStorage implements CloudStorage {
             throw new Error(`Download chunk failed: ${response.status} ${response.statusText}`);
           }
 
-        } catch (error) {
+        } catch (error: any) {
+          if (abortSignal?.aborted || error.name === 'AbortError') {
+              console.log('Download cancelled during fetch');
+              controller.error(new Error('Download cancelled by user'));
+              return;
+          }
           // retry logic TODO
           console.error('Error reading chunk:', error);
           
@@ -1386,11 +1319,10 @@ export class GoogleDriveStorage implements CloudStorage {
       // Set a high water mark to control internal buffering
       highWaterMark: maxQueueSize,
     });
-
     return stream;
   }
 
-  async uploadChunk(uploadUrl: string, chunk: Buffer, offset: number, totalSize: number): Promise<void> {
+  async cloudToCloudUploadChunk(uploadUrl: string, chunk: Buffer, offset: number, totalSize: number): Promise<void> {
     console.log(`Uploading chunk for uploadUrl: ${uploadUrl}, offset: ${offset}, size: ${chunk.length}`);
     await this.refreshOAuthClientIfNeeded();
     if (!this.oauth2Client) {
@@ -1607,182 +1539,4 @@ export class GoogleDriveStorage implements CloudStorage {
     } while (nextPageToken);
   }
 
-  async  transferCloudToLocal(transferInfo: any, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
-    await this.downloadItem(transferInfo, progressCallback, abortSignal);
-  }
-
-  async downloadItem(transferInfo: any, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
-    const {transferId, fileName, type, sourcePath, targetPath} = transferInfo;
-
-    await this.refreshOAuthClientIfNeeded();
-    if (!this.oauth2Client) {
-      throw new Error('OAuth2 client is not initialized');
-    }
-
-    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
-    
-    // Get file ID from path
-    const fileId = await this.getFileId(sourcePath);
-    if (!fileId) {
-      throw new Error(`File not found: ${sourcePath}`);
-    }
-
-    // Get file metadata to determine size
-    const fileMetadata = await drive.files.get({
-      fileId: fileId,
-      fields: 'size,mimeType',
-    });
-
-    const isDirectory = fileMetadata.data.mimeType === 'application/vnd.google-apps.folder';
-    if (isDirectory) {
-      const newFolderPath = path.join(targetPath, fileName);
-      fs.mkdir(newFolderPath, { recursive: true });
-      console.log(`Created directory: ${newFolderPath}`);
-      // list files in the directory and download each file
-      const files = await drive.files.list({
-        q: `'${fileId}' in parents and trashed = false`,
-        fields: 'files(id, name, mimeType)',
-      });
-
-      for (const file of files.data.files || []) {
-        const type = file.mimeType === 'application/vnd.google-apps.folder' ? 'directory' : 'file';
-        const fileTransferInfo = {
-          transferId,
-          fileName: file.name || '',
-          type,
-          sourcePath: path.join(sourcePath, file.name || ''),
-          targetPath: newFolderPath,
-        };
-        await this.downloadItem(fileTransferInfo, progressCallback, abortSignal);
-      }
-      return;
-    }
-
-    const fileSize = fileMetadata.data.size ? Number(fileMetadata.data.size) : 0;
-    
-    if (fileSize === 0) {
-      console.log(`File ${fileName} is empty, skipping transfer.`);
-      return;
-    }
-
-    console.log(`Transferring file ${fileName} (${fileSize} bytes) from cloud to local`);
-
-    // Create a writable stream to the target file
-    const targetFilePath = path.join(targetPath, fileName);
-    const fileHandle = await fs.open(targetFilePath, 'w');
-    
-    try {
-      let TransferedBytes = 0;
-      let retryCount = 0;
-      const MAX_RETRIES = 3;
-      const CHUNK_SIZE = 32 * 1024 * 1024; // 32MB chunks
-
-      while (TransferedBytes < fileSize) {
-        // Check for cancellation before each chunk
-        if (abortSignal?.aborted) {
-          console.log('Transfer cancelled by user');
-          throw new Error('Transfer cancelled by user');
-        }
-
-        if (retryCount >= MAX_RETRIES) {
-          throw new Error(`Transfer failed after ${MAX_RETRIES} attempts`);
-        }
-
-        if (progressCallback) {
-          progressCallback({transferId, fileName, transfered: TransferedBytes, total: fileSize, isDirectory: false});
-        }
-
-        const chunkStart = TransferedBytes;
-        const chunkEnd = Math.min(TransferedBytes + CHUNK_SIZE - 1, fileSize - 1);
-        
-        console.log(`Downloading chunk: ${chunkStart}-${chunkEnd}/${fileSize - 1}`);
-
-        try {
-          const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${this.oauth2Client!.credentials.access_token}`,
-              'Range': `bytes=${chunkStart}-${chunkEnd}`,
-            },
-            signal: abortSignal 
-          });
-
-          if (response.status === 206 || response.status === 200) {
-            // Partial content or full content received
-            const chunkBuffer = Buffer.from(await response.arrayBuffer());
-            await fileHandle.write(chunkBuffer, 0, chunkBuffer.length, TransferedBytes);
-            
-            TransferedBytes += chunkBuffer.length;
-            
-            retryCount = 0; // Reset retry count on successful chunk
-            
-            if (response.status === 200) {
-              // Full file downloaded in one request
-              break;
-            }
-          } else {
-            throw new Error(`Download chunk failed: ${response.status} ${response.statusText}`);
-          }
-
-          if (progressCallback) {
-            progressCallback({transferId, fileName, transfered: TransferedBytes, total: fileSize, isDirectory: false});
-          }
-
-        } catch (error) {
-          retryCount++;
-          console.error(`Error downloading chunk (attempt ${retryCount}/${MAX_RETRIES}):`, error);
-          
-          if (progressCallback) {
-            progressCallback({transferId, fileName, transfered: TransferedBytes, total: fileSize, isDirectory: false});
-          }
-
-          if (retryCount >= MAX_RETRIES) {
-            throw new Error(`Transfer failed after ${MAX_RETRIES} attempts: ${error}`);
-          }
-          
-          // Wait before retry
-          const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
-          console.log(`Retrying in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          
-          // Try to get current upload status before retry
-          try {
-            const statusResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${this.oauth2Client!.credentials.access_token}`,
-                'Range': `bytes=${chunkStart}-${chunkEnd}`,
-              },
-              signal: abortSignal 
-            });
-            
-            // If the status response is 308, it means we can resume
-            if (statusResponse.status === 308) {
-              const rangeHeader = statusResponse.headers.get('Range');
-              if (rangeHeader) {
-                const match = rangeHeader.match(/bytes=(\d+)-(\d+)/);
-                if (match) {
-                  const currentPosition = parseInt(match[2]) + 1; // Next byte to download
-                  console.log(`Resuming from byte: ${currentPosition}`);
-                  TransferedBytes = currentPosition; // Update current position
-                } else {
-                  console.warn('Failed to parse Range header:', rangeHeader);
-                }
-              } else {
-                console.warn('No Range header in response, resuming from last known position');
-              }
-            } else {
-              console.warn('Status response was not 308, resuming from last known position');
-            }
-          } catch (statusError) {
-            console.error('Error getting current upload status:', statusError);
-          }
-        }
-      }
-
-      console.log(`Transfer completed successfully: ${TransferedBytes}/${fileSize} bytes`);
-    } finally {
-      await fileHandle.close();
-    }
-  }
 }

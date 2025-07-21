@@ -117,13 +117,13 @@ async function transferCloudToLocal(
             if (account.getAccountId() === sourceAccountId) {
                 const type = mime.lookup(fileName) || 'application/octet-stream'; // default to binary if no mime type found
                 // Handle local to cloud upload
-                await downloadItem(transferId, fileName, account, sourcePath, targetPath, abortSignal, progressCallback);
+                await downloadItemFromCloud(transferId, fileName, account, sourcePath, targetPath, abortSignal, progressCallback);
             }
         }
     }
 }
 
-async function downloadItem(
+async function downloadItemFromCloud(
     transferId: string,
     itemName: string,
     sourceAccountInstance: CloudStorage,
@@ -134,7 +134,12 @@ async function downloadItem(
 ): Promise<void> {
     // Check if the source item is a directory
     const isDirectory = await sourceAccountInstance.isDirectory(sourcePath);
-    
+    console.error("isDirectory", isDirectory);
+
+    if (abortSignal?.aborted) {
+        console.warn(`Download cancelled before starting for ${itemName}`);
+        throw new Error('Download cancelled by user');
+    }
     // TODO: maybe there is way to check if directory or file without making a request to the cloud storage?
 
     if (isDirectory) {
@@ -149,6 +154,7 @@ async function downloadItem(
                 isFetching: true
             });
         }
+
         // If it's a directory, create a directory in the target cloud storage
         const newTargetFolderPath = path.join(targetPath, itemName);
         fs.mkdir(newTargetFolderPath, { recursive: true });
@@ -184,13 +190,14 @@ async function downloadItem(
                 // If the transfer is aborted, stop processing further items
                 throw new Error(`User cancelled transfer`);
             }
+
             const sourceItemPath = path.join(sourcePath, item.name);
             
             try {
                 // Recursively transfer each item
                 // when transferring each item, we will call the downloadItem function again
                 // without progressCallback to avoid keeping track of progress for each item
-                const response = await downloadItem(
+                const response = await downloadItemFromCloud(
                     transferId,
                     item.name,
                     sourceAccountInstance,
@@ -212,22 +219,49 @@ async function downloadItem(
                 }
 
                 return { success: true, itemName: item.name };
-            } catch (error) {
-                processed_items++;
-                if (progressCallback) {
-                    progressCallback({
-                        transferId,
-                        fileName: itemName,
-                        transfered: processed_items,
-                        total: total_items,
-                        isDirectory: false,
-                        isFetching: false,
-                        errorItemDirectory: `Failed to process file ${item.name}: skipping to next file`
-                    });
-                } else {
-                    // this is a folder under directory being transferred..
-                    throw new Error(`Failed to process folder ${item.name}: skipping to next folder`);
+            } catch (error: any) {
+                if (abortSignal?.aborted || 
+                    error?.error?.code === 'itemNotFound' || 
+                    error?.code === 'itemNotFound' ||
+                    error?.message?.includes('cancelled') ||
+                    error?.message?.includes('aborted') ||
+                    error?.name === 'AbortError') {
+                    console.log('Transfer cancelled by user');
+                    throw new Error('Transfer cancelled by user');
+                    }
+                
+                console.error(`Failed to process directory ${item.name}:`, error);
+                // Extract error message
+                const parts = error instanceof Error ? error.message.split(':') : ["Transfer failed"];
+                let errorMessage = parts[parts.length - 1].trim() + ". Continueing with next file...";
+                if (errorMessage.toLowerCase().includes('permission')) {
+                    errorMessage = "You don't have permission to access this file or folder.";
+                } else if (errorMessage.toLowerCase().includes('quota')) {
+                    errorMessage = "Google Drive storage quota exceeded.";
+                } else if (errorMessage.toLowerCase().includes('network')) {
+                    errorMessage = "Network error. Please check your internet connection.";
+                } else if (errorMessage.toLowerCase().includes('not found')) {
+                    errorMessage = "The file or folder was not found.";
+                } else if (errorMessage.toLowerCase().includes('timeout')) {
+                    errorMessage = "The operation timed out. Please try again.";
+                } else if (errorMessage === "" || errorMessage === "Transfer failed") {
+                    errorMessage = "An unknown error occurred during transfer.";
                 }
+                progressCallback?.({
+                    transferId,
+                    fileName: item.name,
+                    transfered: 0,
+                    total: 0, 
+                    isDirectory: true,
+                    isFetching: true,
+                    errorItemDirectory: `Failed to process directory ${item.name}: ${errorMessage}`
+                });
+
+                // Wait 5 seconds before continuing with the next item
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                console.log(`Continuing with next item after error: ${errorMessage}`);
+                // Skip this directory and continue with the next item
+                processed_items++;
 
                 return { success: false, itemName: item.name };
             } finally {
@@ -305,7 +339,7 @@ async function downloadItem(
 
         // create a read stream from the source cloud storage
         // actually maxQueueSize is not used in the current implementation as chunk is read synchronously
-        const fileStream = await sourceAccountInstance.createReadStream(sourcePath, fileSize, CHUNK_SIZE, maxQueueSize);
+        const fileStream = await sourceAccountInstance.downloadInChunks(sourcePath, fileSize, CHUNK_SIZE, maxQueueSize, abortSignal);
         // create a upload session in the target cloud storage
         const type = mime.lookup(itemName) || 'application/octet-stream'; // default to binary if no mime type found
         // assume it returns a sessionId or upload URL
@@ -315,6 +349,11 @@ async function downloadItem(
         const reader = fileStream.getReader();
         try {
             while (true) {
+                if (abortSignal?.aborted) {
+                    console.warn(`Download cancelled for ${itemName}`);
+                    await reader.cancel();
+                    throw new Error('Download cancelled by user');
+                }
                 const { done, value: chunk } = await reader.read();
                 if (done) {
                     console.log(`All chunks read for file: ${itemName}`);
@@ -351,22 +390,44 @@ async function downloadItem(
                 }
             }
         } catch (error: any) {
-            if (progressCallback) {
-                // skip to next file
-                progressCallback({
-                    transferId,
-                    fileName: itemName,
-                    transfered: 0,
-                    total: 0, 
-                    isDirectory: true,
-                    isFetching: true,
-                    errorItemDirectory: `Failed to process file ${itemName}: skipping to next file`
-                });
-                await new Promise((resolve) => setTimeout(resolve, 1000)); // wait for 1 second before throwing error
-            } else {
-                // this is a file under directory being transferred..
-                throw new Error(`Failed to process file ${itemName}: skipping to next file`);
+            if (abortSignal?.aborted || 
+              error?.error?.code === 'itemNotFound' || 
+              error?.code === 'itemNotFound' ||
+              error?.message?.includes('cancelled') ||
+              error?.message?.includes('aborted') ||
+              error?.name === 'AbortError') {
+              console.log('Transfer cancelled by user');
+              throw new Error('Transfer cancelled by user');
             }
+            console.error(`Failed to process file ${itemName}:`, error);
+            // Extract error message
+            const parts = error instanceof Error ? error.message.split(':') : ["Transfer failed"];
+            let errorMessage = parts[parts.length - 1].trim() + ". Continueing with next file...";
+            if (errorMessage.toLowerCase().includes('permission')) {
+                errorMessage = "You don't have permission to access this file or folder.";
+            } else if (errorMessage.toLowerCase().includes('quota')) {
+                errorMessage = "Google Drive storage quota exceeded.";
+            } else if (errorMessage.toLowerCase().includes('network')) {
+                errorMessage = "Network error. Please check your internet connection.";
+            } else if (errorMessage.toLowerCase().includes('not found')) {
+                errorMessage = "The file or folder was not found.";
+            } else if (errorMessage.toLowerCase().includes('timeout')) {
+                errorMessage = "The operation timed out. Please try again.";
+            } else if (errorMessage === "" || errorMessage === "Transfer failed") {
+                errorMessage = "An unknown error occurred during transfer.";
+            }
+            progressCallback?.({
+                transferId,
+                fileName: itemName,
+                transfered: 0,
+                total: 0, 
+                isDirectory: true,
+                isFetching: true,
+                errorItemDirectory: `Failed to process file ${itemName}: ${errorMessage}`
+                })
+
+                // Wait 5 seconds before continuing with the next item
+            await new Promise(resolve => setTimeout(resolve, 5000));
         }
         console.log(`All chunks uploaded for file: ${itemName}`);
     }
@@ -691,7 +752,7 @@ async function transferItemCloudToCloud(
 
         // create a read stream from the source cloud storage
         // actually maxQueueSize is not used in the current implementation as chunk is read synchronously
-        const fileStream = await sourceAccountInstance.createReadStream(sourcePath, fileSize, CHUNK_SIZE, maxQueueSize);
+        const fileStream = await sourceAccountInstance.downloadInChunks(sourcePath, fileSize, CHUNK_SIZE, maxQueueSize, abortSignal);
         // create a upload session in the target cloud storage
         const type = mime.lookup(itemName) || 'application/octet-stream'; // default to binary if no mime type found
         const sessionId = await targetAccountInstance.initiateResumableUpload(itemName, type, targetPath);
@@ -726,7 +787,7 @@ async function transferItemCloudToCloud(
                 let uploadTryCount = 0;
                 while (uploadTryCount < RETRY_LIMIT) {
                     try {
-                        await targetAccountInstance.uploadChunk(sessionId, chunk, chunkOffset, fileSize);
+                        await targetAccountInstance.cloudToCloudUploadChunk(sessionId, chunk, chunkOffset, fileSize);
                         break; // exit loop on success
                     } catch (error: any) {
                         const message = error?.message || '';

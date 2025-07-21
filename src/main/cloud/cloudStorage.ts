@@ -39,12 +39,11 @@ export interface CloudStorage {
         abortSignal?: AbortSignal
     ): Promise<void>; // Transfer file to another cloud or local storage
     
-    createReadStream(filePath: string, fileSize: number, chunkSize?: number, maxQueueSize?: number): Promise<ReadableStream>;
+    downloadInChunks(filePath: string, fileSize: number, chunkSize?: number, maxQueueSize?: number, abortSignal?: AbortSignal): Promise<ReadableStream>;
     initiateResumableUpload(fileName: string, mimeType: string, parentFolderPath: string): Promise<string>;
-    uploadChunk(sessionId: string, chunk: Buffer, offset: number, totalSize: number): Promise<void>;
+    cloudToCloudUploadChunk(sessionId: string, chunk: Buffer, offset: number, totalSize: number, abortSignal?: AbortSignal): Promise<void>;
     finishResumableUpload(sessionId: string, targetFilePath: string, fileSize: number): Promise<void>;
     moveOrCopyItem(sourcePath: string, targetPath: string, itemName: string, copy: boolean, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void>; // Move file or directory within the same cloud storage account
-    transferCloudToLocal(transferInfo: any, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void>; // Transfer file or directory from cloud to local storage
 
     isDirectory(filePath: string): Promise<boolean>;
     searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]>;

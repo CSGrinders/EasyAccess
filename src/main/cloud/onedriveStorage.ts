@@ -859,7 +859,7 @@ export class OneDriveStorage implements CloudStorage {
 
         try {
 
-            await this.uploadFile(transferId, fileName, sourcePath, targetPath, fileSize, progressCallback, abortSignal);
+            await this.uploadFileInChunks(transferId, fileName, sourcePath, targetPath, fileSize, progressCallback, abortSignal);
             // // Initialize resumable upload session
             // const uploadUrl = await this.initiateResumableUpload(fileName, type, targetPath);
             // console.log('Resumable upload session initiated:', uploadUrl);
@@ -984,7 +984,7 @@ export class OneDriveStorage implements CloudStorage {
                     const fileSize = fileStats.size;
                     const type = mime.lookup(item.name) || 'application/octet-stream';
 
-                    await this.uploadFile(transferId, item.name, itemPath, targetPath, fileSize, progressCallback, abortSignal);
+                    await this.uploadFileInChunks(transferId, item.name, itemPath, targetPath, fileSize, progressCallback, abortSignal);
 
                     // const uploadUrl = await this.initiateResumableUpload(item.name, type, targetPath);
                     // await this.uploadFileInChunks(transferId, item.name, uploadUrl, itemPath, fileSize, progressCallback, abortSignal);
@@ -1035,7 +1035,7 @@ export class OneDriveStorage implements CloudStorage {
 
     // use SDK to upload large files in chunks
     // https://learn.microsoft.com/en-us/graph/sdks/large-file-upload?tabs=typescript
-    async uploadFile(transferId: string, fileName: string, sourcePath: string, targetPath: string, fileSize: number, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+    async uploadFileInChunks(transferId: string, fileName: string, sourcePath: string, targetPath: string, fileSize: number, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
         if (!this.graphClient) {
             await this.initAccount();
         }
@@ -1185,184 +1185,8 @@ export class OneDriveStorage implements CloudStorage {
         }
     }
 
-    /* Never used... */
-    async uploadFileInChunks(
-        transferId: string,
-        fileName: string,
-        uploadUrl: string,
-        sourcePath: string,
-        fileSize: number,
-        progressCallback?: (data: progressCallbackData) => void,
-        abortSignal?: AbortSignal,
-        isDirectory: boolean = false
-    ): Promise<void> {
-        if (!this.graphClient) {
-            await this.initAccount();
-        }
-        if (!this.graphClient) {
-            console.error('Graph client is not initialized');
-            throw new Error('Graph client is not initialized');
-        }
-
-        let CHUNK_SIZE: number;
-        
-        if (fileSize < 10 * 1024 * 1024) { // < 10MB
-            CHUNK_SIZE = 512 * 1024; // 512KB
-        } else if (fileSize < 100 * 1024 * 1024) { // < 100MB
-            CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
-        } else if (fileSize < 1024 * 1024 * 1024) { // < 1GB
-            CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
-        } else { // > 1GB
-            CHUNK_SIZE = 32 * 1024 * 1024; // 32MB
-        }
-        
-        let TransferedBytes = 0;
-        let retryCount = 0;
-        const MAX_RETRIES = 3;
-        const fileHandle = await fs.open(sourcePath, 'r');
-    
-        console.log(`Starting chunked upload. Total size: ${fileSize}, Chunk size: ${CHUNK_SIZE}`);
-        
-        try {
-            while (TransferedBytes < fileSize) {
-                // Check for cancellation before each chunk
-                if (abortSignal?.aborted) {
-                    console.log('Transfer cancelled by user');
-                    throw new Error('Transfer cancelled by user');
-                }
-                
-                const chunkStart = TransferedBytes;
-                const chunkEnd = Math.min(TransferedBytes + CHUNK_SIZE, fileSize);
-
-                // Read the chunk from the local file
-                const length = chunkEnd - chunkStart + 1;
-                const chunkData = Buffer.alloc(length);
-                await fileHandle.read(chunkData, 0, length, chunkStart);
-
-                console.log(`Uploading chunk from ${chunkStart} to ${chunkEnd} (${length} bytes)`);
-
-                try {
-                    // Upload the chunk to OneDrive
-                    const response = await fetch(uploadUrl, {
-                      method: 'PUT',
-                      headers: {
-                          'Content-Range': `bytes ${chunkStart}-${chunkEnd - 1}/${fileSize}`,
-                          'Content-Length': chunkData.length.toString(),
-                      },
-                      body: chunkData,
-                      signal: abortSignal 
-                   });
-
-                    console.log(`Chunk uploaded successfully. Response:`, response);
-                
-                    if (!response) {
-                        console.error(`No response received for chunk from ${chunkStart} to ${chunkEnd}`);
-                        throw new Error(`No response received for chunk from ${chunkStart} to ${chunkEnd}`);
-                    }
-
-                    if (response.status === 202) {
-                        // successful and more chunks need to be uploaded
-                        console.log(`Chunk ${chunkStart}-${chunkEnd} uploaded successfully.`);
-                        const nextExpectedRanges = response.headers.get('Range') || 
-                                             (await response.json()).nextExpectedRanges;
-                        if (nextExpectedRanges && Array.isArray(nextExpectedRanges) && nextExpectedRanges.length > 0) {
-                            const match = nextExpectedRanges[0].match(/(\d+)-/);
-                            if (match) {
-                                const nextChunkStart = parseInt(match[1], 10);
-                                TransferedBytes = nextChunkStart;
-                                console.log(`Next chunk start updated to: ${TransferedBytes}`);
-                            } else {
-                                console.warn(`No valid next expected range found in response: ${nextExpectedRanges}`);
-                                TransferedBytes = chunkEnd; // Fallback to next chunk end
-                            }
-                        } else {
-                            TransferedBytes = chunkEnd; // Default increment
-                        }
-
-                        if (progressCallback) {
-                            progressCallback({transferId, fileName: fileName, transfered: TransferedBytes, total: fileSize, isDirectory: (isDirectory || false)});
-                        }
-
-                        retryCount = 0; // Reset retry count on successful upload
-                        
-                    } else if (response.status === 201 || response.status === 200) {
-                        // upload completed
-                        console.log(`Upload completed for file: ${fileName}`);
-                        // Upload complete
-                        TransferedBytes = fileSize;
-                        if (progressCallback) {
-                            progressCallback({transferId, fileName: fileName, transfered: fileSize, total: fileSize, isDirectory: (isDirectory || false)});
-                        }
-                        console.log('Upload completed successfully');
-                        break;
-                    } else {
-                        console.error(`Unexpected response status for chunk ${chunkStart}-${chunkEnd}:`, response.status);
-                        throw new Error(`Unexpected response status for chunk ${chunkStart}-${chunkEnd}: ${response.status}`);
-                    }
-                  } catch (error: any) {
-                      // Check if error is due to cancellation
-                      if (error.name === 'AbortError' || abortSignal?.aborted) {
-                          console.log('Transfer cancelled by user');
-                          throw new Error('Transfer cancelled by user');
-                      }
-
-                      retryCount++;
-                      console.error(`Error uploading chunk from ${chunkStart} to ${chunkEnd}:`, error);
-                      
-                      if (retryCount >= MAX_RETRIES) {
-                          throw new Error(`Upload failed after ${MAX_RETRIES} attempts: ${error}`);
-                      }
-                      
-                      // Wait before retry
-                      const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
-                      console.log(`Retrying in ${delay}ms...`);
-                      await new Promise(resolve => setTimeout(resolve, delay));
-                      
-                      // Try to get current upload status before retrying
-                      try {
-                          const statusResponse = await fetch(uploadUrl, {
-                              method: 'PUT',
-                              headers: {
-                                  'Content-Range': `bytes */${fileSize}`,
-                              },
-                              signal: abortSignal
-                          });
-                          
-                          if (statusResponse.status === 308) {
-                              const rangeHeader = statusResponse.headers.get('Range');
-                              if (rangeHeader) {
-                                  const match = rangeHeader.match(/bytes=0-(\d+)/);
-                                  if (match) {
-                                      TransferedBytes = parseInt(match[1]) + 1;
-                                      console.log(`TransferedBytes updated to: ${TransferedBytes}`);
-                                  }
-                              }
-                          }
-                        } catch (statusError: any) {
-                            // Add cancellation check for status error as well
-                            if (statusError.name === 'AbortError' || abortSignal?.aborted) {
-                                console.log('Transfer cancelled by user during status check');
-                                throw new Error('Transfer cancelled by user');
-                            }
-                            console.error(`Error getting upload status for chunk ${chunkStart}-${chunkEnd}:`, statusError);
-                        }
-                  }
-              }
-          } catch (error: any) {
-              console.error('Error uploading file:', error);
-              if (error.message?.includes('cancelled') || error.name === 'AbortError') {
-                  throw error;
-              }
-              throw new Error(`Upload failed: ${error.message}`);
-          } finally {
-              // Close the file handle
-              await fileHandle.close();
-              console.log(`File handle for ${sourcePath} closed.`);
-          }
-      }
-
     // https://learn.microsoft.com/en-us/graph/api/driveitem-get-content?view=graph-rest-1.0&tabs=http
-    async createReadStream(filePath: string, chunkSize?: number, maxQueueSize?: number): Promise<ReadableStream> {
+    async downloadInChunks(filePath: string, chunkSize?: number, maxQueueSize?: number): Promise<ReadableStream> {
         if (!this.graphClient) {
             await this.initAccount();
         }
@@ -1468,7 +1292,7 @@ export class OneDriveStorage implements CloudStorage {
         }
     }
 
-    async uploadChunk(uploadUrl: string, chunk: Buffer, offset: number, totalSize: number): Promise<void> {
+    async cloudToCloudUploadChunk(uploadUrl: string, chunk: Buffer, offset: number, totalSize: number): Promise<void> {
         if (!this.graphClient) {
             await this.initAccount();
         }
@@ -1565,9 +1389,5 @@ export class OneDriveStorage implements CloudStorage {
         console.error('Error moving or copying item:', error);
         throw error;
       }
-    }
-
-
-    async  transferCloudToLocal(transferInfo: any, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
     }
   }

@@ -1059,7 +1059,7 @@ export class DropboxStorage implements CloudStorage {
         }
     }
 
-    async createReadStream(filePath: string, fileSize: number, chunkSize?: number,  maxQueueSize?: number): Promise<ReadableStream> {
+    async downloadInChunks(filePath: string, fileSize: number, chunkSize?: number,  maxQueueSize?: number): Promise<ReadableStream> {
         await this.initClient();
         if (!this.client) {
             console.error('Dropbox client is not initialized');
@@ -1184,7 +1184,7 @@ export class DropboxStorage implements CloudStorage {
         return stream;
     }
 
-    async uploadChunk(sessionId: string, chunk: Buffer, offset: number, totalSize: number): Promise<void> {
+    async cloudToCloudUploadChunk(sessionId: string, chunk: Buffer, offset: number, totalSize: number): Promise<void> {
         console.log(`Uploading chunk for session ID: ${sessionId}, offset: ${offset}, size: ${chunk.length}`);
         await this.initClient();
         if (!this.client) {
@@ -1304,9 +1304,5 @@ export class DropboxStorage implements CloudStorage {
         }
 
         console.log(`Item moved successfully: ${sourcePath}/${itemName} to ${targetPath}/${itemName}`);
-    }
-
-    async  transferCloudToLocal(transferInfo: any, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
-
     }
 }
