@@ -1059,7 +1059,7 @@ export class DropboxStorage implements CloudStorage {
         }
     }
 
-    async downloadInChunks(filePath: string, fileSize: number, chunkSize?: number,  maxQueueSize?: number): Promise<ReadableStream> {
+  async downloadInChunks(filePath: string, fileSize: number, chunkSize?: number, maxQueueSize?: number, abortSignal?: AbortSignal): Promise<ReadableStream> {
         await this.initClient();
         if (!this.client) {
             console.error('Dropbox client is not initialized');
@@ -1085,7 +1085,8 @@ export class DropboxStorage implements CloudStorage {
             },
             body: JSON.stringify({
                 path: filePath
-            })
+            }),
+            signal: abortSignal,
         });
         const { link: tempLink } = await response.json();
 
@@ -1100,10 +1101,20 @@ export class DropboxStorage implements CloudStorage {
         const stream = new ReadableStream({
             async start(controller) {
                 // Stream started
+                if (abortSignal?.aborted) {
+                    console.log('Download cancelled during pull');
+                    controller.error(new Error('Download cancelled by user'));
+                    return;
+                }
                 console.log('Dropbox read stream started');
             },
 
             async pull(controller) {
+                if (abortSignal?.aborted) {
+                    console.log('Download cancelled during pull');
+                    controller.error(new Error('Download cancelled by user'));
+                    return;
+                }
                 if (isStreamClosed) {
                     console.log('Stream is already closed, no more data to pull');
                     controller.close();
@@ -1142,7 +1153,8 @@ export class DropboxStorage implements CloudStorage {
                         method: 'GET',
                         headers: {
                             Range: `bytes=${currentPosition}-${endPosition}`,
-                        }
+                        }, 
+                        signal: abortSignal,
                     });
 
                     if (!res.ok) {
@@ -1156,7 +1168,12 @@ export class DropboxStorage implements CloudStorage {
                     controller.enqueue(chunkData);
                     currentPosition += chunkSize;
                     retryCount = 0;
-                } catch (error) {
+                } catch (error: any) {
+                    if (abortSignal?.aborted || error.name === 'AbortError') {
+                        console.log('Download cancelled during fetch');
+                        controller.error(new Error('Download cancelled by user'));
+                        return;
+                    }
                     // retry logic TODO
                     console.error(`Error pulling chunk: ${error}`);
                     retryCount++;

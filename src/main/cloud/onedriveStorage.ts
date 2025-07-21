@@ -1124,7 +1124,7 @@ export class OneDriveStorage implements CloudStorage {
             console.log(`Uploaded file with ID: ${driveItem.id}`);
         } catch (error: any) {
           if (abortSignal?.aborted || 
-              error?.error?.code === 'itemNotFound' || 
+              error?.error?.code === 'itemNotFoƒund' || 
               error?.code === 'itemNotFound' ||
               error?.message?.includes('cancelled') ||
               error?.message?.includes('aborted') ||
@@ -1186,7 +1186,7 @@ export class OneDriveStorage implements CloudStorage {
     }
 
     // https://learn.microsoft.com/en-us/graph/api/driveitem-get-content?view=graph-rest-1.0&tabs=http
-    async downloadInChunks(filePath: string, chunkSize?: number, maxQueueSize?: number): Promise<ReadableStream> {
+  async downloadInChunks(filePath: string, fileSize: number, chunkSize?: number, maxQueueSize?: number, abortSignal?: AbortSignal): Promise<ReadableStream> {
         if (!this.graphClient) {
             await this.initAccount();
         }
@@ -1214,6 +1214,11 @@ export class OneDriveStorage implements CloudStorage {
             // 2. Return a ReadableStream that pulls data in chunks
             return new ReadableStream({
               async start(controller) {
+                  if (abortSignal?.aborted) {
+                      console.log('Download cancelled during pull');
+                      controller.error(new Error('Download cancelled by user'));
+                      return;
+                  }
                   console.log(`Starting to read file from OneDrive: ${filePath}`);
                   if (!downloadUrl) {
                       controller.error('Download URL not found in file metadata');
@@ -1221,6 +1226,11 @@ export class OneDriveStorage implements CloudStorage {
                   }
               },
               async pull(controller) {
+                  if (abortSignal?.aborted) {
+                          console.log('Download cancelled during pull');
+                          controller.error(new Error('Download cancelled by user'));
+                          return;
+                  }
                   if (isStreamClosed) {
                     console.log('Stream is already closed');
                     controller.close();
@@ -1252,7 +1262,8 @@ export class OneDriveStorage implements CloudStorage {
                     const res = await fetch(downloadUrl, {
                         headers: {
                             Range: `bytes=${offset}-${end}`,
-                        }
+                        },
+                        signal: abortSignal 
                     });
 
                     if (!res.ok) {
@@ -1262,7 +1273,12 @@ export class OneDriveStorage implements CloudStorage {
                     const chunk = Buffer.from(await res.arrayBuffer());
                     controller.enqueue(chunk);
                     offset += chunk.length;
-                  } catch (error) {
+                  } catch (error: any) {
+                    if (abortSignal?.aborted || error.name === 'AbortError') {
+                      console.log('Download cancelled during fetch');
+                      controller.error(new Error('Download cancelled by user'));
+                      return;
+                    } 
                     // redo the request if it fails
 
                     retryCount++;
