@@ -558,7 +558,7 @@ const AgentAction = memo(function AgentAction() {
             </div>
             {/* User Input */}
             {/* Enhanced Chat Interface */}
-            <div className="absolute pointer-events-auto bottom-8 left-1/2 transform -translate-x-1/2 w-[75%]">
+            <div className="absolute pointer-events-auto bottom-8 left-1/2 transform -translate-x-1/2 w-[75%] max-w-[800px]">
                 <span ref={questionRef}
                     className={`text-center text-xs text-gray-500 mb-4`}
                 >
