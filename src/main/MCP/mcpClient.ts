@@ -27,6 +27,7 @@ class MCPClient {
     private mcp: Client;
     // private llm: Anthropic;
     private tools: Tool[] = [];
+    private prev_messages: MessageParam[] = [];
 
     constructor() {
         // this.llm = new Anthropic({
@@ -79,6 +80,13 @@ class MCPClient {
 
     // Process query
     async processQuery(query: string, access_token: string): Promise<string> {
+        // check if prev messages are too long
+        console.log("Using previous messages:", this.prev_messages);
+        if (this.prev_messages.length > 20) {
+            console.warn("Previous messages are too long, clearing them.");
+            this.prev_messages = [];
+        }
+
         console.log("Processing query:", query);
 
 //         // temp: just testing rendering messages in renderer process
@@ -130,6 +138,15 @@ class MCPClient {
 
         const connectedAccountsText = await this.getConnectedAccountsText();
 
+        const messages: MessageParam[] = [
+            {
+                role: "user",
+                content: query,
+            },
+        ];
+
+        let currentResponse: string = "";
+
         const jwt: string | null = access_token;
         if (!jwt) {
             throw new Error("Failed to get Supabase JWT");
@@ -140,11 +157,16 @@ class MCPClient {
         const ws = new WebSocket(
             "wss://lliuckljienxmohsoitv.supabase.co/functions/v1/chat-stream?token=" + jwtToken
         );
-        ws.onopen = () => ws.send(JSON.stringify({ 
+        this.prev_messages.push({
+            role: "user",
+            content: query,
+        });
+        ws.onopen = () => ws.send(JSON.stringify({
             type: "query",
             content: query,
             tool_use_id: "",
             connected_accounts: connectedAccountsText,
+            messages: this.prev_messages,
         }));
         ws.onmessage = async (e) => {
             console.log('Received:', e.data);
@@ -155,6 +177,7 @@ class MCPClient {
                     texts.push(response.text);
                     console.log("Response Text content:", response.text);
                     triggerSendTextDelta(response.text);
+                    currentResponse += response.text;
                     // triggerRefreshAgentMessage(texts.join(""));
                 } else if (response.type === "tool_use") {
                     console.warn("Tool use detected in response:", response);
@@ -166,6 +189,15 @@ class MCPClient {
                     if (!toolName || !toolArgs || !toolId) {
                         console.error("Tool name or arguments are missing in response:", response);
                     } else {
+                        messages.push({
+                            role: "assistant",
+                            content: [{
+                                type: "tool_use",
+                                id: toolId,
+                                name: toolName,
+                                input: toolArgs,
+                            }],
+                        });
                         const result = await this.mcp.callTool({
                             name: toolName,
                             arguments: toolArgs || {},
@@ -177,6 +209,24 @@ class MCPClient {
                             connected_accounts: connectedAccountsText,
                         }));
                         console.log("Tool result:", result);
+
+                        const contentArray = result.content as { type: string; text?: string }[];
+                        let toolResultContent: string | undefined;
+                        for (const toolContent of contentArray) {
+                            if (toolContent.type === "text") {
+                                toolResultContent = toolContent.text;
+                            } else if (toolContent.type === "tool_use") {
+                                console.warn("Unexpected tool_use content in tool result:", toolContent);
+                            }
+                        }
+                        messages.push({
+                            role: "user",
+                            content: [{
+                                type: "tool_result", // content.type
+                                tool_use_id: toolId,
+                                content: toolResultContent ?? "",
+                            }],
+                        });
                         let isError = false;
                         if (result.isError) {
                             isError = true;
@@ -187,6 +237,13 @@ class MCPClient {
                     }
                 } else if (response.type === "content_stop") {
                     console.warn("Content stop detected in response:", response);
+                    if (currentResponse.length > 0) {
+                        messages.push({
+                            role: "assistant",
+                            content: currentResponse,
+                        });
+                        currentResponse = ""; // Reset current response after sending
+                    }
                     // Handle content stop if needed
                 } else if (response.type === "complete") {
                     console.warn("Complete detected in response:", response);
@@ -227,6 +284,10 @@ class MCPClient {
         ws.onclose = () => {
             console.log('WebSocket connection closed');
             triggerGracefulClose(); // Call a function to handle graceful close if needed
+            console.log(`Messages sent to LLM:`, messages);
+            console.log(`Messages sent to LLM:`, JSON.stringify(messages));
+            // append the messages to prev_messages for future use
+            this.prev_messages.push(...messages);
             // Handle WebSocket close if needed
         };
 
