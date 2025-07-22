@@ -464,7 +464,7 @@ const AgentAction = memo(function AgentAction() {
         <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none" ref={wholeRef}>
             <div
                 ref={containerRef}
-                className="agentResponse absolute top-1 z-50 w-full max-w-300 pointer-events-auto transition-all duration-300 ease-in-out"
+                className="agentResponse text-gray-900 dark:text-white absolute top-1 z-50 w-full max-w-300 pointer-events-auto transition-all duration-300 ease-in-out"
                 style={{
                     maxHeight: `${MAX_HEIGHT}px`,
                     minHeight: `${MIN_HEIGHT}px`,
@@ -485,7 +485,7 @@ const AgentAction = memo(function AgentAction() {
                     {/* Header - Fixed height */}
                     <div ref={headerRef} className="flex-shrink-0">
                         <div className="flex items-center justify-between mb-2 mt-3 mx-5">
-                            <p className="text-md font-normal text-black dark:text-white">
+                            <p className="text-md font-normal text-white">
                                 {isLoading ? "Working..." : "Agent Response"}
                             </p>
 
@@ -512,7 +512,7 @@ const AgentAction = memo(function AgentAction() {
                             }}
                         >
                             <div className="flex justify-end pl-1 pr-3 my-2">
-                                <p className="userQuery text-sm">{userQuery}</p>
+                                <p className="userQuery text-sm text-white/50">{userQuery}</p>
                             </div>
                             
                             <div className="pb-2">
@@ -527,7 +527,7 @@ const AgentAction = memo(function AgentAction() {
                                         //     <pre className="whitespace-pre-wrap">{part.content}</pre>
                                         // </div>
                                     ) : (
-                                        <p key={index} className="text-sm leading-relaxed whitespace-pre-wrap text-black dark:text-white/90">
+                                        <p key={index} className="text-sm leading-relaxed whitespace-pre-wrap text-white/90">
                                         {part.content}
                                         </p>
                                     )

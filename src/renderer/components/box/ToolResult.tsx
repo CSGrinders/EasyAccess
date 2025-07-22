@@ -52,10 +52,10 @@ const ToolResult = ({ content }: { content: string }) => {
         {(provider && accountId) && (
             <div className="absolute top-2 right-2 flex gap-2 flex-wrap z-10 opacity-30 hover:opacity-100 hover:cursor-pointer transition-opacity group"
                 onClick={handleAccountClick}>
-                <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 text-white rounded-md text-xs shadow-md group-hover:scale-101 transition-transform">
+                <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 text-white text-white rounded-md text-xs shadow-md group-hover:scale-101 transition-transform">
                     {(() => {
                         if (provider.toLowerCase().includes('google')) {
-                            return <span className="text-red-400"><FaGoogleDrive /></span>;
+                            return <span className="text-blue-400"><FaGoogleDrive /></span>;
                         } else if (provider.toLowerCase().includes('onedrive')) {
                             return <span className="text-blue-400"><TbBrandOnedrive /></span>;
                         } else if (provider.toLowerCase().includes('dropbox')) {
@@ -69,7 +69,7 @@ const ToolResult = ({ content }: { content: string }) => {
             </div>
         )}
 
-        <pre className="whitespace-pre-wrap">{contentWithoutHeader}</pre>
+        <pre className="whitespace-pre-wrap text-white">{contentWithoutHeader}</pre>
     </div>
 
     );

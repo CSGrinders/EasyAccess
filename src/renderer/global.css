@@ -191,7 +191,7 @@ body {
 
 @layer utilities {
     .agentResponse {
-        background: hsla(0, 0%, 0%, 0.4) !important;
+        background: hsla(0, 0%, 0%, 0.5) !important;
         width: 600px !important;
         border-radius: 8px !important;
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -217,7 +217,6 @@ body {
     }
 
     .userQuery {
-        color: #9ca3af;
         font-style: italic;
         text-decoration-color: rgba(156, 163, 175, 0.5);
         text-underline-offset: 2px;
