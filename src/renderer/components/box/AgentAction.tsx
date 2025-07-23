@@ -464,7 +464,7 @@ const AgentAction = memo(function AgentAction() {
         <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none" ref={wholeRef}>
             <div
                 ref={containerRef}
-                className="agentResponse text-gray-900 dark:text-white absolute top-1 z-50 w-full max-w-300 pointer-events-auto transition-all duration-300 ease-in-out"
+                className="agentResponse text-gray-900 dark:text-white absolute top-1 z-50 w-full max-w-200 pointer-events-auto transition-all duration-300 ease-in-out"
                 style={{
                     maxHeight: `${MAX_HEIGHT}px`,
                     minHeight: `${MIN_HEIGHT}px`,
@@ -479,12 +479,11 @@ const AgentAction = memo(function AgentAction() {
                         userSelect: 'none',
                     }}
                 >
-                    <div className="w-8 h-1 bg-white/30 rounded-full" />
                 </div>
                 <div className="flex flex-col h-full">
                     {/* Header - Fixed height */}
                     <div ref={headerRef} className="flex-shrink-0">
-                        <div className="flex items-center justify-between mb-2 mt-3 mx-5">
+                        <div className="flex items-center justify-between mb-1 mt-1 mx-3">
                             <p className="text-md font-normal text-white">
                                 {isLoading ? "Working..." : "Agent Response"}
                             </p>
@@ -544,7 +543,7 @@ const AgentAction = memo(function AgentAction() {
                         )}
                     </div>
                     {/* Resize handle */}
-                    <div
+                    {/* <div
                         onMouseDown={handleMouseDown}
                         className="absolute bottom-0 w-full h-4 cursor-s-resize bg-transparent z-10 transition-colors duration-200 flex items-center justify-center rounded-b-[32px] flex-shrink-0"
                         style={{
@@ -553,7 +552,7 @@ const AgentAction = memo(function AgentAction() {
                         }}
                     >
                         <div className="w-8 h-1 bg-white/30 rounded-full" />
-                    </div>
+                    </div> */}
                 </div>
             </div>
             {/* User Input */}

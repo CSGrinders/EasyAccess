@@ -538,7 +538,23 @@ export async function triggerToolResultMessage(toolName: string, toolArgs: any, 
             break;
     }
 
-    return await invokeRendererFunction('toolResultMessage', message);
+    await invokeRendererFunction('toolResultMessage', message);
+
+    if (toolArgs.provider && toolArgs.provider !== "local" && toolArgs.accountId) {
+        // display corresponding storage box in the canvas
+        console.log(`Displaying storage box for provider: ${toolArgs.provider}, accountId: ${toolArgs.accountId}`);
+        // You can implement logic to open or focus the corresponding storage box in the canvas here
+        // For example, you might send a message to the renderer to open or focus the box
+        await invokeRendererFunction('openStorageBox', 
+            toolArgs.provider,
+            toolArgs.accountId,
+            toolArgs.path || "/"
+        );
+    } else if (toolArgs.path) {
+        // If it's a local file system operation, open the local storage box
+        console.log(`Displaying local storage box for path: ${toolArgs.path}`);
+        await invokeRendererFunction('openStorageBox', 'local', null, toolArgs.path);
+    }
 }
 
 // Handler for creating new directories in local file system

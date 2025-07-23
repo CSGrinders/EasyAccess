@@ -69,7 +69,7 @@ const ToolResult = ({ content }: { content: string }) => {
             </div>
         )}
 
-        <pre className="whitespace-pre-wrap text-white">{contentWithoutHeader}</pre>
+        <pre className="whitespace-pre-wrap text-white break-words overflow-wrap-anywhere">{contentWithoutHeader}</pre>
     </div>
 
     );

@@ -6,7 +6,7 @@ import { CanvasContainer } from "@/components/canvas/CanvasContainer";
 import { StorageBox } from "@/components/box/StorageBox";
 import { type StorageBoxData } from "@Types/box";
 import StorageSideWindow from '@/components/box/StorageSideWindow';
-import { CloudType } from '@Types/cloudType';
+import { CLOUD_HOME, CloudType } from '@Types/cloudType';
 import { DashboardState } from '@Types/canvas';
 import { BoxDragProvider } from "@/contexts/BoxDragContext";
 import { BoxDragPreview } from '@/components/box/BoxDragPreview';
@@ -41,6 +41,12 @@ const Dashboard = () => {
     // const [userResponseForClarification, setUserResponseForClarification] = useState("");
     // const [showAgentWork, setShowAgentWork] = useState(false);
     // const [agentWorkingMessages, setAgentWorkingMessages] = useState<string[]>([]);
+
+    // This is used to position boxes by Agent
+    // when they are opened or accessed by the agent
+    // Rotate among these offsets to avoid overlap
+    const directionOffsets = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+    let offsetIndexRef = useRef(0);
 
     const boxRefs = useRef(new Map());
 
@@ -125,15 +131,38 @@ const Dashboard = () => {
         return nextId;
     }
 
-    const addStorageBox = (type: string, title: string, icon?: React.ReactNode, cloudType?: CloudType, accountId?: string) => {
-        console.log(`Adding storage box: type=${type}, title=${title}, icon=${icon}, cloudType=${cloudType}, accountId=${accountId}`);
+    const addStorageBox = (type: string, title: string, cloudType?: CloudType, accountId?: string) => {
+        console.log(`Adding storage box: type=${type}, title=${title}, cloudType=${cloudType}, accountId=${accountId}`);
         const nextBoxId = getNextBoxId();
+        // add the icon if not provided
+        let icon: React.ReactNode | undefined;
+        if (!icon) {
+            switch (type) {
+                case "local":
+                    icon = <HardDrive className="h-6 w-6" />;
+                    break;
+                case "cloud":
+                    if (cloudType === CloudType.GoogleDrive) {
+                        icon = <FaGoogleDrive className="h-6 w-6" />;
+                    } else if (cloudType === CloudType.Dropbox) {
+                        icon = <FaDropbox className="h-6 w-6" />;
+                    } else if (cloudType === CloudType.OneDrive) {
+                        icon = <TbBrandOnedrive className="h-6 w-6" />;
+                    } else {
+                        icon = <HardDrive className="h-6 w-6" />;
+                    }
+                    break;
+                default:
+                    icon = <HardDrive className="h-6 w-6" />;
+                    break;
+            }
+        }
         const newStorageBox: StorageBoxData = {
             id: nextBoxId,
             title: title,
             type: type,
             icon: icon,
-            position: { x: 0, y: 0 },
+            position: { x: -position.x - 200, y: -position.y - 150 }, // open in the current view position, center to the screen...
             size: { width: 400, height: 300 },
             // zIndex: nextZIndexRef.current,
             cloudType: cloudType,
@@ -217,6 +246,118 @@ const Dashboard = () => {
         setAction(newAction);
     };
 
+    const handleTest = () => {
+        console.log("TESTINGGGGGGGg");
+        agentOpenStorageBox("Google Drive", "sohn5312@gmail.com", "/test1/CS373");
+    }
+
+    // Helper function to position and highlight a storage box
+    const activateStorageBoxFromAgent = (storageBox: StorageBoxData, path?: string) => {
+        const boxRef = getRefForBox(storageBox.id);
+        if (!boxRef.current) return;
+        
+        // check if the box is in the screen 
+        const canvasRect = canvasVwpRef.current.getBoundingClientRect();
+        const boxPosition = boxRef.current.getCurrentState().position;
+        const boxSize = boxRef.current.getCurrentState().size;
+        
+        // get the possbile position range of the storage box that it can be so that it is in the viewport
+        const boxViewOffset = 20; // Offset to ensure the box is not too close to the edges
+        const left_boundary = -position.x - canvasRect.width / 2 + boxViewOffset;
+        const right_boundary = left_boundary + canvasRect.width - 2 * boxViewOffset;
+        const top_boundary = -position.y - canvasRect.height / 2 + boxViewOffset;
+        const bottom_boundary = top_boundary + canvasRect.height - 2 * boxViewOffset;
+
+        const isBoxInViewport = (
+            left_boundary < boxPosition.x && right_boundary > boxPosition.x + boxSize.width &&
+            top_boundary < boxPosition.y && bottom_boundary > boxPosition.y + boxSize.height
+        );
+
+        // If the box is not in the viewport, position it at a calculated offset
+        if (!isBoxInViewport) {
+            const offset = directionOffsets[offsetIndexRef.current];
+            offsetIndexRef.current = (offsetIndexRef.current + 1) % directionOffsets.length;
+
+            boxRef.current.setPosition({
+                x: -position.x + offset[0] * canvasRect.width / 5 - boxSize.width / 2,
+                y: -position.y + offset[1] * canvasRect.height / 5 - boxSize.height / 2
+            });
+        }
+        
+        bringToFront(storageBox.id);
+        boxRef.current.highlightBoxAnimation();
+        // get parent Folder path out of full path
+        if (path) {
+            const pathParts = path.split('/');
+            pathParts.pop(); // Remove the last part to get the parent folder
+            path = pathParts.join('/');
+        }
+        console.log(`Navigating to: ${path}`);
+        if (!path?.startsWith('/')) {
+            path = `/${path}`; // Ensure path starts with a slash
+        }
+        if (storageBox.type === "cloud") {
+            boxRef.current.setPath(`${CLOUD_HOME + (path || '')}`);
+        } else {
+            boxRef.current.setPath(path || '');
+        }
+    };
+
+    const agentOpenStorageBox = (provider: string | null, accountId: string | null, path?: string) => {
+        console.log("Opening storage box:", { provider, accountId, path });
+        console.log("Current position:", position);
+        if (!provider || !accountId) {
+            // local file system
+            let localBox = storageBoxesRef.current.find(box => box.type === "local");
+            
+            // Main logic
+            if (localBox) {
+                activateStorageBoxFromAgent(localBox, path);
+            } else {
+                addStorageBox("local", "Local Directory");
+                // wait 5 seconds to ensure the box is rendered before highlighting
+                setTimeout(() => {
+                    localBox = storageBoxesRef.current.find(box => box.type === "local");
+                    if (!localBox) return;
+                    activateStorageBoxFromAgent(localBox, path);
+                }, 1000); // Delay to ensure the box is rendered before highlighting
+                return;
+            }
+            return;
+        }
+        let cloudType: CloudType | undefined;
+        if (provider.toLowerCase().includes('google')) {
+            cloudType = CloudType.GoogleDrive;
+        } else if (provider.toLowerCase().includes('onedrive')) {
+            cloudType = CloudType.OneDrive;
+        } else if (provider.toLowerCase().includes('dropbox')) {
+            cloudType = CloudType.Dropbox;
+        } else {
+            console.warn("Unknown provider type:", provider);
+            return;
+        } 
+        // Implement logic to open the storage box in the UI
+        let storageBox = storageBoxesRef.current.find(box =>
+            box.cloudType === cloudType && box.accountId === accountId
+        );
+        
+        // Main logic
+        if (storageBox) {
+            activateStorageBoxFromAgent(storageBox, path);
+        } else {
+            addStorageBox("cloud", `${accountId}`, cloudType, accountId);
+            // wait 5 seconds to ensure the box is rendered before highlighting
+            setTimeout(() => {
+                storageBox = storageBoxesRef.current.find(box =>
+                    box.cloudType === cloudType && box.accountId === accountId
+                );
+                if (!storageBox) return;
+                activateStorageBoxFromAgent(storageBox, path);
+            }, 1000); // Delay to ensure the box is rendered before highlighting
+            return;
+        }
+    };
+
 
     useEffect(() => {
         const dispatcher = RendererIpcCommandDispatcher.getInstance();
@@ -224,11 +365,13 @@ const Dashboard = () => {
         dispatcher.register('openAccountWindow', addStorageBox);
         dispatcher.register('getFileOnRenderer', tempGetFile);
         dispatcher.register('postFileOnRenderer', tempPostFile);
+        dispatcher.register('openStorageBox', agentOpenStorageBox);
 
         return () => {
             dispatcher.unregister('openAccountWindow');
             dispatcher.unregister('getFileOnRenderer');
             dispatcher.unregister('postFileOnRenderer');
+            dispatcher.unregister('openStorageBox');
         };
     }, [tempPostFile, tempGetFile, addStorageBox]);
 

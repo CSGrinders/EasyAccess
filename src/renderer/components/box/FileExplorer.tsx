@@ -5,7 +5,7 @@
  * It can work with both files on your computer (local) and files in the cloud (Google Drive, Dropbox, etc.).
  */
 
-import React, { useEffect, useState, useRef, useCallback, memo, use, useMemo } from "react"
+import React, { useEffect, useState, useRef, useCallback, memo, use, useMemo, useImperativeHandle } from "react"
 import {
     ChevronLeft,
     ChevronRight,
@@ -98,8 +98,11 @@ interface FileExplorerProps {
 
 
 
+export const FileExplorer = memo(
+    React.forwardRef(FileExplorerInner),
+);
 
-export const FileExplorer = memo(function FileExplorer({
+function FileExplorerInner({
     zoomLevel,                  // How zoomed in the view is
     cloudType,                  // Cloud storage type (e.g., 'dropbox', 'google', 'onedrive')
     accountId,                  // Unique identifier for the cloud account
@@ -110,7 +113,9 @@ export const FileExplorer = memo(function FileExplorer({
     refreshToggle,              // Toggle to refresh the file explorer
     silentRefresh = false,      // Whether to refresh silently without loading indicator
     onCurrentPathChange         // Callback when the current path changes
-}: FileExplorerProps) {
+}: FileExplorerProps, 
+    ref: React.Ref<{}>) {
+        
 
     /** List of all files and folders in the current directory */
     const [items, setItems] = useState<FileSystemItem[]>([])
@@ -201,6 +206,15 @@ export const FileExplorer = memo(function FileExplorer({
     const [showDropdown, setShowDropdown] = React.useState(false);
     const [dropdownPosition, setDropdownPosition] = React.useState<{ x: number; y: number } | null>(null);
 
+    // used by agent to update the current path in file explorer
+    useImperativeHandle(ref, () => ({
+        updatePath: (newPath: string) => {
+            if (newPath !== cwd) {
+                navigateTo(newPath);
+            }
+        }
+    }));
+
     /** 
      * Files filtered by search query and hidden file setting 
      * This creates a new list every time searchQuery, items, or showHidden changes
@@ -268,6 +282,7 @@ export const FileExplorer = memo(function FileExplorer({
         }
 
         if (cloudType && accountId) {
+            console.log(`Loading cloud directory: ${cwd} for account: ${accountId} on provider: ${cloudType}`);
             // Load files from cloud storage
             (window as any).cloudFsApi.readDirectory(cloudType, accountId, cwd)
                 .then((files: FileSystemItem[]) => {
@@ -1766,4 +1781,4 @@ export const FileExplorer = memo(function FileExplorer({
             </Dialog>
         </div>
     )
-});
+};
