@@ -8,11 +8,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, ArrowUp } from "lucide-react";
+import { X, Loader2, ArrowUp } from "lucide-react";
 import { MCPStatus } from "@Types/permissions";
 import { RendererIpcCommandDispatcher } from '@/services/AgentControlService';
 
-export default function AgentWindow({ show }: { show: boolean }) {
+export default function AgentWindow({ show, setShow }: { show: boolean; setShow: (show: boolean) => void }) {
     
     const [query, setQuery] = useState('');
     const [testToolName, setTestToolName] = useState('');
@@ -244,6 +244,15 @@ export default function AgentWindow({ show }: { show: boolean }) {
                 {/* TOP SECTION: Message display area where agent responses appear */}
                 <div className="flex-1 overflow-hidden">
                     <div className="h-full p-4 pb-2">
+                        <div className='absolute top-4 right-4 flex items-center gap-2 z-10'>
+                            {/* Close button */}
+                            <button
+                                className="p-2 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-500 hover:text-red-500"
+                                onClick={() => {setShow(false)}}
+                            >
+                                <X className="h-4 w-4"/>
+                            </button>
+                        </div>
                         <div ref={responseRef} className="h-full bg-white/80 dark:bg-black/30 rounded-lg border border-blue-500/20 dark:border-blue-400/20 p-3 overflow-y-auto backdrop-blur-sm">
                             
                             {/* Agent status indicator - shows if agent is working */}

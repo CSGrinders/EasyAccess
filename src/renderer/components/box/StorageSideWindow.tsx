@@ -209,7 +209,6 @@ const StorageWideWindow = ({
                         addStorage(
                             "cloud",
                             `Google Driven`,
-                            <FaGoogleDrive className="h-6 w-6" />,
                             CloudType.GoogleDrive,
                             toAddAccount
                         );
@@ -219,7 +218,6 @@ const StorageWideWindow = ({
                         addStorage(
                             "cloud",
                             `Dropbox`,
-                            <FaDropbox className="h-6 w-6" />,
                             CloudType.Dropbox,
                             toAddAccount
                         );
@@ -229,7 +227,6 @@ const StorageWideWindow = ({
                         addStorage(
                             "cloud",
                             `OneDrive`,
-                            <TbBrandOnedrive className="h-6 w-6" />,
                             CloudType.OneDrive,
                             toAddAccount
                         ); 
@@ -239,7 +236,6 @@ const StorageWideWindow = ({
                         addStorage(
                             "local",
                             `Local File Directory`,
-                            <HardDrive className="h-6 w-6" />,
                         ); 
                         break;
                     default:

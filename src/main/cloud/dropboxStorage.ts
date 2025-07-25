@@ -6,14 +6,14 @@ import { BrowserWindow, shell } from 'electron';
 import { Dropbox } from 'dropbox';
 import { v4 as uuidv4 } from 'uuid';
 import * as http from 'http';
+import fetch from 'node-fetch';
 
 const mime = require('mime-types');
 import { minimatch } from 'minimatch';
+import { AppConfig, focusMainWindow } from '../main';
 
-const DROPBOX_APP_KEY = process.env.DROPBOX_KEY;
-// const DROPBOX_APP_SECRET = process.env.DROPBOX_SECRET;
 const PORT = 53685; // Port for the local server to handle Dropbox OAuth redirect
-const REDIRECT_URI = 'http://localhost:' + PORT;
+const REDIRECT_URI = 'http://127.0.0.1:' + PORT;
 
 export class DropboxStorage implements CloudStorage {
     accountId?: string | undefined;
@@ -46,10 +46,11 @@ export class DropboxStorage implements CloudStorage {
         const code = reqUrl.searchParams.get('code');
 
         if (code) {
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end('Authorization successful! You can close this window.');
-          server.close();
-          resolve(code);
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end('<html><body><script>window.location.replace("https://github.com/");</script></body></html>');
+            server.close();
+            focusMainWindow();
+            resolve(code);
         } else {
           res.writeHead(400, { 'Content-Type': 'text/html' });
           res.end('Authorization failed. No code received.');
@@ -89,7 +90,7 @@ export class DropboxStorage implements CloudStorage {
 
     async connect(): Promise<void | any> {
         return new Promise(async (resolve, reject) => {
-            if (!DROPBOX_APP_KEY) {
+            if (!AppConfig.DROPBOX_KEY) {
                 throw new Error('DROPBOX_APP_KEY is not set');
             }
 
@@ -99,7 +100,7 @@ export class DropboxStorage implements CloudStorage {
             const { codeVerifier, codeChallenge } = await generateCodes();
 
             // https://www.dropbox.com/oauth2/authorize?client_id=<APP_KEY>&response_type=code&code_challenge=<CHALLENGE>&code_challenge_method=<METHOD>
-            const authUrl = `https://www.dropbox.com/oauth2/authorize?client_id=${DROPBOX_APP_KEY}&response_type=code&code_challenge=${codeChallenge}&code_challenge_method=S256&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&token_access_type=offline`;
+            const authUrl = `https://www.dropbox.com/oauth2/authorize?client_id=${AppConfig.DROPBOX_KEY}&response_type=code&code_challenge=${codeChallenge}&code_challenge_method=S256&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&token_access_type=offline`;
             shell.openExternal(authUrl);
 
             const code = await this.startAuthServer(); // Get code from redirect
@@ -112,7 +113,7 @@ export class DropboxStorage implements CloudStorage {
                 body: new URLSearchParams({
                     code: code,
                     grant_type: 'authorization_code',
-                    client_id: DROPBOX_APP_KEY,
+                    client_id: AppConfig.DROPBOX_KEY,
                     redirect_uri: REDIRECT_URI,
                     code_verifier: codeVerifier, // Include the code verifier
                 }).toString()
@@ -153,7 +154,7 @@ export class DropboxStorage implements CloudStorage {
         if (this.AuthToken.expiry_date < Date.now()) {
             console.log('AuthToken is expired, refreshing...');
             try {
-                if (!this.AuthToken.refresh_token || !DROPBOX_APP_KEY) {
+                if (!this.AuthToken.refresh_token || !AppConfig.DROPBOX_KEY) {
                     throw new Error('Missing required parameters for token refresh');
                 }
                 
@@ -162,7 +163,7 @@ export class DropboxStorage implements CloudStorage {
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: new URLSearchParams({
                         grant_type: 'refresh_token',
-                        client_id: DROPBOX_APP_KEY,
+                        client_id: AppConfig.DROPBOX_KEY,
                         refresh_token: this.AuthToken.refresh_token
                     }).toString()
                 });
@@ -371,56 +372,50 @@ export class DropboxStorage implements CloudStorage {
 
         const result: FileSystemItem[] = [];
 
-        try {
-            if (rootPath === '/') {
-                rootPath = '';
-            } // DROPBOX API HOME
-            const response = await this.client.filesListFolder({ path: rootPath, recursive: true, include_media_info: false, include_deleted: false }); 
-            const entries = response.result.entries;
-
-            console.log('Dropbox search response:', response);
-            console.log('Dropbox search entries:', entries);
-
-            for (const entry of entries) {
-                try {
-                    if (entry['.tag'] === 'file') {
-                        const fileName = entry.name;
-                        const filePath = entry.path_lower || '';
-                        const fileNameCheck = fileName.toLowerCase();
-                        const folderNameCheck = filePath.toLowerCase();
-                        // Check if the file matches the pattern and does not match any exclude patterns
-                        if ((fileNameCheck.includes(pattern.toLowerCase()) || 
-                            (pattern.includes("*") && minimatch(fileNameCheck, pattern.toLowerCase(), { dot: true })))
-                            && !excludePatterns.some(exclude => fileNameCheck.includes(exclude.toLowerCase()))) {
-                            result.push({
-                                id: entry.id,
-                                name: fileName,
-                                isDirectory: false,
-                                path: filePath,
-                            });
-                        }
-                    } else if (entry['.tag'] === 'folder') {
-                        const folderPath = entry.path_lower || '';
-                        const folderNameCheck = folderPath.toLowerCase();
-                        // Check if the folder matches the pattern and does not match any exclude patterns
-                        if ((folderNameCheck.includes(pattern.toLowerCase()) || pattern.includes("*") && minimatch(folderNameCheck, pattern.toLowerCase(), { dot: true }))
-                            && !excludePatterns.some(exclude => folderNameCheck.includes(exclude.toLowerCase()))) {
-                            result.push({
-                                id: entry.id,
-                                name: entry.name,
-                                isDirectory: true,
-                                path: folderPath,
-                            });
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error processing entry:', entry, error);
-                    console.log('Skipping entry due to error');
-                }
+        let baseQueries = pattern.replace(/\*/g, '').split(/[^a-zA-Z0-9]/);
+        baseQueries = baseQueries.filter(query => query.length >= 2); // Filter out empty queries
+        const matchesList = await Promise.all(baseQueries.map(async (baseQuery) => {
+            if (!this.client) {
+                console.error('Dropbox client is not initialized');
+                return [];
             }
-        } catch (error) {
-            console.error('Error searching Dropbox folder:', error);
-        }
+            const response = await this.client.filesSearchV2({
+                query: baseQuery,
+                options: {
+                    filename_only: true,
+                    path: rootPath,
+                }
+            });
+            return response.result.matches;
+        }));
+        const matches = matchesList.flat(); // Flatten the array of matches
+
+        matches.map((match: any) => {
+            const metadata = match.metadata.metadata;
+            if (metadata['.tag'] === 'deleted') {
+                console.warn(`Skipping deleted file: ${metadata.name}`);
+                return;
+            }
+
+            // Check if the file matches any exclude patterns
+            const filePath = metadata.path_display || '';
+            if (excludePatterns.some(excludePattern => minimatch(filePath, excludePattern))) {
+                console.log(`Excluding file: ${filePath} due to exclude pattern`);
+                return;
+            }
+
+            // Create FileSystemItem for the matched file
+            const fileSystemItem: FileSystemItem = {
+                id: metadata.id || uuidv4(),
+                name: metadata.name,
+                isDirectory: metadata['.tag'] === 'folder',
+                path: filePath,
+                size: metadata.size || 0,
+                modifiedTime: metadata.server_modified ? new Date(metadata.server_modified).getTime() : undefined,
+            };
+            result.push(fileSystemItem);
+        });
+
         return result;
     }
 
@@ -433,6 +428,9 @@ export class DropboxStorage implements CloudStorage {
 
         try {
             const response = await this.client.filesGetMetadata({ path: filePath });
+            if (!response.result) {
+                throw new Error('File not found');
+            }
             const metadata = response.result;
 
             // Check if file is deleted
@@ -553,6 +551,57 @@ export class DropboxStorage implements CloudStorage {
             return await this.calculateFolderSizeRecursive(folderPath);
         } catch (error) {
             console.error('Error calculating folder size for Dropbox:', error);
+            throw error;
+        }
+    }
+
+    async getDirectoryInfo(dirPath: string): Promise<FileSystemItem> {
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            throw new Error('Dropbox client is not initialized');
+        }
+
+        try {
+            if (dirPath === '/') {
+                dirPath = '';
+                const folderSize = await this.calculateFolderSizeRecursive(dirPath);
+                return {
+                    id: 'home',
+                    name: 'home',
+                    isDirectory: true,
+                    path: '/',
+                    size: folderSize || 0,
+                    modifiedTime: undefined,
+                };
+            } // DROPBOX API HOME
+            // Dropbox does not allow reading root directory directly, so we need to handle it separately
+            const response = await this.client.filesGetMetadata({ path: dirPath });
+            const metadata = response.result;
+
+            // Check if directory is deleted
+            if (metadata['.tag'] === 'deleted') {
+                throw new Error('Directory not found or has been deleted');
+            }
+
+            if (metadata['.tag'] !== 'folder') {
+                throw new Error('Path is not a directory');
+            }
+
+            const folderSize = await this.calculateFolderSizeRecursive(dirPath);
+
+            const fileSystemItem: FileSystemItem = {
+                id: (metadata as any).id || '',
+                name: metadata.name || '',
+                isDirectory: metadata['.tag'] === 'folder',
+                path: (metadata.path_lower || ''),
+                size: folderSize || 0,
+                modifiedTime: (metadata as any).server_modified ? new Date((metadata as any).server_modified).getTime() : undefined,
+            };
+
+            return fileSystemItem;
+        } catch (error) {
+            console.error('Error getting directory info for Dropbox:', error);
             throw error;
         }
     }

@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { FileContent, FileSystemItem } from '../types/fileSystem'
 import { CloudType } from '../types/cloudType';
 import { deleteFile } from './cloud/cloudManager';
+import { DashboardState } from '@Types/canvas';
+import { start } from 'repl';
 
 contextBridge.exposeInMainWorld('cloudFsApi', {
     connectNewCloudAccount: (cloudType: CloudType) =>
@@ -58,11 +60,43 @@ contextBridge.exposeInMainWorld('fsApi', {
 
 contextBridge.exposeInMainWorld('electronAPI', {
     openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url) as Promise<{ success: boolean, error?: any }>,
+    onAgentAuthToken: (callback: (tokens: { accessToken: string; refreshToken: string }) => void) => {
+        ipcRenderer.on('agent-auth-token', (event, tokens) => {
+            callback(tokens);
+        });
+    },
+    removeAgentAuthTokenListener: () => {
+        ipcRenderer.removeAllListeners('agent-auth-token');
+    },
     openFile: (fileContent: FileContent) => ipcRenderer.invoke('open-file', fileContent) as Promise<void>,
+
+    // saveLayout: (layout: any) => ipcRenderer.invoke('save-layout', layout) as Promise<void>,
+    onRequestLayout: (callback: () => any) => {
+        ipcRenderer.on('request-current-state', () => {
+            const layout = callback();
+            ipcRenderer.send('save-current-state', layout);
+        });
+    },
+
+    removeRequestLayoutListener: () => {
+        ipcRenderer.removeAllListeners('request-current-state');
+    },
+
+    startAuthServer: () => ipcRenderer.invoke('start-auth-server') as Promise<string>,
+
+    onLoadSavedState: (callback: (state: DashboardState) => any) => {
+        ipcRenderer.on('load-saved-state', (_event, state: DashboardState) => {
+            callback(state);
+        });
+    },
+
+    removeLoadSavedStateListener: () => {
+        ipcRenderer.removeAllListeners('load-saved-state');
+    }
 });
 
 contextBridge.exposeInMainWorld('mcpApi', {
-    processQuery: (query: string) => ipcRenderer.invoke('mcp-process-query', query),
+    processQuery: (query: string, access_token: string) => ipcRenderer.invoke('mcp-process-query', query, access_token),
     processQueryTest: (toolName: string, toolArgs: { [x: string]: unknown }) => ipcRenderer.invoke('mcp-process-query-test', toolName, toolArgs),
     reinitialize: () => ipcRenderer.invoke('reinitialize-mcp'),
     getStatus: () => ipcRenderer.invoke('get-mcp-status'),

@@ -1,5 +1,3 @@
-import dotenv from 'dotenv';
-
 import { CloudStorage, AuthTokens, generateCodes } from './cloudStorage';
 import { saveCloudAccountLocaStorage } from './cloudManager';
 import { OAuth2Client } from 'google-auth-library';
@@ -11,15 +9,13 @@ import { v4 as uuidv4 } from 'uuid';
 const { Readable } = require('stream');
 import * as http from 'http';
 import { URL } from 'url';
-import { normalize } from 'path';
+import path, { normalize } from 'path';
 import { minimatch } from 'minimatch';
-
-dotenv.config();
+import { AppConfig, focusMainWindow } from '../main';
 
 //https://cloud.google.com/nodejs/docs/reference/google-auth-library/latest
-
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+// const GOOGLE_CLIENT_ID = AppConfig.GOOGLE_CLIENT_ID;
+// const GOOGLE_CLIENT_SECRET = AppConfig.GOOGLE_CLIENT_SECRET;
 const GOOGLE_SCOPE = [
   'https://www.googleapis.com/auth/drive.metadata.readonly',
   'https://www.googleapis.com/auth/drive.file',
@@ -32,7 +28,8 @@ const GOOGLE_SCOPE = [
  * Temporary redirect URL for OAuth2
  */
 const PORT = 53684; // Default port for the local server
-const SUCCESS_REDIRECT_URL = `http://localhost:${PORT}`;
+const SUCCESS_REDIRECT_URL = `http://127.0.0.1:${PORT}`;
+// const SUCCESS_REDIRECT_URL = `easyaccess://auth/callback`; // Use localhost for better compatibility
 
 export class GoogleDriveStorage implements CloudStorage {
   accountId?: string | undefined;
@@ -261,7 +258,20 @@ export class GoogleDriveStorage implements CloudStorage {
 
         if (code) {
           res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end('Authorization successful! You can close this window.');
+          // redirect to a success page
+          // replace the url with easyAccess WEebsite?
+          // TODO: replace with a success page
+          res.end(`
+            <html>
+              <body>
+              <script>
+                window.location.replace("https://github.com/");
+              </script>
+              </body>
+            </html>
+          `);
+          focusMainWindow();
+          // close the server after receiving the code
           server.close();
           resolve(code);
         } else {
@@ -308,9 +318,9 @@ export class GoogleDriveStorage implements CloudStorage {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code: code,
-        client_id: GOOGLE_CLIENT_ID || '',
+        client_id: AppConfig.GOOGLE_CLIENT_ID || '',
         redirect_uri: SUCCESS_REDIRECT_URL,
-        client_secret: GOOGLE_CLIENT_SECRET || '',
+        client_secret: AppConfig.GOOGLE_PUBLIC_KEY || '',
         grant_type: 'authorization_code',
         code_verifier: codeVerifier,
       }),
@@ -323,7 +333,7 @@ export class GoogleDriveStorage implements CloudStorage {
   }
 
   private async authenticateGoogle(): Promise<{ token: AuthTokens, email: string } | null> {
-      if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+      if (!AppConfig.GOOGLE_CLIENT_ID || "GOOGLE_CLIENT_SECRET" === undefined) {
           throw new Error("Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in environment variables");
       }
       
@@ -338,7 +348,7 @@ export class GoogleDriveStorage implements CloudStorage {
           
           const { codeVerifier, codeChallenge } = await generateCodes();
 
-          this.currentAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${SUCCESS_REDIRECT_URL}&response_type=code&scope=${GOOGLE_SCOPE.join(' ')}&code_challenge=${codeChallenge}&code_challenge_method=S256&access_type=offline&prompt=consent`;
+          this.currentAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${AppConfig.GOOGLE_CLIENT_ID}&redirect_uri=${SUCCESS_REDIRECT_URL}&response_type=code&scope=${GOOGLE_SCOPE.join(' ')}&code_challenge=${codeChallenge}&code_challenge_method=S256&access_type=offline&prompt=consent`;
 
           shell.openExternal(this.currentAuthUrl);
 
@@ -358,7 +368,7 @@ export class GoogleDriveStorage implements CloudStorage {
           };
 
           // Initialize OAuth2 client and set credentials
-          this.oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SUCCESS_REDIRECT_URL); 
+          this.oauth2Client = new google.auth.OAuth2(AppConfig.GOOGLE_CLIENT_ID, "GOOGLE_CLIENT_SECRET", SUCCESS_REDIRECT_URL); 
           this.oauth2Client.setCredentials({
               access_token: authTokens.access_token,
               refresh_token: authTokens.refresh_token,
@@ -409,7 +419,7 @@ export class GoogleDriveStorage implements CloudStorage {
 
     if (!this.oauth2Client) {
       console.log('Initializing OAuth2 client with stored AuthToken');
-      this.oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SUCCESS_REDIRECT_URL);
+      this.oauth2Client = new google.auth.OAuth2(AppConfig.GOOGLE_CLIENT_ID, "GOOGLE_CLIENT_SECRET", SUCCESS_REDIRECT_URL);
       this.oauth2Client.setCredentials({
         access_token: this.AuthToken.access_token,
         refresh_token: this.AuthToken.refresh_token,
@@ -476,6 +486,64 @@ export class GoogleDriveStorage implements CloudStorage {
       });
       const mimeType = result.data.mimeType; 
 
+      if (mimeType?.includes('application/vnd.google-apps')) {
+        // If it's a Google Docs/Sheets/Slides file, we need to handle it differently
+        console.log('Google Docs/Sheets/Slides file detected, downloading as binary content');
+        try {
+          let file = null;
+          let exportMimeType = '';
+          let fileUrl = '';
+          if (mimeType === 'application/vnd.google-apps.document' ||
+              mimeType === 'application/vnd.google-apps.presentation') {
+            // Export Google Docs as PDF
+            console.log('Exporting Google Docs file as PDF');
+            exportMimeType = 'application/pdf';
+            fileUrl = `https://docs.google.com/document/d/${fileId}/edit`;
+          } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+            // Export Google Sheets as PDF
+            console.log('Exporting Google Sheets file as csv');
+            exportMimeType = 'text/csv'; // Use CSV for Sheets
+            fileUrl = `https://docs.google.com/spreadsheets/d/${fileId}/edit`;
+          } else if (mimeType === 'application/vnd.google-apps.drawing' ||
+                     mimeType === 'application/vnd.google-apps.photo') {
+            // Export Google Drawings as PNG
+            console.log('Exporting Google Drawings file as PNG');
+            exportMimeType = 'image/png';
+            fileUrl = `https://docs.google.com/drawings/d/${fileId}/edit`;
+          } else {
+            // For other Google file types, we can export as text
+            console.log('Exporting Google file as text');
+            exportMimeType = 'text/plain';
+            fileUrl = `https://docs.google.com/document/d/${fileId}/edit`;
+          }
+          file = await drive.files.export({
+            fileId: fileId,
+            mimeType: exportMimeType
+          }, { responseType: 'arraybuffer' });
+          if (!file || !file.data) {
+            throw new Error('Failed to export Google file');
+          }
+          console.log('Exported Google file:', file);
+          const data = Buffer.from(file.data as ArrayBuffer);
+          if (!data) {
+            throw new Error('Exported file data is empty');
+          }
+          const fileContent: FileContent = {
+            name: filePath.split('/').pop() || '',
+            content: data,
+            type: exportMimeType, 
+            path: CLOUD_HOME + filePath, // prepend the cloud home path
+            sourceCloudType: CloudType.GoogleDrive,
+            sourceAccountId: this.accountId || null, // Optional cloud type if the file is from a cloud storage
+            url: fileUrl
+          };
+          return fileContent;
+        } catch (err) {
+          console.error('Error exporting Google file:', err);
+          throw new Error('Failed to export Google file');
+        }
+      }
+
       try {
         const file = await drive.files.get(
           {
@@ -500,29 +568,8 @@ export class GoogleDriveStorage implements CloudStorage {
         };
         return fileContent;
       } catch (err) {
-        console.warn('Binary content download failed, returning file URL:', err);
-        let fileUrl = `https://drive.google.com/uc?id=${fileId}`;
-        if (mimeType === 'application/vnd.google-apps.document') {
-          fileUrl = `https://docs.google.com/document/d/${fileId}/edit`;
-        } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
-            fileUrl = `https://docs.google.com/spreadsheets/d/${fileId}/edit`;
-        }
-        console.log('File URL:', fileUrl);
-        if (!fileUrl) {
-          throw new Error('File URL not found');
-        }
-
-        const fileContent: FileContent = {
-          name: filePath.split('/').pop() || '',
-          url: fileUrl,
-          type: mimeType || 'application/octet-stream', // default to binary if no mime type found
-          path: CLOUD_HOME + filePath, // Path to the file in the source file system
-          sourceCloudType: CloudType.GoogleDrive,
-          sourceAccountId: this.accountId || null, // Optional cloud type if the file is from a cloud storage
-        };
-        
-        // Return the file content with URL
-        return fileContent;
+        console.error('Error downloading Google file:', err);
+        throw new Error('Failed to download Google file');
       }
     } catch (err) {
       throw err;
@@ -582,67 +629,78 @@ export class GoogleDriveStorage implements CloudStorage {
   }
     // Implement missing methods from CloudStorage interface
 
+    /*
+    Search for files in a specific folder matching a pattern.
+    This method searches recursively through subfolders.
+    */
+    async searchFilesRecursive(folderId: string, folderPath: string, pattern: string): Promise<FileSystemItem[]> {
+        await this.refreshOAuthClientIfNeeded();
+        if (!this.oauth2Client) {
+            throw new Error('OAuth2 client is not initialized');
+        }
+        const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+        const result: FileSystemItem[] = [];
+        
+        try {
+          // include modifiedTime in the fields
+            const res = await drive.files.list({
+                q: `'${folderId}' in parents and name contains '${pattern}' and trashed = false`,
+                fields: 'nextPageToken, files(id, name, mimeType, modifiedTime) ',
+            });
+            const files = res.data.files || [];
+            for (const file of files) {
+                if (!file.name) continue; // Skip files without a name
+                result.push({
+                    id: file.id || '',
+                    name: file.name || '',
+                    isDirectory: file.mimeType === 'application/vnd.google-apps.folder',
+                    path: folderPath ? `${path.join(folderPath, file.name)}` : file.name,
+                    modifiedTime: file.modifiedTime ? new Date(file.modifiedTime).getTime() : undefined,
+                });
+            }
+            const subFolderRes = await drive.files.list({
+                q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+                fields: 'files(id, name)',
+            });
+            const filesInSubfolders = subFolderRes.data.files || [];
+            const matchInSubfolders = await Promise.all(
+                filesInSubfolders.map((folder) => {
+                    if (folder.id && folder.name) {
+                        const subfolderResults = this.searchFilesRecursive(folder.id, path.join(folderPath, folder.name), pattern);
+                        return subfolderResults;
+                    }
+                    return [];
+                })
+            );
+            result.push(...matchInSubfolders.flat());
+        } catch (error) {
+            console.error('Error searching files:', error);
+            throw error;
+        }
+        return result;
+    }
+
     async searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]> {
-        // Not implemented for Google Drive yet
       await this.refreshOAuthClientIfNeeded();
       if (!this.oauth2Client) {
         throw new Error('OAuth2 client is not initialized');
       }
       const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
       const result: FileSystemItem[] = [];
-
-      const search = async (currentPath: string): Promise<void> => {
-        try {
-          const folderId = currentPath ? await this.getFolderId(currentPath) : 'root';
-          const res = await drive.files.list({
-            q: `'${folderId}' in parents and trashed = false`,
+      try {
+        const folderId = await this.getFolderId(rootPath);
+        const res: FileSystemItem[] = await this.searchFilesRecursive(folderId, rootPath, pattern);
+        // Filter out files that match any of the exclude patterns
+        const filteredResults = res.filter(file => {
+          return !excludePatterns.some(excludePattern => {
+            return minimatch(file.name, excludePattern, { matchBase: true });
           });
-
-          console.log(`Searching in folder: ${currentPath}`);
-          console.log(`Found files:`, res.data.files);
-
-          const files = res.data.files || [];
-          for (const file of files) {
-            // check if the file matches any of the exclude patterns
-            const matchesExclude = excludePatterns.some(excludePattern => {
-              return file.name?.toLowerCase().includes(excludePattern.toLowerCase()) || 
-                      (excludePattern.includes("*") && minimatch(file.name?.toLowerCase() || '', excludePattern.toLowerCase(), { dot: true }));
-            });
-            if (matchesExclude) {
-              continue; // Skip files that match exclude patterns
-            }
-            // Check if the file matches the search pattern
-            const matchesPattern = file.name?.toLowerCase().includes(pattern.toLowerCase()) || 
-                      (pattern.includes("*") && minimatch(file.name?.toLowerCase() || '', pattern.toLowerCase(), { dot: true }));
-            if (matchesPattern) {
-              const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
-              // skip if the filePath is empty or undefined
-              if (!filePath || filePath.trim() === '') {
-                continue;
-              }
-              result.push({
-                id: file.id || '',
-                name: file.name || '',
-                isDirectory: file.mimeType === 'application/vnd.google-apps.folder',
-                path: filePath,
-              });
-            }
-            // If it's a directory, search recursively
-            if (file.mimeType === 'application/vnd.google-apps.folder') {
-              if (currentPath === '/') {
-                currentPath = ''; // If root, set currentPath to empty string
-              }
-              await search(currentPath ? `${currentPath}/${file.name ?? ''}` : (file.name ?? ''));
-            }
-          }
-        } catch (error) {
-          console.error('Error searching files:', error);
-          console.log('skipping search for path:', currentPath);
-        }
+        });
+        return filteredResults;
+      } catch (error) {
+        console.error('Error searching files:', error);
+        throw error;
       }
-
-      await search(rootPath);
-      return result;
     }
 
     async getFileInfo(filePath: string): Promise<FileSystemItem> {
@@ -792,9 +850,49 @@ export class GoogleDriveStorage implements CloudStorage {
     
     try {
       const folderId = await this.getFolderId(folderPath);
-      return await this.calculateFolderSizeRecursive(drive, folderId);
+      console.log('Calculating size for folder ID:', folderId);
+      const size = await this.calculateFolderSizeRecursive(drive, folderId);
+      return size;
     } catch (error) {
       console.error('Error calculating folder size for Google Drive:', error);
+      return 0; // Return 0 if there's an error
+    }
+  }
+
+  async getDirectoryInfo(dirPath: string): Promise<FileSystemItem> {
+    
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+    
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+    try {
+      const folderId = await this.getFolderId(dirPath);
+      const response = await drive.files.get({
+        fileId: folderId,
+        fields: 'id,name,mimeType,size,modifiedTime'
+      });
+      
+      const folder = response.data;
+      if (!folder) {
+        console.error('Folder not found');
+        throw new Error('Folder not found');
+      }
+
+      const folderSize = await this.calculateFolderSizeRecursive(drive, folderId);
+      
+      const fileSystemItem: FileSystemItem = {
+        id: folder.id || '',
+        name: folder.name || '',
+        isDirectory: true,
+        path: dirPath || '',
+        size: folderSize || 0,
+        modifiedTime: folder.modifiedTime ? new Date(folder.modifiedTime).getTime() : undefined,
+      };
+      return fileSystemItem;
+    } catch (error) {
+      console.error('Error getting directory info for Google Drive:', error);
       throw error;
     }
   }
@@ -807,11 +905,14 @@ export class GoogleDriveStorage implements CloudStorage {
       const res: { data: drive_v3.Schema$FileList } = await drive.files.list({
         q: `'${folderId}' in parents and trashed = false`,
         pageSize: 1000,
-        fields: 'nextPageToken, files(id, name, mimeType, size)',
+        fields: 'nextPageToken, files(id, mimeType, size)',
         pageToken: nextPageToken,
       });
 
       const files = res.data.files || [];
+
+      console.log(`Calculating size for folder ID: ${folderId}, found ${files.length} items`);
+      console.log('Files:', files);
       
       for (const file of files) {
         if (file.mimeType === 'application/vnd.google-apps.folder') {

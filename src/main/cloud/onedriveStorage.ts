@@ -2,10 +2,9 @@ import { CloudStorage, AuthTokens, isValidToken } from './cloudStorage';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
-import dotenv from 'dotenv';
 import { minimatch } from 'minimatch';
 import { v4 as uuidv4 } from 'uuid';
-dotenv.config();
+import { AppConfig, focusMainWindow } from '../main';
 
 const {
   DataProtectionScope,
@@ -18,12 +17,6 @@ const { PublicClientApplication, InteractionRequiredAuthError, LogLevel } = requ
 const { shell } = require('electron');
 
 
-const MSAL_CONFIG = {
-  auth: {
-    clientId: process.env.MICROSOFT_CLIENT_ID,
-    authority: "https://login.microsoftonline.com/common",
-  },
-};
 
 /*
   Before calling api, need to check if client is authenticated. Pull the client from the cache with the accountId
@@ -72,7 +65,12 @@ export class OneDriveStorage implements CloudStorage {
       // 3. Performs any fallbacks if necessary.
       const persistence = await PersistenceCreator.createPersistence(persistenceConfig);
       const publicClientConfig = {
-        ...MSAL_CONFIG,
+        ...{
+          auth: {
+            clientId: AppConfig.MICROSOFT_CLIENT_ID,
+            authority: "https://login.microsoftonline.com/common",
+          },
+        },
         // This hooks up the cross-platform cache into MSAL
         cache: {
           cachePlugin: new PersistenceCachePlugin(persistence),
@@ -87,7 +85,12 @@ export class OneDriveStorage implements CloudStorage {
       
       // Fallback to in-memory cache if persistence fails
       const msalConfig = {
-        ...MSAL_CONFIG,
+        ...{
+          auth: {
+            clientId: AppConfig.MICROSOFT_CLIENT_ID,
+            authority: "https://login.microsoftonline.com/common",
+          },
+        },
         cache: {
           cachePlugin: {
             beforeCacheAccess: async () => {},
@@ -196,11 +199,14 @@ export class OneDriveStorage implements CloudStorage {
       const authResponse = await this.client.acquireTokenInteractive({
         ...tokenRequest,
         openBrowser,
-        successTemplate: '<h1>Successfully signed in!</h1> <p>You can close this window now.</p>',
+        successTemplate: '<body><script>window.location.replace("https://github.com/");</script></body>',
         errorTemplate: '<h1>Oops! Something went wrong</h1> <p>Check the console for more information.</p>',
       });
 
       console.log('authResponse: ', authResponse);
+
+      // focus main window after authentication
+      focusMainWindow();
 
       if (this.authCancelled) {
         throw new Error('Authentication cancelled');
@@ -385,7 +391,14 @@ export class OneDriveStorage implements CloudStorage {
       return Promise.reject(new Error('Graph client is not initialized'));
     }
 
-    const apiPath = `/me/drive/root:/${folderPath.replace(/^\//, '')}/${fileName}:/content`; // remove leading slash if exists, to avoid double slashes
+    console.log(`Uploading file to OneDrive: ${fileName} in folder: ${folderPath}`);
+    let apiPath;
+    if (folderPath === '/' || folderPath === '') {
+      // If folderPath is root or empty, upload to root
+      apiPath = `/me/drive/root:/${fileName}:/content`;
+    } else {
+      apiPath = `/me/drive/root:/${folderPath.replace(/^\/+/, '')}/${fileName}:/content`; // remove leading slash if exists, to avoid double slashes
+    }
 
     console.log(`Querying OneDrive API path: ${apiPath}`);
 
@@ -458,6 +471,7 @@ export class OneDriveStorage implements CloudStorage {
             };
             
             try {
+              console.log(`Creating OneDrive folder: ${currentPath} at path: ${createApiPath}`);
               const response = await this.graphClient.api(createApiPath).post(folderData);
               console.log(`OneDrive folder created successfully: ${currentPath}`, response);
             } catch (createError: any) {
@@ -490,63 +504,18 @@ export class OneDriveStorage implements CloudStorage {
     }
 
     try {
-      return await this.calculateFolderSizeRecursive(folderPath);
+      const apiPath = folderPath === '/' || folderPath === '' 
+      ? "/me/drive/root/children" 
+      : `/me/drive/root:/${folderPath.replace(/^\//, '')}:/children`;
+      console.log(`Calculating size for OneDrive folder: ${apiPath}`);
+
+      const response = await this.graphClient.api(apiPath).get();
+      return response.size;
     } catch (error) {
       console.error('Error calculating folder size for OneDrive:', error);
       throw error;
     }
   }
-
-  private async calculateFolderSizeRecursive(folderPath: string): Promise<number> {
-    const apiPath = folderPath === '/' || folderPath === '' 
-      ? "/me/drive/root/children" 
-      : `/me/drive/root:/${folderPath.replace(/^\//, '')}:/children`;
-
-    console.log(`Calculating size for OneDrive folder: ${apiPath}`);
-
-    try {
-      const response = await this.graphClient.api(apiPath).get();
-      
-      if (!response || !response.value || !Array.isArray(response.value)) {
-        console.error('Unexpected response format from OneDrive API:', response);
-        return 0;
-      }
-
-      let totalSize = 0;
-
-      for (const item of response.value) {
-        if (item.folder) {
-          // Recursively calculate size for subdirectories
-          let subFolderPath = '';
-          if (item.parentReference && item.parentReference.path) {
-            const parentPath = item.parentReference.path.replace('/drive/root:', '');
-            subFolderPath = `${parentPath}/${item.name}`.replace(/^\/?/, '/');
-          } else {
-            subFolderPath = `/${item.name}`;
-          }
-          const subFolderSize = await this.calculateFolderSizeRecursive(subFolderPath);
-          totalSize += subFolderSize;
-        } else {
-          // Add file size (OneDrive size is in bytes)
-          const fileSize = item.size || 0;
-          totalSize += fileSize;
-        }
-      }
-
-      return totalSize;
-    } catch (error) {
-      console.error('Error calculating OneDrive folder size:', error);
-      // If we get an access denied error, try to refresh the token
-      if (error instanceof InteractionRequiredAuthError) {
-        console.log('Access denied, attempting to refresh token...');
-        await this.connect();
-        return this.calculateFolderSizeRecursive(folderPath); // Retry after re-authentication
-      }
-      throw error;
-    }
-  }
-
-  // Implement missing methods from CloudStorage interface
 
   async searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]> {
     // Not implemented for OneDrive yet
@@ -561,61 +530,116 @@ export class OneDriveStorage implements CloudStorage {
 
     const result: FileSystemItem[] = [];
 
-    const search = async (currentPath: string): Promise<void> => {
-      let apiPath: string;
-      const normalizedPath = path.normalize(currentPath).replace(/^\/+/, ''); // Normalize the path and remove leading slashes if exists
-      if (normalizedPath === '') {
-        apiPath = '/me/drive/root/children';
-      } else {
-        apiPath = `/me/drive/root:/${normalizedPath}:/children`;
-      }
-      console.log(`Querying OneDrive API path: ${apiPath}`);
+    try {
+      let searchRes: any; 
+      const baseQueries = pattern.replace(/\*/g, '').split(/[^a-zA-Z0-9]/);
+      for (const baseQuery of baseQueries) {
+        if (!baseQuery || baseQuery.length < 2) continue; // Skip empty queries
 
-      try {
-        const response = await this.graphClient.api(apiPath).get();
-        const files = response.value || [];
+        // If rootPath is empty, use the root directory
+        if (!rootPath || rootPath === '/') {
+          searchRes = await this.graphClient
+            .api(`/me/drive/root/search(q='${baseQuery}')`)
+            .get();
+        } else {
+          // Normalize the rootPath to ensure it starts with a slash
+          rootPath = rootPath.startsWith('/') ? rootPath : `/${rootPath}`;
 
-        // log file names
-        console.log('Onedrive search result Files:', files.map((file: any) => file.name));
+          const folderMeta = await this.graphClient
+            .api(`/me/drive/root:${rootPath}`)
+            .get();
 
-        for (const file of files) {
-          // Construct the file path for the result
-          // Ensure the file path starts with a slash, which represents the root
-          const filePath = "/" + (normalizedPath ? `${normalizedPath}/${file.name}` : file.name);
+          const folderId = folderMeta.id;
 
-          // Check if the file matches any exclude patterns
-          const isExcluded = excludePatterns.some(excludePattern => {
-            return file.name.includes(excludePattern) || 
-                    (excludePattern.includes("*") && minimatch(file.name, excludePattern, { dot: true }));
-          });
-          if (isExcluded) {
-            continue; // Skip excluded files
-          }
-
-          // Check if the file matches the search pattern
-          const matchesPattern = file.name.includes(pattern) ||
-                    (pattern.includes("*") && minimatch(file.name, pattern, { dot: true }));
-          if (matchesPattern) {
-            result.push({
-              id: file.id || '',
-              name: file.name || '',
-              isDirectory: file.folder !== undefined,
-              path: filePath,
-            });
-          }
-
-          // If it's a directory, search recursively
-          if (file.folder) {
-            await search(filePath);
-          }
+          searchRes = await this.graphClient
+            .api(`/me/drive/items/${folderId}/search(q='${baseQuery}')`)
+            .get();
         }
-      } catch (error) {
-        console.error('Error querying OneDrive API:', error);
+        
+        result.push(...searchRes.value.map((file: any) => {
+          return {
+            id: file.id || '',
+            name: file.name || '',
+            isDirectory: file.folder !== undefined,
+            path: path.join(file.parentReference?.path.replace('/drive/root:', '') || '/', file.name || ''),
+            size: file.size || 0,
+            modifiedTime: file.lastModifiedDateTime ? new Date(file.lastModifiedDateTime).getTime() : undefined,
+          };
+        }));
       }
-    };
+      // Step 3: Filter using wildcard pattern
+      let globalPattern = pattern;
+      if (!pattern.includes("*")) {
+        globalPattern = `*${pattern}*`
+      }
+      const matchesPattern = (filename: string) =>
+        minimatch(filename, globalPattern, { nocase: true }) && 
+        !excludePatterns.some(ex => minimatch(filename, ex, { nocase: true }));
 
-    await search(rootPath);
-    return result;
+      return result.filter(file => matchesPattern(file.name));
+    } catch (err) {
+      console.error('Error searching files:', err);
+      throw err;
+    }
+
+
+
+
+    // const search = async (currentPath: string): Promise<void> => {
+    //   let apiPath: string;
+    //   const normalizedPath = path.normalize(currentPath).replace(/^\/+/, ''); // Normalize the path and remove leading slashes if exists
+    //   if (normalizedPath === '') {
+    //     apiPath = '/me/drive/root/children';
+    //   } else {
+    //     apiPath = `/me/drive/root:/${normalizedPath}:/children`;
+    //   }
+    //   console.log(`Querying OneDrive API path: ${apiPath}`);
+
+    //   try {
+    //     const response = await this.graphClient.api(apiPath).get();
+    //     const files = response.value || [];
+
+    //     // log file names
+    //     console.log('Onedrive search result Files:', files.map((file: any) => file.name));
+
+    //     for (const file of files) {
+    //       // Construct the file path for the result
+    //       // Ensure the file path starts with a slash, which represents the root
+    //       const filePath = "/" + (normalizedPath ? `${normalizedPath}/${file.name}` : file.name);
+
+    //       // Check if the file matches any exclude patterns
+    //       const isExcluded = excludePatterns.some(excludePattern => {
+    //         return file.name.includes(excludePattern) || 
+    //                 (excludePattern.includes("*") && minimatch(file.name, excludePattern, { dot: true }));
+    //       });
+    //       if (isExcluded) {
+    //         continue; // Skip excluded files
+    //       }
+
+    //       // Check if the file matches the search pattern
+    //       const matchesPattern = file.name.includes(pattern) ||
+    //                 (pattern.includes("*") && minimatch(file.name, pattern, { dot: true }));
+    //       if (matchesPattern) {
+    //         result.push({
+    //           id: file.id || '',
+    //           name: file.name || '',
+    //           isDirectory: file.folder !== undefined,
+    //           path: filePath,
+    //         });
+    //       }
+
+    //       // If it's a directory, search recursively
+    //       if (file.folder) {
+    //         await search(filePath);
+    //       }
+    //     }
+    //   } catch (error) {
+    //     console.error('Error querying OneDrive API:', error);
+    //   }
+    // };
+
+    // await search(rootPath);
+    // return result;
   }
 
   async getFileInfo(filePath: string): Promise<FileSystemItem> {
@@ -687,6 +711,7 @@ export class OneDriveStorage implements CloudStorage {
       }
 
       for (const item of response.value) {
+        console.log(`buildDirectoryTreeRecursive: Processing item: ${item.name} at path: ${currentPath}`);
         let itemPath = '';
         if (item.parentReference && item.parentReference.path) {
           const parentPath = item.parentReference.path.replace('/drive/root:', '');
@@ -713,6 +738,44 @@ export class OneDriveStorage implements CloudStorage {
       }
     } catch (error) {
       console.error('Error building directory tree for OneDrive:', error);
+      throw error;
+    }
+  }
+  
+  async getDirectoryInfo(dirPath: string): Promise<FileSystemItem> {
+    if (!this.graphClient) {
+      await this.initAccount();
+    }
+
+    if (!this.graphClient) {
+      console.error('Graph client is not initialized');
+      throw new Error('Graph client is not initialized');
+    }
+
+    let apiPath = `/me/drive/root:/${dirPath.replace(/^\//, '')}`;
+    if (dirPath === '/' || dirPath === '') {
+      apiPath = '/me/drive/root'; // Use root endpoint for the root directory
+    }
+
+    try {
+      const response = await this.graphClient.api(apiPath).get();
+
+      if (!response || !response.folder) {
+        throw new Error('Directory not found or is not a folder');
+      }
+
+      const fileSystemItem: FileSystemItem = {
+        id: response.id || '',
+        name: response.name || '',
+        isDirectory: true,
+        path: dirPath || '',
+        size: response.size || 0,
+        modifiedTime: response.lastModifiedDateTime ? new Date(response.lastModifiedDateTime).getTime() : undefined,
+      };
+
+      return fileSystemItem;
+    } catch (error) {
+      console.error('Error getting directory info for OneDrive:', error);
       throw error;
     }
   }
