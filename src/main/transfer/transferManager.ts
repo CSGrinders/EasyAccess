@@ -7,6 +7,7 @@ import { CloudStorage } from "../cloud/cloudStorage";
 import fs from "fs/promises";
 import path from "path";
 
+
 // Semaphore class to limit concurrent operations
 export class Semaphore {
     private maxConcurrent: number;
@@ -41,6 +42,125 @@ export class Semaphore {
     }
 }
 
+// Progress callback scheduler using round-robin concept
+class ProgressCallbackScheduler {
+    private activeTransfers = new Map<string, { 
+        lastData: progressCallbackData, 
+        lastUpdate: number,
+        isActive: boolean,
+        priority: number // Higher priority transfers get shown more often
+    }>();
+    private currentActiveTransfer: string | null = null;
+    private displayDuration: number; // Configurable display duration per transfer
+    private lastSwitch = 0;
+    private originalCallback: (data: progressCallbackData) => void;
+    
+    constructor(originalCallback: (data: progressCallbackData) => void, displayDurationMs: number = 3000) {
+        this.originalCallback = originalCallback;
+        this.displayDuration = displayDurationMs;
+    }
+    
+    updateProgress(data: progressCallbackData) {
+        const now = Date.now();
+        const transferKey = `${data.transferId}-${data.fileName}`;
+        
+        // Calculate priority based on transfer 
+        let priority = 1;
+        if (data.isDirectory) priority += 2; // Directories get higher priority
+        if (data.total > 100 * 1024 * 1024) priority += 1; // Large files get higher priority
+        if (data.transfered / data.total > 0.8) priority += 1; // Nearly complete transfers get higher priority
+        
+        // Update the transfer data
+        this.activeTransfers.set(transferKey, {
+            lastData: data,
+            lastUpdate: now,
+            isActive: true,
+            priority
+        });
+        
+        // Clean up finished transfers
+        this.cleanupFinishedTransfers(now);
+        
+        this.scheduleDisplay(now);
+    }
+    
+    private cleanupFinishedTransfers(now: number) {
+        const timeout = 10000; 
+        for (const [key, transfer] of this.activeTransfers.entries()) {
+            if (now - transfer.lastUpdate > timeout) {
+                this.activeTransfers.delete(key);
+                if (this.currentActiveTransfer === key) {
+                    this.currentActiveTransfer = null;
+                }
+            }
+        }
+    }
+    
+    private scheduleDisplay(now: number) {
+        const activeTransferKeys = Array.from(this.activeTransfers.keys())
+            .sort((a, b) => {
+                const transferA = this.activeTransfers.get(a)!;
+                const transferB = this.activeTransfers.get(b)!;
+                // Sort by priority first, then by last update
+                if (transferA.priority !== transferB.priority) {
+                    return transferB.priority - transferA.priority;
+                }
+                return transferB.lastUpdate - transferA.lastUpdate;
+            });
+        
+        if (activeTransferKeys.length === 0) {
+            return;
+        }
+        
+        // If only one transfer, always show it
+        if (activeTransferKeys.length === 1) {
+            this.currentActiveTransfer = activeTransferKeys[0];
+            this.lastSwitch = now;
+        }
+        // If no active transfer or it's time to switch
+        else if (!this.currentActiveTransfer || 
+                 !this.activeTransfers.has(this.currentActiveTransfer) ||
+                 (now - this.lastSwitch >= this.displayDuration)) {
+            
+            // Find next transfer in round-robin fashion
+            let nextIndex = 0;
+            if (this.currentActiveTransfer) {
+                const currentIndex = activeTransferKeys.indexOf(this.currentActiveTransfer);
+                nextIndex = (currentIndex + 1) % activeTransferKeys.length;
+            }
+            
+            this.currentActiveTransfer = activeTransferKeys[nextIndex];
+            this.lastSwitch = now;
+        }
+        
+        // Send the progress update for the currently active transfer
+        if (this.currentActiveTransfer) {
+            const activeTransfer = this.activeTransfers.get(this.currentActiveTransfer);
+            if (activeTransfer) {
+                this.originalCallback(activeTransfer.lastData);
+            }
+        }
+    }
+    
+    // Force immediate callback 
+    forceCallback(data: progressCallbackData) {
+        this.originalCallback(data);
+    }
+    
+    // Clean up when transfer is complete
+    cleanup(transferId: string) {
+        const keysToRemove = Array.from(this.activeTransfers.keys())
+            .filter(key => key.startsWith(`${transferId}-`));
+        
+        for (const key of keysToRemove) {
+            this.activeTransfers.delete(key);
+            if (this.currentActiveTransfer === key) {
+                this.currentActiveTransfer = null;
+            }
+        }
+    }
+}
+
 
 export async function transferManager(transferInfo: any, progressCallback: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
     // This function will handle the transfer operations based on the provided transferInfo
@@ -52,12 +172,28 @@ export async function transferManager(transferInfo: any, progressCallback: (data
 
     const isTargetLocal = !targetCloudType || !targetAccountId;
 
+    // Create a progress callback scheduler for this transfer
+    const scheduler = new ProgressCallbackScheduler(progressCallback, 3000);
+    
+    // Wrapper function that decides whether to use scheduler or direct callback
+    const wrappedProgressCallback = (data: progressCallbackData) => {
+        if (data.errorItemDirectory || 
+            data.isFetching || 
+            (data.transfered === data.total && data.total > 0) ||
+            (data.isDirectory && data.transfered === 0 && data.total === 0)) {
+            scheduler.forceCallback(data);
+        } else {
+            // Use scheduler for regular progress updates during file transfers
+            scheduler.updateProgress(data);
+        }
+    };
+
     try {
 
         // if source is local, we will fetch the file from local filesystem and then upload using resumable upload
         if (isSourceLocal) {
             console.warn("Transferring from local filesystem to cloud storage...");
-            progressCallback({
+            wrappedProgressCallback({
                 transferId,
                 fileName,
                 transfered: 0,
@@ -70,11 +206,11 @@ export async function transferManager(transferInfo: any, progressCallback: (data
 
             } else {
                 // Handle local to cloud transfer
-                await transferLocalToCloudUpload(transferId, fileName, sourcePath, targetCloudType, targetAccountId, targetPath, progressCallback, abortSignal);
+                await transferLocalToCloudUpload(transferId, fileName, sourcePath, targetCloudType, targetAccountId, targetPath, wrappedProgressCallback, abortSignal);
             }
         } else {
             console.warn("Transferring from local filesystem to cloud storage...");
-            progressCallback({
+            wrappedProgressCallback({
                 transferId,
                 fileName,
                 transfered: 0,
@@ -85,16 +221,19 @@ export async function transferManager(transferInfo: any, progressCallback: (data
             if (isTargetLocal) {
                 // Handle cloud to local transfer
                 // download the file from cloud storage to local filesystem
-                await transferCloudToLocal(transferId, fileName, sourcePath, sourceCloudType, sourceAccountId, targetPath, progressCallback, abortSignal);
+                await transferCloudToLocal(transferId, fileName, sourcePath, sourceCloudType, sourceAccountId, targetPath, wrappedProgressCallback, abortSignal);
             } else {
                 // Handle cloud to cloud transfer
-                await transferCloudToCloud(transferId, fileName, sourceCloudType, sourceAccountId, targetCloudType, targetAccountId, sourcePath, targetPath, copy, progressCallback, abortSignal);
+                await transferCloudToCloud(transferId, fileName, sourceCloudType, sourceAccountId, targetCloudType, targetAccountId, sourcePath, targetPath, copy, wrappedProgressCallback, abortSignal);
             }
         }
         
     } catch (error) {
         console.error("Transfer failed:", error);
         throw new Error(`Transfer failed: ${error}`);
+    } finally {
+        // Clean up scheduler when transfer is complete
+        scheduler.cleanup(transferId);
     }
 }
 
@@ -117,7 +256,7 @@ async function transferCloudToLocal(
             if (account.getAccountId() === sourceAccountId) {
                 const type = mime.lookup(fileName) || 'application/octet-stream'; // default to binary if no mime type found
                 // Handle local to cloud upload
-                await downloadItemFromCloud(transferId, fileName, account, sourcePath, targetPath, abortSignal, progressCallback);
+                await downloadItemFromCloud(transferId, fileName, account, sourcePath, targetPath, abortSignal, progressCallback, false);
             }
         }
     }
@@ -130,7 +269,8 @@ async function downloadItemFromCloud(
     sourcePath: string,
     targetPath: string,
     abortSignal?: AbortSignal,
-    progressCallback?: (data: progressCallbackData) => void
+    progressCallback?: (data: progressCallbackData) => void,
+    isParentDirectory?: boolean
 ): Promise<void> {
     // Check if the source item is a directory
     const isDirectory = await sourceAccountInstance.isDirectory(sourcePath);
@@ -143,13 +283,14 @@ async function downloadItemFromCloud(
     // TODO: maybe there is way to check if directory or file without making a request to the cloud storage?
 
     if (isDirectory) {
+
         // Notify progress for the initial state
         if (progressCallback) {
             progressCallback({
                 transferId,
                 fileName: itemName,
                 transfered: 0,
-                total: 1,
+                total: 0,
                 isDirectory: true,
                 isFetching: true
             });
@@ -164,21 +305,9 @@ async function downloadItemFromCloud(
         const total_items = items.length;
         let processed_items = 0;
 
-        // Call the progress callback if provided
-        if (progressCallback) {
-            progressCallback({
-                transferId,
-                fileName: itemName,
-                transfered: processed_items,
-                total: total_items,
-                isDirectory: true,
-                isFetching: true
-            });
-        }
-
 
         // Create semaphore with desired concurrency limit
-        const semaphore = new Semaphore(3); // Max 3 concurrent transfers
+        const semaphore = new Semaphore(1); // Max 3 concurrent transfers
 
         const transferPromises = items.map(async (item) => {
             // Acquire semaphore to limit concurrent transfers
@@ -197,28 +326,26 @@ async function downloadItemFromCloud(
                 // Recursively transfer each item
                 // when transferring each item, we will call the downloadItem function again
                 // without progressCallback to avoid keeping track of progress for each item
-                const response = await downloadItemFromCloud(
+
+                progressCallback?.({
+                    transferId,
+                    fileName: item.name,
+                    transfered: 0,
+                    total: 0, 
+                    isDirectory: false,
+                    isFetching: true 
+                 });Semaphore
+                await downloadItemFromCloud(
                     transferId,
                     item.name,
                     sourceAccountInstance,
                     sourceItemPath,
                     newTargetFolderPath,
-                    abortSignal
+                    abortSignal,
+                    progressCallback,
+                    isDirectory
                 );
-                processed_items++;
-                // Call the progress callback if provided
-                if (progressCallback) {
-                    progressCallback({
-                        transferId,
-                        fileName: itemName,
-                        transfered: processed_items,
-                        total: total_items,
-                        isDirectory: true,
-                        isFetching: false
-                    });
-                }
 
-                return { success: true, itemName: item.name };
             } catch (error: any) {
                 if (abortSignal?.aborted || 
                     error?.error?.code === 'itemNotFound' || 
@@ -263,7 +390,6 @@ async function downloadItemFromCloud(
                 // Skip this directory and continue with the next item
                 processed_items++;
 
-                return { success: false, itemName: item.name };
             } finally {
                 // Always release semaphore
                 semaphore.release();
@@ -271,40 +397,19 @@ async function downloadItemFromCloud(
         });
 
         // Wait for all transfers to complete
-        const result = await Promise.all(transferPromises);
+        await Promise.all(transferPromises);
         
-        // Final progress callback - directory transfer complete
-        if (progressCallback) {
-            const successCount = result.filter(r => r.success === true).length;
-            const failCount = result.filter(r => r.success === false).length;
 
-            const failedNames = result.filter(r => r.success === false).map(r => r.itemName).join(', ');
-
-            progressCallback({
-                transferId,
-                fileName: itemName,
-                transfered: total_items,
-                total: total_items,
-                isDirectory: true,
-                isFetching: false,
-            });
-            console.log(`Directory transfer complete: ${itemName}`);
-            console.log(`Successfully transferred ${successCount} items, failed to transfer ${failCount} items.`);
-            if (failCount > 0) {
-                progressCallback({
-                    transferId,
-                    fileName: itemName,
-                    transfered: successCount,
-                    total: total_items,
-                    isDirectory: true,
-                    isFetching: false,
-                    errorItemDirectory: `Failed to process ${failCount} items: ${failedNames}`
-                });
-            }
-        }
-
-        console.log(`Directory ${itemName} transferred successfully to ${newTargetFolderPath}`);
+        console.log(`All items in directory ${sourcePath} processed successfully.`);
     } else {
+        progressCallback?.({
+            transferId,
+            fileName: itemName,
+            transfered: 0,
+            total: 0, 
+            isDirectory: isParentDirectory,
+            isFetching: true 
+          });
         // if it's a file
         console.log(`Transferring file: ${sourcePath} to ${targetPath}`);
 
@@ -323,17 +428,6 @@ async function downloadItemFromCloud(
             CHUNK_SIZE = 32 * 1024 * 1024; // 32MB
         }
         
-        // Notify progress for the initial state
-        if (progressCallback) {
-            progressCallback({
-                transferId,
-                fileName: itemName,
-                transfered: 0,
-                total: fileSize,
-                isDirectory: false,
-                isFetching: true
-            });
-        }
 
         const maxQueueSize = 10 * CHUNK_SIZE; // 10 chunks, adjust as needed
 
@@ -380,7 +474,7 @@ async function downloadItemFromCloud(
                         fileName: itemName,
                         transfered: chunkOffset,
                         total: fileSize,
-                        isDirectory: false,
+                        isDirectory: isParentDirectory,
                         isFetching: false
                     });
                 }
@@ -421,7 +515,7 @@ async function downloadItemFromCloud(
                 fileName: itemName,
                 transfered: 0,
                 total: 0, 
-                isDirectory: true,
+                isDirectory: isParentDirectory,
                 isFetching: true,
                 errorItemDirectory: `Failed to process file ${itemName}: ${errorMessage}`
                 })

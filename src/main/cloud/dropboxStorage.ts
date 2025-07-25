@@ -768,7 +768,16 @@ export class DropboxStorage implements CloudStorage {
                     await this.createDirectory(newTargetFolderPath);
                     console.log(`Directory created: ${newTargetFolderPath}`);
                     await this.transferDirectoryContentsResumable(transferId, itemPath, newTargetFolderPath, progressCallback, abortSignal);
-                } catch (error) {
+                } catch (error: any) {
+                    if (abortSignal?.aborted || 
+                        error?.error?.code === 'itemNotFound' || 
+                        error?.code === 'itemNotFound' ||
+                        error?.message?.includes('cancelled') ||
+                        error?.message?.includes('aborted') ||
+                        error?.name === 'AbortError') {
+                        console.log('Transfer cancelled by user');
+                        throw new Error('Transfer cancelled by user');
+                    }
                     console.error(`Failed to process directory ${item.name}:`, error);
                     // Extract error message
                     const parts = error instanceof Error ? error.message.split(':') : ["Transfer failed"];
@@ -822,7 +831,16 @@ export class DropboxStorage implements CloudStorage {
                     await this.uploadFileInChunks(transferId, item.name, sessionId, itemPath, fileSize, targetFolderPath, progressCallback, abortSignal);
 
                     console.log(`File ${item.name} transferred successfully to ${targetFolderPath}/${item.name}`);
-                } catch (error) {
+                } catch (error: any) {
+                    if (abortSignal?.aborted || 
+                        error?.error?.code === 'itemNotFound' || 
+                        error?.code === 'itemNotFound' ||
+                        error?.message?.includes('cancelled') ||
+                        error?.message?.includes('aborted') ||
+                        error?.name === 'AbortError') {
+                        console.log('Transfer cancelled by user');
+                        throw new Error('Transfer cancelled by user');
+                    }
                     console.error(`Failed to process file ${item.name}:`, error);
                     // Extract error message
                     const parts = error instanceof Error ? error.message.split(':') : ["Transfer failed"];

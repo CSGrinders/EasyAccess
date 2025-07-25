@@ -48,7 +48,26 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
     
     // Transfer queue state
     const [transferQueue, setTransferQueue] = useState<TransferQueueState>({
-        transfers: [],
+        transfers: [
+   
+            {
+                id: 'example-transfer-id',
+                itemCount: 0,
+                progress: 0,
+                status: 'uploading',
+                startTime: Date.now(),
+                keepOriginal: false,
+                sourceStorageType: CloudType.Local,
+                sourceAccountId: '',
+                targetStorageType: CloudType.Local,
+                targetAccountId: '',
+                sourcePath: '',
+                targetPath: '',
+                fileList: [],
+                completedFiles: [],
+                failedFiles: [],
+            }
+        ],
         nextId: 1
     });
 
@@ -601,6 +620,10 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     .filter(fileName => !currentCompletedFiles.includes(fileName))
                     .map(fileName => ({ file: fileName, error: errorMessage }));
                 
+
+                // Clean up partially transferred files from target
+                await cleanupFailedTransferFiles(failedFiles, targetPath, targetCloudType, targetAccountId);
+
                 batchUpdateTransfer(transfer.id, {
                     status: "cancelled",
                     endTime: Date.now(),
@@ -624,6 +647,43 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
             // This catches errors before transfer creation (like user cancellation)
         }
     }
+
+
+
+    const cleanupFailedTransferFiles = async (
+        failedFiles: { file: string; error: string }[],
+        targetPath?: string,
+        targetCloudType?: CloudType,
+        targetAccountId?: string
+    ) => {
+        if (!targetPath || failedFiles.length === 0) return;
+
+        console.log("Cleaning up partially transferred files:", failedFiles.map(f => f.file));
+
+        for (const failedFile of failedFiles) {
+            try {
+                const targetFilePath = `${targetPath}/${failedFile.file}`;
+                
+                // Delete from target location
+                if (!targetCloudType || !targetAccountId) {
+                    // Delete from local file system
+                    await (window as any).fsApi.deleteItem(targetFilePath);
+                    console.log(`Cleaned up local file: ${targetFilePath}`);
+                } else {
+                    // Delete from cloud file system
+                    await (window as any).cloudFsApi.deleteItem(targetCloudType, targetAccountId, targetFilePath);
+                    console.log(`Cleaned up cloud file: ${targetFilePath}`);
+                }
+            } catch (cleanupError: any) {
+                // Don't throw on cleanup errors - file might not exist or already be partially cleaned
+                if (!cleanupError.message?.includes('not found') && 
+                    !cleanupError.message?.includes('does not exist') && 
+                    !cleanupError.message?.includes('ENOENT')) {
+                    console.warn(`Failed to cleanup file ${failedFile.file}:`, cleanupError);
+                }
+            }
+        }
+    };
 
     const cancellableWait = async (ms: number, transferId: string, getTransfer: (id: string) => TransferItem | undefined) => {
         const interval = 100;

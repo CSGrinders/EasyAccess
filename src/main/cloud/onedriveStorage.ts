@@ -11,6 +11,7 @@ dotenv.config();
 
 import mime from "mime-types";
 import { promises as fs } from 'fs';
+import { AnySoaRecord } from 'dns';
 
 const {
   DataProtectionScope,
@@ -936,7 +937,16 @@ export class OneDriveStorage implements CloudStorage {
                     // Recursively transfer the contents of the directory if directory creation is successful
                     console.log(`Directory created successfully: ${item.name}`);
                     await this.transferDirectoryContentsResumable(transferId, itemPath, `${targetPath}/${item.name}`, progressCallback, abortSignal);
-                } catch (error) {
+                } catch (error: any) {
+                    if (abortSignal?.aborted || 
+                        error?.error?.code === 'itemNotFound' || 
+                        error?.code === 'itemNotFound' ||
+                        error?.message?.includes('cancelled') ||
+                        error?.message?.includes('aborted') ||
+                        error?.name === 'AbortError') {
+                        console.log('Transfer cancelled by user');
+                        throw new Error('Transfer cancelled by user');
+                    }
                     console.error(`Failed to process directory ${item.name}:`, error);
                     // Extract error message
                     const parts = error instanceof Error ? error.message.split(':') : ["Transfer failed"];
@@ -990,7 +1000,16 @@ export class OneDriveStorage implements CloudStorage {
                     // await this.uploadFileInChunks(transferId, item.name, uploadUrl, itemPath, fileSize, progressCallback, abortSignal);
 
                     console.log(`File ${item.name} transferred successfully to ${targetPath}/${item.name}`);
-                } catch (error) {
+                } catch (error: any) {
+                  if (abortSignal?.aborted || 
+                      error?.error?.code === 'itemNotFound' || 
+                      error?.code === 'itemNotFound' ||
+                      error?.message?.includes('cancelled') ||
+                      error?.message?.includes('aborted') ||
+                      error?.name === 'AbortError') {
+                        console.log('Transfer cancelled by user');
+                        throw new Error('Transfer cancelled by user');
+                    }
                     console.error(`Failed to process file ${item.name}:`, error);
                     // Extract error message
                     const parts = error instanceof Error ? error.message.split(':') : ["Transfer failed"];

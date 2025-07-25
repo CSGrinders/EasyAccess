@@ -620,7 +620,16 @@ export class GoogleDriveStorage implements CloudStorage {
             isFetching: true 
           });
           await this.transferDirectoryContentsResumable(transferId, itemPath, subFolderPath, progressCallback, abortSignal);
-        } catch (error) {
+        } catch (error: any) {
+          if (abortSignal?.aborted || 
+            error?.error?.code === 'itemNotFound' || 
+            error?.code === 'itemNotFound' ||
+            error?.message?.includes('cancelled') ||
+            error?.message?.includes('aborted') ||
+            error?.name === 'AbortError') {
+            console.log('Transfer cancelled by user');
+            throw new Error('Transfer cancelled by user');
+          }
           console.error(`Failed to process directory ${item.name}:`, error);
           // Extract error message
           const parts = error instanceof Error ? error.message.split(':') : ["Transfer failed"];
@@ -674,7 +683,16 @@ export class GoogleDriveStorage implements CloudStorage {
           await this.uploadFileInChunks(transferId, item.name, uploadUrl, itemPath, fileSize, progressCallback, abortSignal, true);
         
           console.log(`Transfer Directory: File transferred: ${item.name} files processed)`);
-        } catch(error) {
+        } catch(error: any) {
+          if (abortSignal?.aborted || 
+            error?.error?.code === 'itemNotFound' || 
+            error?.code === 'itemNotFound' ||
+            error?.message?.includes('cancelled') ||
+            error?.message?.includes('aborted') ||
+            error?.name === 'AbortError') {
+            console.log('Transfer cancelled by user');
+            throw new Error('Transfer cancelled by user');
+          }
           console.error(`Failed to process file ${item.name}:`, error);
           // Extract error message
           const parts = error instanceof Error ? error.message.split(':') : ["Transfer failed"];
