@@ -498,6 +498,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
             "without reading the actual content. Only works within allowed directories.",
           inputSchema: zodToJsonSchema(GetFolderInfoArgsSchema) as ToolInput,
         },
+        // this schema is not accessible from the claude api as injected in system prompt
         {
           name: "list_allowed_directories",
           description:

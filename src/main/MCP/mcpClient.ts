@@ -134,6 +134,13 @@ class MCPClient {
 //         return "s";
 
         const connectedAccountsText = await this.getConnectedAccountsText();
+        // get allowed directories from mcp server
+        const allowedDirectories = await this.mcp.callTool({
+            name: "list_allowed_directories",
+        });
+        const directoryContent = allowedDirectories.content as { type: string, text?: string }[];
+        const allowedDirectoriesText = directoryContent.map(item => item.text).join("\n");
+        console.log("Allowed directories:", allowedDirectoriesText);
 
         const messages: MessageParam[] = [
             {
@@ -163,6 +170,7 @@ class MCPClient {
             content: query,
             tool_use_id: "",
             connected_accounts: connectedAccountsText,
+            allowed_directories: allowedDirectoriesText,
             messages: this.prev_messages,
         }));
         ws.onmessage = async (e) => {
@@ -199,6 +207,27 @@ class MCPClient {
                             name: toolName,
                             arguments: toolArgs || {},
                         });
+
+                        let isError = false;
+                        if (result.isError) {
+                            isError = true;
+                            console.error("Tool error:", result.isError);
+                        }
+                        // check if the result is error
+                        triggerToolResultMessage(toolName, toolArgs, result.content, isError);
+
+                        const contentArray = result.content as { type: string; text?: string }[];
+
+                        // check the length of result.content text and if it is too long, truncate it
+                        // This is to prevent the client from crashing due to too long content
+                        for (const content of contentArray) {
+                            if (content.type === "text" && content.text && content.text.length > 500) {
+                                console.warn("Tool result content is too long, truncating:", content.text.length);
+                                content.text = content.text.substring(0, 500) + "... (truncated)";
+                            }
+                        }
+
+                        // send the truncated result to the server 
                         ws.send(JSON.stringify({
                             type: "tool_result",
                             content: result.content,
@@ -207,7 +236,6 @@ class MCPClient {
                         }));
                         console.log("Tool result:", result);
 
-                        const contentArray = result.content as { type: string; text?: string }[];
                         let toolResultContent: string | undefined;
                         for (const toolContent of contentArray) {
                             if (toolContent.type === "text") {
@@ -224,13 +252,6 @@ class MCPClient {
                                 content: toolResultContent ?? "",
                             }],
                         });
-                        let isError = false;
-                        if (result.isError) {
-                            isError = true;
-                            console.error("Tool error:", result.isError);
-                        }
-                        // check if the result is error
-                        triggerToolResultMessage(toolName, toolArgs, result.content, isError);
                     }
                 } else if (response.type === "content_stop") {
                     console.warn("Content stop detected in response:", response);
