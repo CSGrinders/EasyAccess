@@ -5,14 +5,6 @@ import Store from 'electron-store';
 import { config } from 'dotenv';
 import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getFileInfo, getDirectoryTree, readFile } from './cloud/cloudManager';
 import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal, calculateDirectorySize } from './local/localFileSystem';
-// Load environment variables
-// In development, load from project root; in production, load from app Contents directory
-const envPath = app.isPackaged 
-    ? path.join(path.dirname(app.getPath('exe')), '..', '.env')
-    : path.join(__dirname, '../../.env');
-
-console.log('Loading .env from:', envPath);
-config({ path: envPath });
 import { CloudType } from "@Types/cloudType";
 import { FileContent, FileSystemItem } from '@Types/fileSystem';
 import MCPClient from './MCP/mcpClient';
@@ -21,13 +13,129 @@ import { PermissionManager } from './permissions/permissionManager';
 import { createFsServer } from './MCP/globalFsMcpServer';
 import { v4 as uuidv4 } from 'uuid';
 import { DashboardState } from '@Types/canvas';
-// import GeminiMcpClient from './MCP/GeminiClient';
+import http from 'http';
+
+// Load environment variables
+// In development, load from project root; in production, load from app Contents directory
+const envPath = app.isPackaged 
+    ? path.join(path.dirname(app.getAppPath()), '..', '..', '.env')
+    : path.join(__dirname, '../../.env');
+
+console.log('Loading .env from:', envPath);
+config({ path: envPath });
+
+export const AppConfig = {
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_PUBLIC_KEY: process.env.GOOGLE_PUBLIC_KEY,
+    DROPBOX_KEY: process.env.DROPBOX_KEY,
+    MICROSOFT_CLIENT_ID: process.env.MICROSOFT_CLIENT_ID,
+    NODE_ENV: process.env.NODE_ENV || 'development',
+    AGENT_AUTH_REDIRECT_URL: process.env.AGENT_AUTH_REDIRECT_URL,
+    AGENT_AUTH_PORT: process.env.AGENT_AUTH_PORT || 8080 // Default port for agent auth
+}
 
 const store = new Store();
 
 // let mcpClient: MCPClient | null = null;
 let mcpClient: MCPClient | null = null;
 let mainWindow: BrowserWindow | null = null;
+
+const AUTH_REDIRECT_URL = AppConfig.AGENT_AUTH_REDIRECT_URL; // Define the redirect URL for OAuth
+
+
+app.setAsDefaultProtocolClient('easyaccess'); // Register the protocol handler
+
+app.on('open-url', (event, url) => {
+    event.preventDefault();
+    console.log("Received URL:", url);
+    const urlObj = new URL(url);
+});
+
+ipcMain.handle('start-auth-server', async () => {
+    const code = await startAuthServer(); // your existing logic
+    return code;
+});
+
+export const focusMainWindow = () => {
+    if (mainWindow) {
+        mainWindow.show();       
+        mainWindow.focus();       
+        mainWindow.setAlwaysOnTop(true); 
+        mainWindow.setAlwaysOnTop(false);
+    } else {
+        console.error("Main window is not available to focus.");
+    }
+};
+
+const startAuthServer = (): Promise<string> => {
+    return new Promise(async (resolve, reject) => {
+        const server = http.createServer((req, res) => {
+            if (req.url?.startsWith('/supabase/auth/callback')) {
+                console.log("Auth callback received:", req.url);
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                // Respond with a simple HTML page that will extract the tokens
+                // Redirect page to EasyAccess website? Currently, set to my portfolio
+                res.end(`
+                <html>
+                    <body>
+                    <script>
+                        const params = new URLSearchParams(window.location.hash.slice(1));
+                        const accessToken = params.get('access_token');
+                        const refreshToken = params.get('refresh_token');
+
+                        // Send to Electron (via postMessage or redirection)
+                        fetch('http://127.0.0.1:8080/token', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ accessToken, refreshToken })
+                        }).then(() => {
+                            window.location.replace("https://github.com/");
+                        });
+                    </script>
+                    </body>
+                </html>
+                `);
+            } else if (req.url === '/token' && req.method === 'POST') {
+                let body = '';
+                req.on('data', chunk => body += chunk);
+                req.on('end', () => {
+                    const data = JSON.parse(body);
+                    const { accessToken, refreshToken } = data;
+
+                    mainWindow?.webContents.send('agent-auth-token', { accessToken, refreshToken });
+
+                    // focus main window
+                    focusMainWindow();
+
+                    res.writeHead(200);
+                    res.end();
+                    server.close();
+                    resolve(accessToken || '');
+                });
+            } else {
+                res.writeHead(404);
+                res.end('Not Found');
+            }
+        });
+
+        // redirect URI for OAuth2...
+        server.listen(8080, () => {
+            console.log("Auth server listening on port 8080");
+        });
+
+        // Handle server errors
+        server.on('error', (error: any) => {
+            console.error("Auth server error:", error);
+        });
+
+        // Add timeout to prevent hanging
+        setTimeout(() => {
+            server.close();
+            reject(new Error('Authentication timeout - no response received'));
+        }, 300000); // 5 minute timeout
+    });
+}
+
 
 
 const setUpMCP = async () => {
@@ -143,9 +251,11 @@ const createWindow = async () => {
     // load auth tokens from local storage
     loadStoredAccounts(); 
 
-    if (process.env.NODE_ENV === 'development') {
+    if (AppConfig.NODE_ENV === 'development') {
+        console.log("Development mode - loading from localhost");
         win.loadURL('http://localhost:3000').then(r => console.log("loaded"));
     } else {
+        console.log("Production mode - loading from index.html");
         win.loadFile(path.join(__dirname, '../index.html')).then(r => console.log("loaded"));
     }
 

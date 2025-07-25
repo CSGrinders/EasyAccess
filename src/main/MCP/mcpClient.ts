@@ -10,13 +10,10 @@ import { WebSocket } from 'ws';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport";
 
-import dotenv from "dotenv";
 import { triggerAgentWorkStop, triggerToolResultMessage, triggerGetFileOnRenderer, triggerGracefulClose, triggerOpenAccountWindow, triggerRefreshAgentMessage, triggerSendTextDelta } from "../main";
 import { CloudType } from "../../types/cloudType";
 import fs from 'fs';
 import { getConnectedCloudAccounts } from "../cloud/cloudManager";
-
-dotenv.config({ path: '.env' });
 
 // const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 // if (!ANTHROPIC_API_KEY) {

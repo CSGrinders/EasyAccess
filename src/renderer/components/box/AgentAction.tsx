@@ -6,6 +6,9 @@ import { supabase } from "@/supbaseClient";
 import { FaGoogle } from "react-icons/fa";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import ToolResult from "./ToolResult";
+import { FcGoogle } from "react-icons/fc";
+
+const AGENT_AUTH_REDIRECT_URL = process.env.AGENT_AUTH_REDIRECT_URL;
 
 const AgentAction = memo(function AgentAction() {
     const [isResizing, setIsResizing] = useState(false);
@@ -387,18 +390,71 @@ const AgentAction = memo(function AgentAction() {
         questionRef.current!.style.display = 'none';
         supabase.auth.getSession().then(({ data }: { data: { session: import('@supabase/supabase-js').Session | null } }) => {
             setSession(data.session);
-            console.log("Supabase session:", data.session);
         });
 
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((_event: string, session: import('@supabase/supabase-js').Session | null) => {
             setSession(session);
-            console.log(session?.access_token);
-            console.log("Auth state changed:", session);
         });
 
-        return () => subscription.unsubscribe();
+        const setupAuthListener = async () => {
+            await (window as any).electronAPI.onAgentAuthToken(
+                async ({ accessToken, refreshToken }: { accessToken: string; refreshToken: string }) => {
+                    try {
+                        const { data, error } = await supabase.auth.setSession({
+                            access_token: accessToken,
+                            refresh_token: refreshToken,
+                        });
+
+                        if (error) {
+                            console.error('Error setting session:', error);
+                            return;
+                        }
+
+                        console.log('Session set successfully:', data);
+                        // Handle successful authentication (e.g., redirect to dashboard)
+                        
+                    } catch (error) {
+                        console.error('Error in auth callback:', error);
+                    }
+                }
+            );
+        };
+
+        setupAuthListener();
+
+        return () => {
+            subscription.unsubscribe(); 
+            (window as any).electronAPI.removeAgentAuthTokenListener();
+        };
+    }, []);
+
+    const signOut = useCallback(async () => {
+        console.log("Signing out from Supabase");
+        console.log("Supabase auth:", supabase.auth);
+        if (!supabase.auth) {
+            console.error("Supabase auth is not initialized");
+            return;
+        }
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+            console.error("Error signing out:", error);
+        } else {
+            console.log("Signed out successfully");
+            setSession(null);
+            setAgentWorkVisibility(false);
+            setResponse('');
+            setUserQuery('');
+            queueRef.current = [];
+            isTyping.current = false;
+            setShowErrorDialog(false);
+            setErrorMessage('');
+            setErrorDescription('');
+            if (questionRef.current) {
+                questionRef.current.style.display = 'none';
+            }
+        }
     }, []);
 
     const signUp = async (e: React.FormEvent) => {
@@ -408,7 +464,11 @@ const AgentAction = memo(function AgentAction() {
         const { data, error } = await supabase.auth.signInWithOAuth({
             provider: "google",
             options: {
-                redirectTo: window.location.origin,
+                redirectTo: AGENT_AUTH_REDIRECT_URL,
+                queryParams: {
+                    access_type: "offline",
+                    prompt: "consent",
+                },
                 skipBrowserRedirect: true,
             }
         });
@@ -418,8 +478,11 @@ const AgentAction = memo(function AgentAction() {
             return;
         }
         console.log("Sign up data:", data);
-        // Open the sign up URL in a new tab
-        window.open(data.url, '_blank');
+        // start auth callback server to listen for the redirect
+        (window as any).electronAPI.startAuthServer()
+        
+        // File has a URL (common for cloud files) - open in browser/default app
+        const response = await (window as any).electronAPI.openExternalUrl(data.url);
     };
 
     async function checkUserLimit(user: any) {
@@ -616,6 +679,13 @@ const AgentAction = memo(function AgentAction() {
                                     <>
                                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                                         <span>Connected</span>
+                                        <button
+                                            onClick={signOut}
+                                            type="button"
+                                            className="ml-1 text-xs text-gray-500 dark:text-gray-400 hover:underline"
+                                        >
+                                            Sign Out
+                                        </button>
                                     </>
                                 ) : (
                                     <>
@@ -623,14 +693,10 @@ const AgentAction = memo(function AgentAction() {
                                         <span>Sign in to continue</span>
                                         <button
                                             onClick={signUp}
-                                            type="button"
-                                            className="group relative ml-1 overflow-hidden bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold px-2 py-[1px] rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg active:scale-95"
+                                            className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs px-1 py-0.5 rounded flex items-center gap-1 border border-gray-300"
                                         >
-                                            <span className="relative z-10 flex items-center gap-2 text-xs transform group-hover:translate-y-[-2px] transition-transform duration-200">
-                                                <FaGoogle />
-                                                Sign Up with Google to use Agent
-                                            </span>
-                                            <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                                            <FcGoogle size={16} />
+                                            Sign in with Google
                                         </button>
                                     </>
                                 )}

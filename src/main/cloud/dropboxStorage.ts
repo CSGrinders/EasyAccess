@@ -10,11 +10,10 @@ import fetch from 'node-fetch';
 
 const mime = require('mime-types');
 import { minimatch } from 'minimatch';
+import { AppConfig, focusMainWindow } from '../main';
 
-const DROPBOX_APP_KEY = process.env.DROPBOX_KEY;
-// const DROPBOX_APP_SECRET = process.env.DROPBOX_SECRET;
 const PORT = 53685; // Port for the local server to handle Dropbox OAuth redirect
-const REDIRECT_URI = 'http://localhost:' + PORT;
+const REDIRECT_URI = 'http://127.0.0.1:' + PORT;
 
 export class DropboxStorage implements CloudStorage {
     accountId?: string | undefined;
@@ -47,10 +46,11 @@ export class DropboxStorage implements CloudStorage {
         const code = reqUrl.searchParams.get('code');
 
         if (code) {
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end('Authorization successful! You can close this window.');
-          server.close();
-          resolve(code);
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end('<html><body><script>window.location.replace("https://github.com/");</script></body></html>');
+            server.close();
+            focusMainWindow();
+            resolve(code);
         } else {
           res.writeHead(400, { 'Content-Type': 'text/html' });
           res.end('Authorization failed. No code received.');
@@ -90,7 +90,7 @@ export class DropboxStorage implements CloudStorage {
 
     async connect(): Promise<void | any> {
         return new Promise(async (resolve, reject) => {
-            if (!DROPBOX_APP_KEY) {
+            if (!AppConfig.DROPBOX_KEY) {
                 throw new Error('DROPBOX_APP_KEY is not set');
             }
 
@@ -100,7 +100,7 @@ export class DropboxStorage implements CloudStorage {
             const { codeVerifier, codeChallenge } = await generateCodes();
 
             // https://www.dropbox.com/oauth2/authorize?client_id=<APP_KEY>&response_type=code&code_challenge=<CHALLENGE>&code_challenge_method=<METHOD>
-            const authUrl = `https://www.dropbox.com/oauth2/authorize?client_id=${DROPBOX_APP_KEY}&response_type=code&code_challenge=${codeChallenge}&code_challenge_method=S256&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&token_access_type=offline`;
+            const authUrl = `https://www.dropbox.com/oauth2/authorize?client_id=${AppConfig.DROPBOX_KEY}&response_type=code&code_challenge=${codeChallenge}&code_challenge_method=S256&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&token_access_type=offline`;
             shell.openExternal(authUrl);
 
             const code = await this.startAuthServer(); // Get code from redirect
@@ -113,7 +113,7 @@ export class DropboxStorage implements CloudStorage {
                 body: new URLSearchParams({
                     code: code,
                     grant_type: 'authorization_code',
-                    client_id: DROPBOX_APP_KEY,
+                    client_id: AppConfig.DROPBOX_KEY,
                     redirect_uri: REDIRECT_URI,
                     code_verifier: codeVerifier, // Include the code verifier
                 }).toString()
@@ -154,7 +154,7 @@ export class DropboxStorage implements CloudStorage {
         if (this.AuthToken.expiry_date < Date.now()) {
             console.log('AuthToken is expired, refreshing...');
             try {
-                if (!this.AuthToken.refresh_token || !DROPBOX_APP_KEY) {
+                if (!this.AuthToken.refresh_token || !AppConfig.DROPBOX_KEY) {
                     throw new Error('Missing required parameters for token refresh');
                 }
                 
@@ -163,7 +163,7 @@ export class DropboxStorage implements CloudStorage {
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: new URLSearchParams({
                         grant_type: 'refresh_token',
-                        client_id: DROPBOX_APP_KEY,
+                        client_id: AppConfig.DROPBOX_KEY,
                         refresh_token: this.AuthToken.refresh_token
                     }).toString()
                 });

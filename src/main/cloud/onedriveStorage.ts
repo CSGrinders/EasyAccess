@@ -2,10 +2,9 @@ import { CloudStorage, AuthTokens, isValidToken } from './cloudStorage';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { CLOUD_HOME, CloudType } from '../../types/cloudType';
-import dotenv from 'dotenv';
 import { minimatch } from 'minimatch';
 import { v4 as uuidv4 } from 'uuid';
-dotenv.config();
+import { AppConfig, focusMainWindow } from '../main';
 
 const {
   DataProtectionScope,
@@ -18,12 +17,6 @@ const { PublicClientApplication, InteractionRequiredAuthError, LogLevel } = requ
 const { shell } = require('electron');
 
 
-const MSAL_CONFIG = {
-  auth: {
-    clientId: process.env.MICROSOFT_CLIENT_ID,
-    authority: "https://login.microsoftonline.com/common",
-  },
-};
 
 /*
   Before calling api, need to check if client is authenticated. Pull the client from the cache with the accountId
@@ -72,7 +65,12 @@ export class OneDriveStorage implements CloudStorage {
       // 3. Performs any fallbacks if necessary.
       const persistence = await PersistenceCreator.createPersistence(persistenceConfig);
       const publicClientConfig = {
-        ...MSAL_CONFIG,
+        ...{
+          auth: {
+            clientId: AppConfig.MICROSOFT_CLIENT_ID,
+            authority: "https://login.microsoftonline.com/common",
+          },
+        },
         // This hooks up the cross-platform cache into MSAL
         cache: {
           cachePlugin: new PersistenceCachePlugin(persistence),
@@ -87,7 +85,12 @@ export class OneDriveStorage implements CloudStorage {
       
       // Fallback to in-memory cache if persistence fails
       const msalConfig = {
-        ...MSAL_CONFIG,
+        ...{
+          auth: {
+            clientId: AppConfig.MICROSOFT_CLIENT_ID,
+            authority: "https://login.microsoftonline.com/common",
+          },
+        },
         cache: {
           cachePlugin: {
             beforeCacheAccess: async () => {},
@@ -196,11 +199,14 @@ export class OneDriveStorage implements CloudStorage {
       const authResponse = await this.client.acquireTokenInteractive({
         ...tokenRequest,
         openBrowser,
-        successTemplate: '<h1>Successfully signed in!</h1> <p>You can close this window now.</p>',
+        successTemplate: '<body><script>window.location.replace("https://github.com/");</script></body>',
         errorTemplate: '<h1>Oops! Something went wrong</h1> <p>Check the console for more information.</p>',
       });
 
       console.log('authResponse: ', authResponse);
+
+      // focus main window after authentication
+      focusMainWindow();
 
       if (this.authCancelled) {
         throw new Error('Authentication cancelled');

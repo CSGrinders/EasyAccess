@@ -1,5 +1,3 @@
-import dotenv from 'dotenv';
-
 import { CloudStorage, AuthTokens, generateCodes } from './cloudStorage';
 import { saveCloudAccountLocaStorage } from './cloudManager';
 import { OAuth2Client } from 'google-auth-library';
@@ -13,13 +11,11 @@ import * as http from 'http';
 import { URL } from 'url';
 import path, { normalize } from 'path';
 import { minimatch } from 'minimatch';
-
-dotenv.config();
+import { AppConfig, focusMainWindow } from '../main';
 
 //https://cloud.google.com/nodejs/docs/reference/google-auth-library/latest
-
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+// const GOOGLE_CLIENT_ID = AppConfig.GOOGLE_CLIENT_ID;
+// const GOOGLE_CLIENT_SECRET = AppConfig.GOOGLE_CLIENT_SECRET;
 const GOOGLE_SCOPE = [
   'https://www.googleapis.com/auth/drive.metadata.readonly',
   'https://www.googleapis.com/auth/drive.file',
@@ -32,7 +28,8 @@ const GOOGLE_SCOPE = [
  * Temporary redirect URL for OAuth2
  */
 const PORT = 53684; // Default port for the local server
-const SUCCESS_REDIRECT_URL = `http://localhost:${PORT}`;
+const SUCCESS_REDIRECT_URL = `http://127.0.0.1:${PORT}`;
+// const SUCCESS_REDIRECT_URL = `easyaccess://auth/callback`; // Use localhost for better compatibility
 
 export class GoogleDriveStorage implements CloudStorage {
   accountId?: string | undefined;
@@ -261,7 +258,20 @@ export class GoogleDriveStorage implements CloudStorage {
 
         if (code) {
           res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end('Authorization successful! You can close this window.');
+          // redirect to a success page
+          // replace the url with easyAccess WEebsite?
+          // TODO: replace with a success page
+          res.end(`
+            <html>
+              <body>
+              <script>
+                window.location.replace("https://github.com/");
+              </script>
+              </body>
+            </html>
+          `);
+          focusMainWindow();
+          // close the server after receiving the code
           server.close();
           resolve(code);
         } else {
@@ -308,9 +318,9 @@ export class GoogleDriveStorage implements CloudStorage {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code: code,
-        client_id: GOOGLE_CLIENT_ID || '',
+        client_id: AppConfig.GOOGLE_CLIENT_ID || '',
         redirect_uri: SUCCESS_REDIRECT_URL,
-        client_secret: GOOGLE_CLIENT_SECRET || '',
+        client_secret: AppConfig.GOOGLE_PUBLIC_KEY || '',
         grant_type: 'authorization_code',
         code_verifier: codeVerifier,
       }),
@@ -323,7 +333,7 @@ export class GoogleDriveStorage implements CloudStorage {
   }
 
   private async authenticateGoogle(): Promise<{ token: AuthTokens, email: string } | null> {
-      if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+      if (!AppConfig.GOOGLE_CLIENT_ID || "GOOGLE_CLIENT_SECRET" === undefined) {
           throw new Error("Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in environment variables");
       }
       
@@ -338,7 +348,7 @@ export class GoogleDriveStorage implements CloudStorage {
           
           const { codeVerifier, codeChallenge } = await generateCodes();
 
-          this.currentAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${SUCCESS_REDIRECT_URL}&response_type=code&scope=${GOOGLE_SCOPE.join(' ')}&code_challenge=${codeChallenge}&code_challenge_method=S256&access_type=offline&prompt=consent`;
+          this.currentAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${AppConfig.GOOGLE_CLIENT_ID}&redirect_uri=${SUCCESS_REDIRECT_URL}&response_type=code&scope=${GOOGLE_SCOPE.join(' ')}&code_challenge=${codeChallenge}&code_challenge_method=S256&access_type=offline&prompt=consent`;
 
           shell.openExternal(this.currentAuthUrl);
 
@@ -358,7 +368,7 @@ export class GoogleDriveStorage implements CloudStorage {
           };
 
           // Initialize OAuth2 client and set credentials
-          this.oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SUCCESS_REDIRECT_URL); 
+          this.oauth2Client = new google.auth.OAuth2(AppConfig.GOOGLE_CLIENT_ID, "GOOGLE_CLIENT_SECRET", SUCCESS_REDIRECT_URL); 
           this.oauth2Client.setCredentials({
               access_token: authTokens.access_token,
               refresh_token: authTokens.refresh_token,
@@ -409,7 +419,7 @@ export class GoogleDriveStorage implements CloudStorage {
 
     if (!this.oauth2Client) {
       console.log('Initializing OAuth2 client with stored AuthToken');
-      this.oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SUCCESS_REDIRECT_URL);
+      this.oauth2Client = new google.auth.OAuth2(AppConfig.GOOGLE_CLIENT_ID, "GOOGLE_CLIENT_SECRET", SUCCESS_REDIRECT_URL);
       this.oauth2Client.setCredentials({
         access_token: this.AuthToken.access_token,
         refresh_token: this.AuthToken.refresh_token,

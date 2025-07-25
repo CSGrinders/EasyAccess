@@ -1558,7 +1558,7 @@ function FileExplorerInner({
                     ))}
                 </div>
                 <div>
-                    <span className="text-sm text-gray-500">
+                    <span className="text-sm text-gray-500 mr-5 mb-2">
                         {selectedCount > 0 ? `${selectedCount} item${selectedCount > 1 ? 's' : ''} selected` : ''}
                     </span>
                 </div>

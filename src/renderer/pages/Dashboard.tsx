@@ -33,14 +33,7 @@ const Dashboard = () => {
     const canvasVwpRef = useRef<HTMLDivElement>({} as HTMLDivElement);
     const [canvasVwpSize, setCanvasViewportSize] = useState({ width: 0, height: 0 });
     const [showStorageWindow, setShowStorageWindow] = useState(false);
-    const [showMcpTest, setShowMcpTest] = useState(false);
     const [disabledAction, setDisabledAction] = useState(false);
-
-    const [showClarificationDialog, setShowClarificationDialog] = useState(false);
-    const [question, setQuestion] = useState("");
-    // const [userResponseForClarification, setUserResponseForClarification] = useState("");
-    // const [showAgentWork, setShowAgentWork] = useState(false);
-    // const [agentWorkingMessages, setAgentWorkingMessages] = useState<string[]>([]);
 
     // This is used to position boxes by Agent
     // when they are opened or accessed by the agent
@@ -84,11 +77,6 @@ const Dashboard = () => {
 
     const toggleShowSideWindow = () => {
         setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
-    };
-
-    const toggleShowAgentWindow = () => {
-        console.log("Toggling MCP Test window visibility");
-        setShowMcpTest(!showMcpTest); // Toggle the storage window visibility
     };
 
     useEffect(() => {
@@ -233,11 +221,9 @@ const Dashboard = () => {
 
     const handleActionChange: React.Dispatch<React.SetStateAction<string>> = (newAction) => {
         if (newAction === "settings") {
-            setShowMcpTest(false);
             setShowStorageWindow(false);
             setDisabledAction(true)
         } else if (newAction === "transfers") {
-            setShowMcpTest(false);
             setShowStorageWindow(false);
             setDisabledAction(true)
         } else {
@@ -245,11 +231,6 @@ const Dashboard = () => {
         }
         setAction(newAction);
     };
-
-    const handleTest = () => {
-        console.log("TESTINGGGGGGGg");
-        agentOpenStorageBox("Google Drive", "sohn5312@gmail.com", "/test1/CS373");
-    }
 
     // Helper function to position and highlight a storage box
     const activateStorageBoxFromAgent = (storageBox: StorageBoxData, path?: string) => {
@@ -502,7 +483,7 @@ const Dashboard = () => {
                     isHidden={action === "transfers"}
                     isTransferPanelOpen={action === "transfers"}
                 />
-                <ActionBar action={action} setAction={handleActionChange} toggleShowSideWindow={toggleShowSideWindow} toggleShowAgentWindow={toggleShowAgentWindow} />
+                <ActionBar action={action} setAction={handleActionChange} toggleShowSideWindow={toggleShowSideWindow} />
                 <BoxDragProvider>
                     <div className="relative flex flex-1">
                         <StorageSideWindow show={showStorageWindow} addStorage={addStorageBox} onAccountDeleted={closeStorageBoxesForAccount} />
@@ -550,7 +531,6 @@ const Dashboard = () => {
                             ) : (
                                 <div className="flex-1 flex items-center justify-center">Loading canvas...</div>
                             )}     
-                            {/* <AgentWindow show={showMcpTest} setShow={setShowMcpTest} /> */}
                             <AgentAction/>
                         </div>
                     </div>

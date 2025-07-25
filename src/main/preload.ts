@@ -4,6 +4,7 @@ import type { FileContent, FileSystemItem } from '../types/fileSystem'
 import { CloudType } from '../types/cloudType';
 import { deleteFile } from './cloud/cloudManager';
 import { DashboardState } from '@Types/canvas';
+import { start } from 'repl';
 
 contextBridge.exposeInMainWorld('cloudFsApi', {
     connectNewCloudAccount: (cloudType: CloudType) =>
@@ -59,6 +60,14 @@ contextBridge.exposeInMainWorld('fsApi', {
 
 contextBridge.exposeInMainWorld('electronAPI', {
     openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url) as Promise<{ success: boolean, error?: any }>,
+    onAgentAuthToken: (callback: (tokens: { accessToken: string; refreshToken: string }) => void) => {
+        ipcRenderer.on('agent-auth-token', (event, tokens) => {
+            callback(tokens);
+        });
+    },
+    removeAgentAuthTokenListener: () => {
+        ipcRenderer.removeAllListeners('agent-auth-token');
+    },
     openFile: (fileContent: FileContent) => ipcRenderer.invoke('open-file', fileContent) as Promise<void>,
 
     // saveLayout: (layout: any) => ipcRenderer.invoke('save-layout', layout) as Promise<void>,
@@ -72,6 +81,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeRequestLayoutListener: () => {
         ipcRenderer.removeAllListeners('request-current-state');
     },
+
+    startAuthServer: () => ipcRenderer.invoke('start-auth-server') as Promise<string>,
 
     onLoadSavedState: (callback: (state: DashboardState) => any) => {
         ipcRenderer.on('load-saved-state', (_event, state: DashboardState) => {
