@@ -364,6 +364,7 @@ export async function transferManager(transferInfo: any, progressCallback: (data
             });
             if (isTargetLocal) {
                 // just rename the file in local filesystem
+                await transferLocalToLocal(transferId, fileName, sourcePath, targetPath, copy, wrappedProgressCallback, abortSignal);
 
             } else {
                 // Handle local to cloud transfer
@@ -396,6 +397,254 @@ export async function transferManager(transferInfo: any, progressCallback: (data
     } finally {
         // Clean up scheduler when transfer is complete
         scheduler.cleanup(transferId);
+    }
+}
+
+
+async function transferLocalToLocal(
+    transferId: string,
+    fileName: string,
+    sourcePath: string,
+    targetPath: string,
+    copy: boolean,
+    progressCallback?: (data: progressCallbackData) => void,
+    abortSignal?: AbortSignal
+): Promise<void> {
+    console.log(`${copy ? 'Copying' : 'Moving'} file from local to local: ${fileName} from ${sourcePath} to ${targetPath}`);
+    
+    let isDirectory = false
+    try {
+        const stats = await fs.stat(sourcePath);
+        isDirectory = stats.isDirectory();
+        const targetFilePath = path.join(targetPath, fileName);
+        
+        if (abortSignal?.aborted) {
+            throw new Error('Transfer cancelled by user');
+        }
+        
+        // Initial progress callback
+        progressCallback?.({
+            transferId,
+            fileName,
+            sourcePath,
+            transfered: 0,
+            total: isDirectory ? 0 : stats.size,
+            isDirectory,
+            isFetching: true
+        });
+        
+        if (isDirectory) {
+            await transferLocalDirectoryToLocal(transferId, fileName, sourcePath, targetPath, copy, progressCallback, abortSignal);
+        } else {
+            await transferLocalFileToLocal(transferId, fileName, sourcePath, targetFilePath, stats.size, copy, progressCallback, abortSignal);
+        }
+        
+        console.log(`${copy ? 'Copied' : 'Moved'} ${fileName} successfully to ${targetPath}`);
+        
+    } catch (error: any) {
+        if (abortSignal?.aborted || error?.message?.includes('cancelled')) {
+            throw new Error('Transfer cancelled by user');
+        }
+        
+        console.error(`Failed to ${copy ? 'copy' : 'move'} ${fileName}:`, error);
+        
+        // Handle specific filesystem errors
+        let errorMessage = "An unknown error occurred during transfer.";
+        if (error.code === 'ENOENT') {
+            errorMessage = "Source file or folder not found.";
+        } else if (error.code === 'EACCES' || error.code === 'EPERM') {
+            errorMessage = "Permission denied. Check file/folder permissions.";
+        } else if (error.code === 'ENOSPC') {
+            errorMessage = "Not enough space on target drive.";
+        } else if (error.code === 'EEXIST') {
+            errorMessage = "Target file or folder already exists.";
+        } else if (error.code === 'EXDEV') {
+            errorMessage = "Cross-device move not supported. Use copy instead.";
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        progressCallback?.({
+            transferId,
+            fileName,
+            sourcePath,
+            transfered: 0,
+            total: 0,
+            isDirectory,
+            isFetching: false,
+            errorItemDirectory: `Failed to ${copy ? 'copy' : 'move'} ${fileName}: ${errorMessage}`
+        });
+        
+        throw new Error(`Failed to ${copy ? 'copy' : 'move'} ${fileName}: ${errorMessage}`);
+    }
+}
+
+async function transferLocalFileToLocal(
+    transferId: string,
+    fileName: string,
+    sourcePath: string,
+    targetPath: string,
+    fileSize: number,
+    copy: boolean,
+    progressCallback?: (data: progressCallbackData) => void,
+    abortSignal?: AbortSignal
+): Promise<void> {
+    if (copy) {
+        // Copy file with progress tracking
+        await copyFile(transferId, fileName, sourcePath, targetPath, fileSize, progressCallback, abortSignal);
+    } else {
+        // Move file (rename)
+        try {
+            await fs.rename(sourcePath, targetPath);
+            
+            progressCallback?.({
+                transferId,
+                fileName,
+                sourcePath,
+                transfered: fileSize,
+                total: fileSize,
+                isDirectory: false,
+                isFetching: false
+            });
+        } catch (error: any) {
+            if (error.code === 'EXDEV') {
+                // Cross-device move - fall back to copy + delete
+                await copyFile(transferId, fileName, sourcePath, targetPath, fileSize, progressCallback, abortSignal);
+                await fs.unlink(sourcePath);
+            } else {
+                throw error;
+            }
+        }
+    }
+}
+
+async function copyFile(
+    transferId: string,
+    fileName: string,
+    sourcePath: string,
+    targetPath: string,
+    fileSize: number,
+    progressCallback?: (data: progressCallbackData) => void,
+    abortSignal?: AbortSignal
+): Promise<void> {
+    const CHUNK_SIZE = 64 * 1024; // 64KB chunks for local copying
+    let transferred = 0;
+    
+    const sourceHandle = await fs.open(sourcePath, 'r');
+    const targetHandle = await fs.open(targetPath, 'w');
+    
+    try {
+        const buffer = Buffer.allocUnsafe(CHUNK_SIZE);
+        
+        while (transferred < fileSize) {
+            if (abortSignal?.aborted) {
+                throw new Error('Transfer cancelled by user');
+            }
+            
+            const remainingBytes = fileSize - transferred;
+            const bytesToRead = Math.min(CHUNK_SIZE, remainingBytes);
+            
+            const { bytesRead } = await sourceHandle.read(buffer, 0, bytesToRead, transferred);
+            if (bytesRead === 0) break;
+            
+            await targetHandle.write(buffer, 0, bytesRead);
+            transferred += bytesRead;
+            
+            progressCallback?.({
+                transferId,
+                fileName,
+                sourcePath,
+                transfered: transferred,
+                total: fileSize,
+                isDirectory: false,
+                isFetching: false
+            });
+        }
+    } finally {
+        await sourceHandle.close();
+        await targetHandle.close();
+    }
+}
+
+async function transferLocalDirectoryToLocal(
+    transferId: string,
+    dirName: string,
+    sourcePath: string,
+    targetPath: string,
+    copy: boolean,
+    progressCallback?: (data: progressCallbackData) => void,
+    abortSignal?: AbortSignal
+): Promise<void> {
+    const targetDirPath = path.join(targetPath, dirName);
+    
+    // Create target directory
+    await fs.mkdir(targetDirPath, { recursive: true });
+    
+    // Read source directory
+    const items = await fs.readdir(sourcePath, { withFileTypes: true });
+    
+    // Create semaphore to limit concurrent operations
+    const semaphore = new Semaphore(3);
+    
+    const transferPromises = items.map(async (item) => {
+        await semaphore.acquire();
+        
+        try {
+            if (abortSignal?.aborted) {
+                throw new Error('Transfer cancelled by user');
+            }
+            
+            const itemSourcePath = path.join(sourcePath, item.name);
+            const itemTargetPath = path.join(targetDirPath, item.name);
+            
+            progressCallback?.({
+                transferId,
+                fileName: item.name,
+                sourcePath: itemSourcePath,
+                transfered: 0,
+                total: 0,
+                isDirectory: item.isDirectory(),
+                isFetching: true
+            });
+            
+            if (item.isDirectory()) {
+                await transferLocalDirectoryToLocal(transferId, item.name, itemSourcePath, targetDirPath, copy, progressCallback, abortSignal);
+            } else {
+                const stats = await fs.stat(itemSourcePath);
+                await transferLocalFileToLocal(transferId, item.name, itemSourcePath, itemTargetPath, stats.size, copy, progressCallback, abortSignal);
+            }
+            
+        } catch (error: any) {
+            if (abortSignal?.aborted || error?.message?.includes('cancelled')) {
+                throw new Error('Transfer cancelled by user');
+            }
+            
+            console.error(`Failed to process ${item.name}:`, error);
+            
+            progressCallback?.({
+                transferId,
+                fileName: item.name,
+                sourcePath: path.join(sourcePath, item.name),
+                transfered: 0,
+                total: 0,
+                isDirectory: item.isDirectory(),
+                isFetching: false,
+                errorItemDirectory: `Failed to process ${item.name}: ${error.message}`
+            });
+            
+            // Wait before continuing with next item
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+        } finally {
+            semaphore.release();
+        }
+    });
+    
+    await Promise.all(transferPromises);
+    
+    // If moving, delete the source directory after successful copy
+    if (!copy) {
+        await fs.rmdir(sourcePath, { recursive: true });
     }
 }
 
