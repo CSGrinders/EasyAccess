@@ -767,6 +767,16 @@ export class DropboxStorage implements CloudStorage {
                     const newTargetFolderPath = path.join(targetFolderPath, item.name);
                     await this.createDirectory(newTargetFolderPath);
                     console.log(`Directory created: ${newTargetFolderPath}`);
+                    progressCallback?.({
+                        transferId,
+                        fileName: item.name,
+                        sourcePath,
+                        transfered: 0,
+                        total: 0, 
+                        isDirectory: false,
+                        isFetching: true 
+                    });
+                    
                     await this.transferDirectoryContentsResumable(transferId, itemPath, newTargetFolderPath, progressCallback, abortSignal);
                 } catch (error: any) {
                     if (abortSignal?.aborted || 
@@ -798,6 +808,7 @@ export class DropboxStorage implements CloudStorage {
                     progressCallback?.({
                         transferId,
                         fileName: item.name,
+                        sourcePath,
                         transfered: 0,
                         total: 0, 
                         isDirectory: true,
@@ -815,6 +826,7 @@ export class DropboxStorage implements CloudStorage {
                     progressCallback?.({
                         transferId,
                         fileName: item.name,
+                        sourcePath,
                         transfered: 0,
                         total: 0, 
                         isDirectory: true,
@@ -828,7 +840,7 @@ export class DropboxStorage implements CloudStorage {
                     // await this.uploadFile(transferId, item.name, itemPath, targetPath, type, progressCallback, abortSignal);
 
                     const sessionId = await this.initiateResumableUpload( item.name, type, targetFolderPath);
-                    await this.uploadFileInChunks(transferId, item.name, sessionId, itemPath, fileSize, targetFolderPath, progressCallback, abortSignal);
+                    await this.uploadFileInChunks(transferId, item.name, sessionId, itemPath, fileSize, targetFolderPath, progressCallback, abortSignal, true);
 
                     console.log(`File ${item.name} transferred successfully to ${targetFolderPath}/${item.name}`);
                 } catch (error: any) {
@@ -861,6 +873,7 @@ export class DropboxStorage implements CloudStorage {
                     progressCallback?.({
                         transferId,
                         fileName: item.name,
+                        sourcePath,
                         transfered: 0,
                         total: 0,
                         isDirectory: false,
@@ -997,6 +1010,7 @@ export class DropboxStorage implements CloudStorage {
                         progressCallback({
                             transferId,
                             fileName: filename,
+                            sourcePath,
                             transfered: TransferedBytes,
                             total: fileSize,
                             isDirectory: isDirectory || false,
@@ -1036,6 +1050,10 @@ export class DropboxStorage implements CloudStorage {
                         if (!closeResponse.ok) {
                             const errorText = await closeResponse.text();
                             throw new Error(`Failed to finalize upload session: ${closeResponse.status} - ${errorText}`);
+                        }
+
+                        if (progressCallback) {
+                            progressCallback({transferId, fileName: filename, sourcePath, transfered: fileSize, total: fileSize, isDirectory: (isDirectory || false)});
                         }
 
                         console.log(`Upload session finalized successfully for file: ${filename}`);
@@ -1219,87 +1237,134 @@ export class DropboxStorage implements CloudStorage {
         return stream;
     }
 
-    async cloudToCloudUploadChunk(sessionId: string, chunk: Buffer, offset: number, totalSize: number): Promise<void> {
-        console.log(`Uploading chunk for session ID: ${sessionId}, offset: ${offset}, size: ${chunk.length}`);
-        await this.initClient();
-        if (!this.client) {
-            console.error('Dropbox client is not initialized');
-            throw new Error('Dropbox client is not initialized');
-        }
-
-       const response = await fetch('https://content.dropboxapi.com/2/files/upload_session/append_v2', {
-            method: 'POST',
-            headers: {
-            'Authorization': `Bearer ${this.AuthToken?.access_token}`,
-            'Dropbox-API-Arg': JSON.stringify({
-                cursor: {
-                    session_id: sessionId,
-                    offset: offset,
-                },
-                close: false,
-            }),
-            'Content-Type': 'application/octet-stream',
-            },
-            body: chunk, // or stream if file is large
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            const err: StorageError = {
-                status: response.status,
-                message: `Failed to upload chunk: ${response.status} - ${errorText}`,
-                body: errorText
-            };
-            return Promise.reject(err);
-        }
-        // console.log(`Chunk uploaded successfully: ${offset}-${offset + chunk.length - 1}/${totalSize}`);
+  async cloudToCloudUploadChunk(transferId: string, fileName: string, sourcePath: string, sessionId: string, chunk: Buffer, offset: number, totalSize: number, progressCallback?: (data: progressCallbackData) => void, isDirectory?: boolean, abortSignal?: AbortSignal): Promise<void> {
+    
+    console.log(`Uploading chunk for session ID: ${sessionId}, offset: ${offset}, size: ${chunk.length}`);
+    await this.initClient();
+    if (!this.client) {
+        console.error('Dropbox client is not initialized');
+        throw new Error('Dropbox client is not initialized');
     }
 
-    // Dropbox requires to send the sessionId and targetFilePath to api to finalize the upload session
-    async finishResumableUpload(sessionId: string, targetFilePath: string, fileSize: number): Promise<void> {
-        // ensure starts with a slash: specific to dropbox...
-        if (!targetFilePath.startsWith('/')) {
-            targetFilePath = '/' + targetFilePath;
-        }
-        const closeResponse = await fetch('https://content.dropboxapi.com/2/files/upload_session/finish', {
-            method: 'POST',
-            headers: {
+    if (abortSignal?.aborted) {
+        console.log('Upload cancelled by user');
+        throw new Error('Upload cancelled by user');
+    }
+    try {
+        const response = await fetch('https://content.dropboxapi.com/2/files/upload_session/append_v2', {
+                method: 'POST',
+                headers: {
                 'Authorization': `Bearer ${this.AuthToken?.access_token}`,
                 'Dropbox-API-Arg': JSON.stringify({
-                    commit: {
-                        autorename: true,
-                        mode: "add",
-                        mute: false,
-                        path: targetFilePath,
-                        strict_conflict: false
-                    },
                     cursor: {
-                        offset: fileSize,
-                        session_id: sessionId
-                    }
+                        session_id: sessionId,
+                        offset: offset,
+                    },
+                    close: false,
                 }),
                 'Content-Type': 'application/octet-stream',
-            },
-        });
+                },
+                body: chunk, 
+                signal: abortSignal,
+            });
 
-        if (!closeResponse.ok) {
-            const errorText = await closeResponse.text();
+            if (!response.ok) {
+                const errorText = await response.text();
+                const err: StorageError = {
+                    status: response.status,
+                    message: `Failed to upload chunk: ${response.status} - ${errorText}`,
+                    body: errorText
+                };
+                return Promise.reject(err);
+            }
+            if (progressCallback) {
+                progressCallback({transferId, fileName, sourcePath, transfered: offset + chunk.length - 1, total: totalSize, isDirectory: (isDirectory || false)});
+            }
+            console.log(`Chunk uploaded successfully: ${offset}-${offset + chunk.length - 1}/${totalSize}`);
+        } catch (error: any) {
+            console.error(`Error during chunked upload: ${error}`);
+            if (error.message?.includes('cancelled') || error.name === 'AbortError') {
+                throw error;
+            }
             const err: StorageError = {
-                status: closeResponse.status,
-                message: `Failed to finalize upload session: ${errorText}`,
-                body: errorText
+            status: error.status || 500,
+            message: `Failed to upload chunk: ${error.message}`,
+            body: error.response?.data || error.message || 'No additional details available'
             };
+            console.error('Error uploading chunk:', error);
             return Promise.reject(err);
         }
-
-        console.log(`Upload session finalized successfully for file: ${targetFilePath}`);
     }
 
-    async moveOrCopyItem(sourcePath: string, targetPath: string, itemName: string, copy: boolean, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+
+    // Dropbox requires to send the sessionId and targetFilePath to api to finalize the upload session
+    async finishResumableUpload(transferId: string, fileName: string, sourcePath: string, sessionId: string, targetFilePath: string, fileSize: number, progressCallback?: (data: progressCallbackData) => void, isDirectory?: boolean, abortSignal?: AbortSignal): Promise<void> {
+        try {
+            // ensure starts with a slash: specific to dropbox...
+            if (!targetFilePath.startsWith('/')) {
+                targetFilePath = '/' + targetFilePath;
+            }
+
+            if (abortSignal?.aborted) {
+                console.log('Transfer cancelled by user during finalization');
+                throw new Error('Transfer cancelled by user');
+            }
+            const closeResponse = await fetch('https://content.dropboxapi.com/2/files/upload_session/finish', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.AuthToken?.access_token}`,
+                    'Dropbox-API-Arg': JSON.stringify({
+                        commit: {
+                            autorename: true,
+                            mode: "add",
+                            mute: false,
+                            path: targetFilePath,
+                            strict_conflict: false
+                        },
+                        cursor: {
+                            offset: fileSize,
+                            session_id: sessionId
+                        }
+                    }),
+                    'Content-Type': 'application/octet-stream',
+                },
+                signal: abortSignal,
+            });
+
+            if (!closeResponse.ok) {
+                const errorText = await closeResponse.text();
+                const err: StorageError = {
+                    status: closeResponse.status,
+                    message: `Failed to finalize upload session: ${errorText}`,
+                    body: errorText
+                };
+                return Promise.reject(err);
+            }
+
+            if (progressCallback) {
+                progressCallback({transferId, fileName, sourcePath, transfered: fileSize, total: fileSize, isDirectory: (isDirectory || false)});
+            }
+
+            console.log(`Upload session finalized successfully for file: ${targetFilePath}`);
+        } catch (error: any) {
+            console.error(`Error during chunked upload: ${error}`);
+            if (error.message?.includes('cancelled') || error.name === 'AbortError') {
+                throw error;
+            }
+            throw new Error(`Upload failed: ${error.message}`);
+        }
+    }              
+
+    async moveOrCopyItem(transferId: string, sourcePath: string, targetPath: string, itemName: string, copy: boolean, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
         await this.initClient();
         if (!this.client) {
             console.error('Dropbox client is not initialized');
             throw new Error('Dropbox client is not initialized');
+        }
+
+        if (abortSignal?.aborted) {
+            console.log('Transfer cancelled by user during finalization');
+            throw new Error('Transfer cancelled by user');
         }
 
         let response;
@@ -1310,6 +1375,15 @@ export class DropboxStorage implements CloudStorage {
                     autorename: true,
                 });
         console.log(`body: ${body}`);
+        progressCallback?.({
+            transferId,
+            fileName: itemName,
+            sourcePath,
+            transfered: 0,
+            total: 1, 
+            isDirectory: false,
+            isFetching: false 
+        });
         if (copy) {
             response = await fetch('https://api.dropboxapi.com/2/files/copy_v2', {
                 method: 'POST',
@@ -1337,6 +1411,16 @@ export class DropboxStorage implements CloudStorage {
             const errorText = await response.text();
             throw new Error(`Failed to move item: ${response.status} - ${errorText}`);
         }
+
+        progressCallback?.({
+            transferId,
+            fileName: itemName,
+            sourcePath,
+            transfered: 1,
+            total: 1, 
+            isDirectory: false,
+            isFetching: false 
+        });
 
         console.log(`Item moved successfully: ${sourcePath}/${itemName} to ${targetPath}/${itemName}`);
     }

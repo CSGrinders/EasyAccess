@@ -17,6 +17,7 @@ import path from 'path';
 import mime from "mime-types";
 import { progressCallbackData } from '../../types/transfer';
 import { Semaphore } from '../transfer/transferManager';
+import { Item } from '@radix-ui/react-dropdown-menu';
 
 dotenv.config();
 
@@ -614,6 +615,7 @@ export class GoogleDriveStorage implements CloudStorage {
           progressCallback?.({
             transferId,
             fileName: item.name,
+            sourcePath,
             transfered: 0,
             total: 0, 
             isDirectory: false,
@@ -650,6 +652,7 @@ export class GoogleDriveStorage implements CloudStorage {
           progressCallback?.({
             transferId,
             fileName: item.name,
+            sourcePath,
             transfered: 0,
             total: 0, 
             isDirectory: true,
@@ -668,6 +671,7 @@ export class GoogleDriveStorage implements CloudStorage {
           progressCallback?.({
             transferId,
             fileName: item.name,
+            sourcePath,
             transfered: 0,
             total: 0, 
             isDirectory: true,
@@ -713,6 +717,7 @@ export class GoogleDriveStorage implements CloudStorage {
           progressCallback?.({
             transferId,
             fileName: item.name,
+            sourcePath,
             transfered: 0,
             total: 0, 
             isDirectory: true,
@@ -831,7 +836,7 @@ export class GoogleDriveStorage implements CloudStorage {
             
             //  Update progress
             if (progressCallback) {
-              progressCallback({transferId, fileName: filename, transfered: TransferedBytes, total: fileSize, isDirectory: (isDirectory || false)});
+              progressCallback({transferId, fileName: filename, sourcePath, transfered: TransferedBytes, total: fileSize, isDirectory: (isDirectory || false)});
             }
             
             retryCount = 0; // Reset retry count on successful chunk
@@ -839,7 +844,7 @@ export class GoogleDriveStorage implements CloudStorage {
             // Upload complete
             TransferedBytes = fileSize;
             if (progressCallback) {
-              progressCallback({transferId, fileName: filename, transfered: fileSize, total: fileSize, isDirectory: (isDirectory || false)});
+              progressCallback({transferId, fileName: filename, sourcePath, transfered: fileSize, total: fileSize, isDirectory: (isDirectory || false)});
             }
             console.log('Upload completed successfully');
             break;
@@ -1340,65 +1345,90 @@ export class GoogleDriveStorage implements CloudStorage {
     return stream;
   }
 
-  async cloudToCloudUploadChunk(uploadUrl: string, chunk: Buffer, offset: number, totalSize: number): Promise<void> {
+  async cloudToCloudUploadChunk(transferId: string, fileName: string, sourcePath: string, uploadUrl: string, chunk: Buffer, offset: number, totalSize: number, progressCallback?: (data: progressCallbackData) => void, isDirectory?: boolean, abortSignal?: AbortSignal): Promise<void> {
     console.log(`Uploading chunk for uploadUrl: ${uploadUrl}, offset: ${offset}, size: ${chunk.length}`);
     await this.refreshOAuthClientIfNeeded();
     if (!this.oauth2Client) {
       throw new Error('OAuth2 client is not initialized');
     }
+    if (abortSignal?.aborted) {
+      console.log('Transfer cancelled by user during finalization');
+      throw new Error('Transfer cancelled by user');
+    }
 
-    const response = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Range': `bytes ${offset}-${offset + chunk.length - 1}/${totalSize}`,
-        'Content-Length': chunk.length.toString(),
-      },
-      body: chunk,
-    });
+    try {
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Range': `bytes ${offset}-${offset + chunk.length - 1}/${totalSize}`,
+          'Content-Length': chunk.length.toString(),
+        },
+        body: chunk,
+        signal: abortSignal
+      });
 
-    
-    if (response.status === 308) {
-      // Resume incomplete - check range and continue
-      const rangeHeader = response.headers.get('Range');
-      if (rangeHeader) {
-        const match = rangeHeader.match(/bytes=0-(\d+)/);
-        if (match) {
-          console.log(`Resuming from byte: ${parseInt(match[1]) + 1}`);
-        }
-      } else {
-        console.log(`Resuming from byte: ${offset + chunk.length}`);
-      }
       
-    } else if (response.status === 200 || response.status === 201) {
-      console.log('Upload completed successfully');
-    } else {
+      if (response.status === 308) {
+        // Resume incomplete - check range and continue
+        const rangeHeader = response.headers.get('Range');
+        if (rangeHeader) {
+          const match = rangeHeader.match(/bytes=0-(\d+)/);
+          if (match) {
+            console.log(`Resuming from byte: ${parseInt(match[1]) + 1}`);
+          }
+        } else {
+          console.log(`Resuming from byte: ${offset + chunk.length}`);
+        }
+        
+      } else if (response.status === 200 || response.status === 201) {
+        if (progressCallback) {
+          progressCallback({transferId, fileName, sourcePath, transfered: offset + chunk.length - 1, total: totalSize, isDirectory: (isDirectory || false)});
+        }
+        console.log('Upload completed successfully');
+      } else {
+        const err: StorageError = {
+          status: response.status,
+          message: `Upload chunk failed: ${response.status}`,
+          body: await response.text()
+        };
+        return Promise.reject(err);
+      }
+      console.log(`Chunk uploaded successfully: ${offset}-${offset + chunk.length - 1}/${totalSize}`);
+    } catch (error: any) {
+      console.error(`Error during chunked upload: ${error}`);
+      if (error.message?.includes('cancelled') || error.name === 'AbortError') {
+            throw error;
+      }
       const err: StorageError = {
-        status: response.status,
-        message: `Upload chunk failed: ${response.status}`,
-        body: await response.text()
+        status: error.status || 500,
+        message: `Failed to upload chunk: ${error.message}`,
+        body: error.response?.data || error.message || 'No additional details available'
       };
+      console.error('Error uploading chunk:', error);
       return Promise.reject(err);
     }
-    console.log(`Chunk uploaded successfully: ${offset}-${offset + chunk.length - 1}/${totalSize}`);
   }
 
-  async finishResumableUpload(sessionId: string, targetFilePath: string, fileSize: number): Promise<void> {
+  async finishResumableUpload(transferId: string, fileName: string, sourcePath: string, sessionId: string, targetFilePath: string, fileSize: number, progressCallback?: (data: progressCallbackData) => void, isDirectory?: boolean, abortSignal?: AbortSignal): Promise<void> {
     console.log(`Finishing resumable upload for session ID: ${sessionId}`);
   }
 
   // Move or copy item for within box transfer
-  async moveOrCopyItem(sourcePath: string, targetPath: string, itemName: string, copy: boolean, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+  async moveOrCopyItem(transferId: string, sourcePath: string, targetPath: string, itemName: string, copy: boolean, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
     await this.refreshOAuthClientIfNeeded();
     if (!this.oauth2Client) {
       throw new Error('OAuth2 client is not initialized');
     }
     
     const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
-    
+    if (abortSignal?.aborted) {
+      console.log('Transfer cancelled by user during finalization');
+      throw new Error('Transfer cancelled by user');
+    }
+
     try {
       let sourceId;
       let isDirectory = false;
-      // hmmm.......
       try{
         sourceId = await this.getFolderId(sourcePath);
         console.log(`Source ID for folder ${sourcePath} is ${sourceId}`);
@@ -1421,6 +1451,15 @@ export class GoogleDriveStorage implements CloudStorage {
       // Move the file to the new folder
       if (copy) {
         if (isDirectory) {
+          progressCallback?.({
+            transferId,
+            fileName: itemName,
+            sourcePath,
+            transfered: 0,
+            total: 0, 
+            isDirectory: isDirectory,
+            isFetching: true 
+          });
           console.log(`Copying directory ${itemName} from ${sourcePath} to ${targetPath}`);
           // Create a new folder in the target location
           const newFolder = await drive.files.create({
@@ -1437,9 +1476,18 @@ export class GoogleDriveStorage implements CloudStorage {
           }
           const createdFolderId = newFolder.data.id;
           // For directories, we need to copy all contents recursively
-          await this.copyDirectoryContents(sourceId, createdFolderId, progressCallback, abortSignal);
+          await this.copyDirectoryContents(transferId, sourceId, createdFolderId, progressCallback, abortSignal);
           return;
         }
+        progressCallback?.({
+          transferId,
+          fileName: itemName,
+          sourcePath,
+          transfered: 0,
+          total: 1, 
+          isDirectory: false,
+          isFetching: false 
+        });
         console.log(`Copying file ${itemName} from ${sourcePath} to ${targetPath}`);
         // await drive.files.copy({
         //   fileId: sourceId,
@@ -1455,7 +1503,7 @@ export class GoogleDriveStorage implements CloudStorage {
           parents: [targetId]
         };
 
-        const fetchPromise = await fetch(url, {
+        await fetch(url, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -1464,7 +1512,25 @@ export class GoogleDriveStorage implements CloudStorage {
           body: JSON.stringify(body),
           signal: abortSignal,
         });
+        progressCallback?.({
+          transferId,
+          fileName: itemName,
+          sourcePath,
+          transfered: 1,
+          total: 1, 
+          isDirectory: false,
+          isFetching: false 
+        });
       } else {
+        progressCallback?.({
+          transferId,
+          fileName: itemName,
+          sourcePath,
+          transfered: 0,
+          total: 1, 
+          isDirectory: false,
+          isFetching: false 
+        });
         console.log(`Moving item ${itemName} from ${sourcePath} to ${targetPath}`);
 
         // Move the file or folder by updating its parents
@@ -1489,6 +1555,16 @@ export class GoogleDriveStorage implements CloudStorage {
         if (!responseData.id) {
           throw new Error(`Failed to move item: No ID returned in response`);
         }
+
+        progressCallback?.({
+          transferId,
+          fileName: itemName,
+          sourcePath,
+          transfered: 1,
+          total: 1, 
+          isDirectory: false,
+          isFetching: false 
+        });
         console.log(`Item moved successfully. New ID: ${responseData.id}`);
       }
       
@@ -1501,7 +1577,7 @@ export class GoogleDriveStorage implements CloudStorage {
 
   // function for within box transfer
   // google does not support copying directories directly, so we need to copy contents recursively
-  private async copyDirectoryContents(sourceId: string, targetId: string, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+  private async copyDirectoryContents(transferId: string, sourceId: string, targetId: string, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal, isDirectory: boolean = false): Promise<void> {
     await this.refreshOAuthClientIfNeeded();
     if (!this.oauth2Client) {
       throw new Error('OAuth2 client is not initialized');
@@ -1538,9 +1614,27 @@ export class GoogleDriveStorage implements CloudStorage {
           });
           
           if (newFolder.data.id) {
-            await this.copyDirectoryContents(file.id || '', newFolder.data.id, progressCallback, abortSignal);
+            progressCallback?.({
+              transferId,
+              fileName: file.name || 'Unnamed File',
+              sourcePath: file.id || 'invalid id',
+              transfered: 0,
+              total: 0, 
+              isDirectory: true,
+              isFetching: true 
+            });
+            await this.copyDirectoryContents(transferId, file.id || '', newFolder.data.id, progressCallback, abortSignal, true);
           }
         } else {
+          progressCallback?.({
+            transferId,
+              fileName: file.name || 'Unnamed File',
+              sourcePath: file.id || 'invalid id',
+            transfered: 0,
+            total: 1, 
+            isDirectory: isDirectory || false,
+            isFetching: false 
+          });
           // Copy individual files
           await drive.files.copy({
             fileId: file.id || '',
@@ -1549,6 +1643,15 @@ export class GoogleDriveStorage implements CloudStorage {
               parents: [targetId],
             },
             fields: 'id, parents',
+          });
+          progressCallback?.({
+            transferId,
+            fileName: file.name || 'Unnamed File',
+            sourcePath: file.id || 'invalid id',
+            transfered: 1,
+            total: 1, 
+            isDirectory: isDirectory || false,
+            isFetching: false 
           });
         }
       }

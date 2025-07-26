@@ -66,6 +66,7 @@ export interface TransferQueueState {
 /** Trasnfer progress claback data items */
 export interface progressCallbackData {
     transferId: string;
+    sourcePath?: string;
     fileName: string;
     transfered: number;
     total: number;

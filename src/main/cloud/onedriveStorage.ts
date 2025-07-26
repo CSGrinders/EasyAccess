@@ -936,6 +936,16 @@ export class OneDriveStorage implements CloudStorage {
                     await this.createDirectory(`${targetPath}/${item.name}`);
                     // Recursively transfer the contents of the directory if directory creation is successful
                     console.log(`Directory created successfully: ${item.name}`);
+                    progressCallback?.({
+                      transferId,
+                      fileName: item.name,
+                      sourcePath,
+                      transfered: 0,
+                      total: 0, 
+                      isDirectory: false,
+                      isFetching: true 
+                    });
+                    
                     await this.transferDirectoryContentsResumable(transferId, itemPath, `${targetPath}/${item.name}`, progressCallback, abortSignal);
                 } catch (error: any) {
                     if (abortSignal?.aborted || 
@@ -967,6 +977,7 @@ export class OneDriveStorage implements CloudStorage {
                     progressCallback?.({
                         transferId,
                         fileName: item.name,
+                        sourcePath,
                         transfered: 0,
                         total: 0, 
                         isDirectory: true,
@@ -984,6 +995,7 @@ export class OneDriveStorage implements CloudStorage {
                     progressCallback?.({
                         transferId,
                         fileName: item.name,
+                        sourcePath,
                         transfered: 0,
                         total: 0, 
                         isDirectory: true,
@@ -994,7 +1006,7 @@ export class OneDriveStorage implements CloudStorage {
                     const fileSize = fileStats.size;
                     const type = mime.lookup(item.name) || 'application/octet-stream';
 
-                    await this.uploadFileInChunks(transferId, item.name, itemPath, targetPath, fileSize, progressCallback, abortSignal);
+                    await this.uploadFileInChunks(transferId, item.name, itemPath, targetPath, fileSize, progressCallback, abortSignal, true);
 
                     // const uploadUrl = await this.initiateResumableUpload(item.name, type, targetPath);
                     // await this.uploadFileInChunks(transferId, item.name, uploadUrl, itemPath, fileSize, progressCallback, abortSignal);
@@ -1030,6 +1042,7 @@ export class OneDriveStorage implements CloudStorage {
                     progressCallback?.({
                         transferId,
                         fileName: item.name,
+                        sourcePath,
                         transfered: 0,
                         total: 0,
                         isDirectory: false,
@@ -1054,7 +1067,7 @@ export class OneDriveStorage implements CloudStorage {
 
     // use SDK to upload large files in chunks
     // https://learn.microsoft.com/en-us/graph/sdks/large-file-upload?tabs=typescript
-    async uploadFileInChunks(transferId: string, fileName: string, sourcePath: string, targetPath: string, fileSize: number, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+    async uploadFileInChunks(transferId: string, fileName: string, sourcePath: string, targetPath: string, fileSize: number, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal, isDirectory: boolean = false): Promise<void> {
         if (!this.graphClient) {
             await this.initAccount();
         }
@@ -1102,9 +1115,10 @@ export class OneDriveStorage implements CloudStorage {
                         progressCallback({
                             transferId,
                             fileName: fileName,
+                            sourcePath,
                             transfered: range?.maxValue || 0,
                             total: file.byteLength,
-                            isDirectory: false,
+                            isDirectory: (isDirectory || false),
                         });
                     }
                 },
@@ -1140,6 +1154,9 @@ export class OneDriveStorage implements CloudStorage {
               throw new Error('Upload cancelled by user');
           }
             const driveItem = uploadResult.responseBody as any;
+            if (progressCallback) {
+              progressCallback({transferId, fileName: fileName, sourcePath, transfered: fileSize, total: fileSize, isDirectory: (isDirectory || false)});
+            }
             console.log(`Uploaded file with ID: ${driveItem.id}`);
         } catch (error: any) {
           if (abortSignal?.aborted || 
@@ -1327,59 +1344,78 @@ export class OneDriveStorage implements CloudStorage {
         }
     }
 
-    async cloudToCloudUploadChunk(uploadUrl: string, chunk: Buffer, offset: number, totalSize: number): Promise<void> {
-        if (!this.graphClient) {
-            await this.initAccount();
-        }
-        
-        if (!this.graphClient) {
-            console.error('Graph client is not initialized');
-            throw new Error('Graph client is not initialized');
-        }
+    async cloudToCloudUploadChunk(transferId: string, fileName: string, sourcePath: string, uploadUrl: string, chunk: Buffer, offset: number, totalSize: number, progressCallback?: (data: progressCallbackData) => void, isDirectory?: boolean, abortSignal?: AbortSignal): Promise<void> {
+      console.log(`Uploading chunk for uploadUrl: ${uploadUrl}, offset: ${offset}, size: ${chunk.length}`);  
+      if (!this.graphClient) {
+        await this.initAccount();
+      }
+      
+      if (!this.graphClient) {
+        console.error('Graph client is not initialized');
+        throw new Error('Graph client is not initialized');
+      }
 
-        try {
-          console.log(`start the one drive api for uploading chunk from ${offset} to ${offset + chunk.length - 1}/${totalSize}`);
-          const response = await fetch(uploadUrl, {
-            method: 'PUT',
-            headers: {
-              'Content-Length': chunk.length.toString(),
-              'Content-Range': `bytes ${offset}-${offset + chunk.length - 1}/${totalSize}`,
-            },
-            body: chunk
-          });
-          console.log(`Uploaded chunk from ${offset} to ${offset + chunk.length - 1}/${totalSize}`);
-          console.log('Response:', response);
-          if (!response.ok) {
-            const err: StorageError = {
-              status: response.status,
-              message: `Failed to upload chunk: ${response.statusText}`,
-              body: await response.text()
-            };
-            console.error('Error uploading chunk:', err);
-            return Promise.reject(err);
-          }
-        } catch (error: any) {
+      if (abortSignal?.aborted) {
+        console.log('Upload cancelled by user');
+        throw new Error('Upload cancelled by user');
+      }
+
+      try {
+        console.log(`start the one drive api for uploading chunk from ${offset} to ${offset + chunk.length - 1}/${totalSize}`);
+        const response = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Length': chunk.length.toString(),
+            'Content-Range': `bytes ${offset}-${offset + chunk.length - 1}/${totalSize}`,
+          },
+          body: chunk,
+          signal: abortSignal,
+        });
+        if (progressCallback) {
+          progressCallback({transferId, fileName, sourcePath, transfered: offset + chunk.length - 1, total: totalSize, isDirectory: (isDirectory || false)});
+        }
+        console.log(`Uploaded chunk from ${offset} to ${offset + chunk.length - 1}/${totalSize}`);
+        console.log('Response:', response);
+        if (!response.ok) {
           const err: StorageError = {
-            status: error.status || 500,
-            message: `Failed to upload chunk: ${error.message}`,
-            body: error.response?.data || error.message || 'No additional details available'
+            status: response.status,
+            message: `Failed to upload chunk: ${response.statusText}`,
+            body: await response.text()
           };
-          console.error('Error uploading chunk:', error);
+          console.error('Error uploading chunk:', err);
           return Promise.reject(err);
         }
+      } catch (error: any) {
+        console.error(`Error during chunked upload: ${error}`);
+        if (error.message?.includes('cancelled') || error.name === 'AbortError') {
+              throw error;
+        }
+        const err: StorageError = {
+          status: error.status || 500,
+          message: `Failed to upload chunk: ${error.message}`,
+          body: error.response?.data || error.message || 'No additional details available'
+        };
+        console.error('Error uploading chunk:', error);
+        return Promise.reject(err);
+      }
     }
 
-    async finishResumableUpload(sessionId: string, targetFilePath: string, fileSize: number): Promise<void> {
+    async finishResumableUpload(transferId: string, fileName: string, sourcePath: string, sessionId: string, targetFilePath: string, fileSize: number, progressCallback?: (data: progressCallbackData) => void, isDirectory?: boolean, abortSignal?: AbortSignal): Promise<void> {
       console.log(`Finishing resumable upload for session ${sessionId} to file ${targetFilePath} with size ${fileSize}`);
     }
 
-    async moveOrCopyItem(sourcePath: string, targetPath: string, itemName: string, copy: boolean, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
+    async moveOrCopyItem(transferId: string, sourcePath: string, targetPath: string, itemName: string, copy: boolean, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void> {
       if (!this.graphClient) {
         await this.initAccount();
       }
       if (!this.graphClient) {
         console.error('Graph client is not initialized');
         throw new Error('Graph client is not initialized');
+      }
+
+      if (abortSignal?.aborted) {
+        console.log('Transfer cancelled by user during finalization');
+        throw new Error('Transfer cancelled by user');
       }
 
       // Ensure sourcePath starts with a slash
@@ -1406,13 +1442,21 @@ export class OneDriveStorage implements CloudStorage {
       console.log(`API Path: ${apiPath}`);
 
       try {
-        // HEHHEHEHHEHEHEHEHEHEHEHEHHEHEHEHEHHE
         await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate some delay to allow user to cancel if needed
         if (abortSignal?.aborted) {
           console.log('Move or copy operation cancelled by user');
           throw new Error('Move or copy operation cancelled by user');
         }
         // hmm.. Since it takes really short time to move or copy an item, we don't need to use progressCallback...?
+        progressCallback?.({
+            transferId,
+            fileName: itemName,
+            sourcePath,
+            transfered: 0,
+            total: 1, 
+            isDirectory: false,
+            isFetching: false 
+        });
         if (copy) {
           await this.graphClient.api(`${apiPath}:/copy`).post(body);
           console.log(`Copied ${itemName} to ${targetPath}`);
@@ -1420,6 +1464,15 @@ export class OneDriveStorage implements CloudStorage {
           await this.graphClient.api(apiPath).patch(body);
           console.log(`Moved ${itemName} from ${sourcePath} to ${targetPath}`);
         }
+        progressCallback?.({
+            transferId,
+            fileName: itemName,
+            sourcePath,
+            transfered: 1,
+            total: 1, 
+            isDirectory: false,
+            isFetching: false 
+        });
       } catch (error) {
         console.error('Error moving or copying item:', error);
         throw error;

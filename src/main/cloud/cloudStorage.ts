@@ -41,9 +41,9 @@ export interface CloudStorage {
     
     downloadInChunks(filePath: string, fileSize: number, chunkSize?: number, maxQueueSize?: number, abortSignal?: AbortSignal): Promise<ReadableStream>;
     initiateResumableUpload(fileName: string, mimeType: string, parentFolderPath: string): Promise<string>;
-    cloudToCloudUploadChunk(sessionId: string, chunk: Buffer, offset: number, totalSize: number, abortSignal?: AbortSignal): Promise<void>;
-    finishResumableUpload(sessionId: string, targetFilePath: string, fileSize: number): Promise<void>;
-    moveOrCopyItem(sourcePath: string, targetPath: string, itemName: string, copy: boolean, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void>; // Move file or directory within the same cloud storage account
+    cloudToCloudUploadChunk(transferId: string, fileName: string, sourcePath: string, sessionId: string, chunk: Buffer, offset: number, totalSize: number, progressCallback?: (data: progressCallbackData) => void, isDirectory?: boolean, abortSignal?: AbortSignal): Promise<void>;
+    finishResumableUpload(transferId: string, fileName: string, sourcePath: string, sessionId: string, targetFilePath: string, fileSize: number, progressCallback?: (data: progressCallbackData) => void, isDirectory?: boolean, abortSignal?: AbortSignal): Promise<void>;
+    moveOrCopyItem(transferId: string, sourcePath: string, targetPath: string, itemName: string, copy: boolean, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void>; // Move file or directory within the same cloud storage account
 
     isDirectory(filePath: string): Promise<boolean>;
     searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]>;
