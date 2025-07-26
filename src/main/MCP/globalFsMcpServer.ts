@@ -13,12 +13,12 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { diffLines, createTwoFilesPatch } from 'diff';
 import { minimatch } from 'minimatch';
-import { getFile, readDirectory, getConnectedCloudAccounts, searchFilesFromStorageAccount, createDirectory, postFile, getItemInfo, getDirectoryTree, readFile } from "../cloud/cloudManager"
+import { getFile, readDirectory, getConnectedCloudAccounts, getDirectoryInfo, searchFilesFromStorageAccount, createDirectory, postFile, getFileInfo, getDirectoryTree, readFile } from "../cloud/cloudManager"
 import { CloudType } from "../../types/cloudType";
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { createServerMemory } from "./serverMemory";
-import { createDirectoryLocal, getFileLocal, postFileLocal, readFileLocal } from "../local/localFileSystem";
-import { triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerPostFileOnRenderer } from "../main";
+import { createDirectoryLocal, getDirectoryInfoLocal, getFileLocal, postFileLocal, readFileLocal } from "../local/localFileSystem";
+import { triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerPostFileOnRenderer, triggerRequestClarification } from "../main";
 import { CLOUD_HOME } from "../../types/cloudType";
 
 
@@ -113,7 +113,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
     if (!provider) {
       throw new Error("Provider is required for cloud storage operations");
     }
-    
+
     if (provider.toLowerCase().includes('google')) {
       return CloudType.GoogleDrive;
     }
@@ -186,7 +186,7 @@ export const createFsServer = async (allowedDirs: string[]) => {
 
   const SearchFilesArgsSchema = z.object({
     path: z.string(),
-    pattern: z.string(),
+    patterns: z.array(z.string()).describe("Use wildcards like *.txt or specific names like 'report'"),
     excludePatterns: z.array(z.string()).optional().default([]),
     provider: z.string().optional(), // Optional provider for cloud storage
     accountId: z.string().optional(), // Optional account ID for cloud storage
@@ -198,8 +198,18 @@ export const createFsServer = async (allowedDirs: string[]) => {
     accountId: z.string().optional(), // Optional account ID for cloud storage
   });
 
+  const GetFolderInfoArgsSchema = z.object({
+    path: z.string(),
+    provider: z.string().optional(), // Optional provider for cloud storage
+    accountId: z.string().optional(), // Optional account ID for cloud storage
+  });
+
   const GetConnectedAccountArgsSchema = z.object({
     provider: z.string() // Optional provider for cloud storage
+  });
+
+  const RequestClarificationArgsSchema = z.object({
+    question: z.string().describe('Question to ask the user'),
   });
 
   const ToolInputSchema = ToolSchema.shape.inputSchema;
@@ -390,7 +400,8 @@ export const createFsServer = async (allowedDirs: string[]) => {
             "Read the complete contents of a file from the file system. " +
             "Handles various text encodings and provides detailed error messages " +
             "if the file cannot be read. Use this tool when you need to examine " +
-            "the contents of a single file. Only works within allowed directories.",
+            "the contents of a single file. Only works within allowed directories. Should not " +
+            "be used for large files or binary data such as images or videos.",
           inputSchema: zodToJsonSchema(ReadFileArgsSchema) as ToolInput,
         },
         {
@@ -400,7 +411,8 @@ export const createFsServer = async (allowedDirs: string[]) => {
             "efficient than reading files one by one when you need to analyze " +
             "or compare multiple files. Each file's content is returned with its " +
             "path as a reference. Failed reads for individual files won't stop " +
-            "the entire operation. Only works within allowed directories.",
+            "the entire operation. Only works within allowed directories. Should not " +
+            "be used for large files or binary data such as images or videos.",
           inputSchema: zodToJsonSchema(ReadMultipleFilesArgsSchema) as ToolInput,
         },
         {
@@ -411,14 +423,14 @@ export const createFsServer = async (allowedDirs: string[]) => {
             "Handles text content with proper encoding. Only works within allowed directories.",
           inputSchema: zodToJsonSchema(WriteFileArgsSchema) as ToolInput,
         },
-        {
-          name: "edit_file",
-          description:
-            "Make line-based edits to a text file. Each edit replaces exact line sequences " +
-            "with new content. Returns a git-style diff showing the changes made. " +
-            "Only works within allowed directories. Only supports local storage.",
-          inputSchema: zodToJsonSchema(EditFileArgsSchema) as ToolInput,
-        },
+        // {
+        //   name: "edit_file",
+        //   description:
+        //     "Make line-based edits to a text file. Each edit replaces exact line sequences " +
+        //     "with new content. Returns a git-style diff showing the changes made. " +
+        //     "Only works within allowed directories. Only supports local storage.",
+        //   inputSchema: zodToJsonSchema(EditFileArgsSchema) as ToolInput,
+        // },
         {
           name: "create_directory",
           description:
@@ -452,8 +464,8 @@ export const createFsServer = async (allowedDirs: string[]) => {
           name: "move_file",
           description:
             "Move or rename files and directories. Can move files between directories " +
-            "and rename them in a single operation. If the destination exists, the " +
-            "operation will fail. Works across different directories and can be used " +
+            "and rename them in a single operation. Check if the destination folder exists first before calling this tool." +
+            "If the destination file exists, the operation will fail. Works across different directories and can be used " +
             "for simple renaming within the same directory. Both source and destination must be within allowed directories." +
             "Can also move files between cloud storage accounts and local storage.",
           inputSchema: zodToJsonSchema(MoveFileArgsSchema) as ToolInput,
@@ -478,6 +490,16 @@ export const createFsServer = async (allowedDirs: string[]) => {
           inputSchema: zodToJsonSchema(GetFileInfoArgsSchema) as ToolInput,
         },
         {
+          name: "get_folder_info",
+          description:
+            "Retrieve detailed metadata about a folder. Returns comprehensive " +
+            "information including size, creation time, last modified time, permissions, " +
+            "and type. This tool is perfect for understanding folder characteristics " +
+            "without reading the actual content. Only works within allowed directories.",
+          inputSchema: zodToJsonSchema(GetFolderInfoArgsSchema) as ToolInput,
+        },
+        // this schema is not accessible from the claude api as injected in system prompt
+        {
           name: "list_allowed_directories",
           description:
             "Returns the list of directories that this server is allowed to access. " +
@@ -488,18 +510,643 @@ export const createFsServer = async (allowedDirs: string[]) => {
             required: [],
           },
         },
+        // Injected in system prompt so no need to define here
+        // {
+        //   name: "list_connected_cloud_accounts",
+        //   description:
+        //     "Retrieve all connected cloud accounts (Google Drive, OneDrive, Dropbox) for the current user. " +
+        //     "Use this tool when you need to identify which accounts are available before performing any cloud file operations. " +
+        //     "This should be called proactively if a user requests an action involving cloud storage but has not specified an account.",
+        //   inputSchema: zodToJsonSchema(GetConnectedAccountArgsSchema) as ToolInput,
+        // },    
         {
-          name: "list_connected_cloud_accounts",
+          name: "get_information_from_user",
           description:
-            "Returns the list of connected cloud accounts for the current user." +
-            "Use this to find an account to perform operations on cloud files." +
-            "This includes accounts for Google Drive, OneDrive, and Dropbox.",
-          inputSchema: zodToJsonSchema(GetConnectedAccountArgsSchema) as ToolInput,
-        },
+            "Use this tool to ask the user for clarification — specifically when the request is ambiguous, incomplete, or cannot be resolved using available data and tools. " +
+            "Do NOT use this tool if the information can be inferred or retrieved through tool calls (e.g., connected accounts, folder listings, file searches). " +
+            "If clarification is truly needed, this tool **must be used instead of ending the conversation with a question or failing to act**.",
+          inputSchema: zodToJsonSchema(RequestClarificationArgsSchema) as ToolInput
+        }
       ],
     };
   });
 
+  async function handleReadFileTool(args: any) {
+    const parsed = ReadFileArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for read_file: ${parsed.error}`);
+    }
+    const provider = parsed.data.provider;
+    const accountId = parsed.data.accountId;
+    // local storage
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
+      const validPath = await validatePath(parsed.data.path);
+      const content = await readFileLocal(validPath);
+      return {
+        content: [{ type: "text", text: content }],
+      };
+    }
+
+    const filePath = parsed.data.path;
+    if (!filePath) {
+      throw new Error("File path is required for cloud storage operations");
+    }
+
+    // convert provider to cloud type
+    const cloudType = await validateProvider(provider);
+
+    // read file from the cloud storage
+    try {
+      const content = await readFile(cloudType, accountId, filePath);
+
+      if (!content) {
+        throw new Error(`File not found: ${filePath}`);
+      }
+
+      return {
+        content: [{ type: "text", text: content || '' }],
+      };
+    } catch (error) {
+      console.error('Error reading file from cloud storage:', error);
+      throw new Error(`Failed to read file ${filePath} from cloud storage: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  async function handleReadMultipleFilesTool(args: any) {
+    const parsed = ReadMultipleFilesArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for read_multiple_files: ${parsed.error}`);
+    }
+
+    const provider = parsed.data.provider;
+    const accountId = parsed.data.accountId;
+    // local storage
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
+      const results = await Promise.all(
+        parsed.data.paths.map(async (filePath: string) => {
+          try {
+            const validPath = await validatePath(filePath);
+            const content = await readFileLocal(validPath);
+            return `${filePath}:\n${content}\n`;
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            return `${filePath}: Error - ${errorMessage}`;
+          }
+        }),
+      );
+      return {
+        content: [{ type: "text", text: results.join("\n---\n") }],
+      };
+    }
+
+    // cloud storage
+    const filePaths = parsed.data.paths;
+    if (!filePaths || filePaths.length === 0) {
+      throw new Error("File paths are required for cloud storage operations");
+    }
+    // convert provider to cloud type
+    const cloudType = await validateProvider(provider);
+    // read multiple files from the cloud storage
+    const fileContents: string[] = await Promise.all(
+      filePaths.map(async (filePath) => {
+        try {
+          const content = await readFile(cloudType, accountId, filePath);
+          if (!content) {
+            throw new Error(`File not found: ${filePath}`);
+          }
+          return content;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return `${filePath}: Error - ${errorMessage}`;
+        }
+      })
+    );
+
+    return {
+      content: [{ type: "text", text: fileContents.join("\n---\n") }],
+    };
+  }
+  async function handleWriteFileTool(args: any) {
+    const parsed = WriteFileArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for write_file: ${parsed.error}`);
+    }
+
+    const provider = parsed.data.provider;
+    const accountId = parsed.data.accountId;
+
+    // local storage
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
+      const validPath = await validatePath(parsed.data.path);
+      await fs.writeFile(validPath, parsed.data.content, "utf-8");
+      return {
+        content: [{ type: "text", text: `Successfully wrote to ${parsed.data.path}` }],
+      };
+    }
+
+    // cloud storage
+    const filePath = parsed.data.path;
+    if (!filePath) {
+      throw new Error("File path is required for cloud storage operations");
+    }
+
+    const cloudType = await validateProvider(provider);
+    const fileName = path.basename(filePath);
+    const folderPath = path.dirname(filePath);
+    const data = Buffer.from(parsed.data.content, 'utf-8');
+
+    try {
+      await postFile(cloudType, accountId, fileName, folderPath, data);
+      return {
+        content: [{ type: "text", text: `Successfully wrote to ${filePath} in cloud storage` }],
+      };
+    } catch (error) {
+      console.error('Error writing file to cloud storage:', error);
+      throw new Error(`Failed to write file ${filePath} to cloud storage: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  async function handleCreateDirectoryTool(args: any) {
+    const parsed = CreateDirectoryArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for create_directory: ${parsed.error}`);
+    }
+    const provider = parsed.data.provider;
+    const accountId = parsed.data.accountId;
+    // local storage
+    // need to change this to use createDirectoryLocal? TODO
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
+      const validPath = await validatePath(parsed.data.path);
+      await createDirectoryLocal(validPath);
+      return {
+        content: [{ type: "text", text: `Successfully created directory ${parsed.data.path}` }],
+      };
+    }
+
+    // cloud storage
+    const directoryPath = parsed.data.path;
+    if (!directoryPath) {
+      throw new Error("Directory path is required for cloud storage operations");
+    }
+    // convert provider to cloud type
+    const cloudType = await validateProvider(provider);
+    // create directory in the cloud storage
+    try {
+      await createDirectory(cloudType, accountId, directoryPath); // This will create the directory if it doesn't exist
+      return {
+        content: [{ type: "text", text: `Successfully created directory ${directoryPath}` }],
+      };
+    } catch (error) {
+      console.error('Error creating directory in cloud storage:', error);
+      throw new Error(`Failed to create directory ${directoryPath} in cloud storage: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async function handleListConnectedCloudAccountsTool(args: any) {
+    const parsed = GetConnectedAccountArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for list_connected_cloud_accounts: ${parsed.error}`);
+    }
+    const cloudType = await validateProvider(parsed.data.provider);
+    const connectedAccounts = await getConnectedCloudAccounts(cloudType);
+    if (!connectedAccounts || connectedAccounts.length === 0) {
+      return {
+        content: [{
+          type: "text",
+          text: `No connected cloud accounts found for provider: ${parsed.data.provider}`
+        }],
+      };
+    }
+    return {
+      content: [{
+        type: "text",
+        text: `Connected cloud accounts:\n${connectedAccounts.join('\n')}`
+      }],
+    };
+  }
+
+  async function handleListAllowedDirectoriesTool(args: any) {
+    return {
+      content: [{
+        type: "text",
+        text: `Allowed directories:\n${allowedDirectories.join('\n')}`
+      }],
+    };
+  }
+
+  async function handleListDirectoryTool(args: any) {
+    const parsed = ListDirectoryArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for list_directory: ${parsed.error}`);
+    }
+    const provider = await parsed.data.provider;
+    const accountId = await parsed.data.accountId;
+    // local storage
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
+      const validPath = await validatePath(parsed.data.path);
+      const entries = await fs.readdir(validPath, { withFileTypes: true });
+      const formatted = entries
+        .map((entry) => `${entry.isDirectory() ? "[DIR]" : "[FILE]"} ${entry.name}`)
+        .join("\n");
+      return {
+        content: [{ type: "text", text: formatted }],
+      };
+    }
+
+    // cloud storage
+    const directoryPath = parsed.data.path;
+    if (!directoryPath) {
+      throw new Error("File path is required for cloud storage operations");
+    }
+    // convert provider to cloud type
+    const cloudType = await validateProvider(provider);
+    // list directory from the cloud storage
+    const fileSystemItems: FileSystemItem[] = await readDirectory(cloudType, accountId, directoryPath);
+
+    if (!fileSystemItems) {
+      throw new Error(`Directory not found or empty: ${directoryPath}`);
+    }
+
+    const formatted = fileSystemItems
+      .map((item) => `${item.isDirectory ? "[DIR]" : "[FILE]"} ${item.name}`)
+      .join("\n");
+    return {
+      content: [{ type: "text", text: formatted }],
+    };
+  }
+
+  async function handleDirectoryTreeTool(args: any) {
+    const parsed = DirectoryTreeArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for directory_tree: ${parsed.error}`);
+    }
+
+    const provider = parsed.data.provider;
+    const accountId = parsed.data.accountId;
+
+    // local storage
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
+      interface TreeEntry {
+        name: string;
+        type: 'file' | 'directory';
+        children?: TreeEntry[];
+      }
+
+      async function buildTree(currentPath: string): Promise<TreeEntry[]> {
+        const validPath = await validatePath(currentPath);
+        const entries = await fs.readdir(validPath, { withFileTypes: true });
+        const result: TreeEntry[] = [];
+
+        for (const entry of entries) {
+          const entryData: TreeEntry = {
+            name: entry.name,
+            type: entry.isDirectory() ? 'directory' : 'file'
+          };
+
+          if (entry.isDirectory()) {
+            const subPath = path.join(currentPath, entry.name);
+            entryData.children = await buildTree(subPath);
+          }
+
+          result.push(entryData);
+        }
+
+        return result;
+      }
+
+      const treeData = await buildTree(parsed.data.path);
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(treeData, null, 2)
+        }],
+      };
+    }
+
+    // cloud storage
+    const directoryPath = parsed.data.path;
+    if (!directoryPath) {
+      throw new Error("Directory path is required for cloud storage operations");
+    }
+
+    const cloudType = await validateProvider(provider);
+    const fileSystemItems: FileSystemItem[] = await getDirectoryTree(cloudType, accountId, directoryPath);
+
+    if (!fileSystemItems) {
+      throw new Error(`Directory not found or empty: ${directoryPath}`);
+    }
+
+    console.log("fileSystemItems", fileSystemItems);
+
+    // Convert FileSystemItem[] to tree structure
+    interface TreeEntry {
+      name: string;
+      type: 'file' | 'directory';
+      children?: TreeEntry[];
+    }
+
+    function buildTreeFromItems(items: FileSystemItem[], basePath: string): TreeEntry[] {
+      const tree: TreeEntry[] = [];
+      const itemMap = new Map<string, FileSystemItem>();
+
+      // Create a map of items by their full path
+      for (const item of items) {
+        const relativePath = item.path.replace(CLOUD_HOME + basePath, '').replace(/^\//, '');
+        if (relativePath) {
+          itemMap.set(relativePath, item);
+        }
+      }
+
+      // Build tree structure
+      for (const item of items) {
+        const relativePath = item.path.replace(CLOUD_HOME + basePath, '').replace(/^\//, '');
+        if (!relativePath) continue;
+
+        const pathParts = relativePath.split('/');
+        let currentLevel = tree;
+        let currentPath = '';
+
+        for (let i = 0; i < pathParts.length; i++) {
+          const part = pathParts[i];
+          currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+          let existingNode = currentLevel.find(node => node.name === part);
+          if (!existingNode) {
+            const item = itemMap.get(currentPath);
+            if (item) {
+              existingNode = {
+                name: part,
+                type: item.isDirectory ? 'directory' : 'file',
+                children: item.isDirectory ? [] : undefined
+              };
+              currentLevel.push(existingNode);
+            }
+          }
+
+          if (existingNode && existingNode.children && i < pathParts.length - 1) {
+            currentLevel = existingNode.children;
+          }
+        }
+      }
+
+      return tree;
+    }
+
+    const treeData = buildTreeFromItems(fileSystemItems, directoryPath);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(treeData, null, 2)
+      }],
+    };
+  }
+
+  async function handleMoveFileTool(args: any) {
+    const parsed = MoveFileArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for move_file: ${parsed.error}`);
+    }
+    // move files within local storage
+    if (!parsed.data.source_provider && !parsed.data.destination_provider) {
+      const validSourcePath = await validatePath(parsed.data.source);
+      const validDestPath = await validatePath(parsed.data.destination);
+      await fs.rename(validSourcePath, validDestPath);
+      return {
+        content: [{ type: "text", text: `Successfully moved ${parsed.data.source} to ${parsed.data.destination}` }],
+      };
+    }
+
+    // move files include at least one cloud storage
+    const sourceProvider = parsed.data.source_provider;
+    const destinationProvider = parsed.data.destination_provider;
+    let dataToMove: FileContent | null;
+    if (!sourceProvider) {
+      // source is local storage
+      const validSourcePath = await validatePath(parsed.data.source);
+      // dataToMove = await getFileLocal(validSourcePath);
+      await triggerGetFileOnRenderer([parsed.data.source]);
+    } else {
+      // source is cloud storage
+      const cloudType = await validateProvider(sourceProvider);
+      if (!parsed.data.source_accountId) {
+        throw new Error("Source account ID is required for cloud storage operations");
+      }
+      console.log(`Fetching file from cloud storage: ${parsed.data.source} on ${sourceProvider}:${parsed.data.source_accountId}`);
+      await triggerGetFileOnRenderer([parsed.data.source], cloudType, parsed.data.source_accountId);
+      // dataToMove = await getFile(cloudType, parsed.data.source_accountId, parsed.data.source);
+    }
+
+    // Now we have the data to move, we can proceed with the destination
+    if (!destinationProvider) {
+      // destination is local storage
+      const validDestPath = await validatePath(parsed.data.destination);
+      const destFolder = path.dirname(validDestPath);
+      const destFileName = path.basename(validDestPath);
+      try {
+        await createDirectoryLocal(destFolder); // Ensure the destination directory exists
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("Directory already exists")) {
+          // Directory already exists, no action needed
+          console.log(`Directory already exists: ${destFolder}. No creation needed.`);
+        }
+      }
+      // const response = await postFileLocal(destFileName, destFolder, dataToMove.content);
+      await triggerPostFileOnRenderer(destFolder, undefined, undefined, destFileName);
+      if (!sourceProvider) {
+        return {
+          content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination}` }],
+        };
+      } else {
+        return {
+          content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from ${sourceProvider}:${parsed.data.source_accountId} to ${parsed.data.destination}` }],
+        };
+      }
+    } else {
+      // destination is cloud storage
+      if (!parsed.data.destination_accountId) {
+        throw new Error("Destination account ID is required for cloud storage operations");
+      }
+      const cloudType = await validateProvider(destinationProvider);
+      const destFolder = path.dirname(parsed.data.destination);
+      const destFileName = path.basename(parsed.data.destination);
+      // post file to the cloud storage
+      try {
+        await createDirectory(cloudType, parsed.data.destination_accountId, destFolder); // Ensure the destination directory exists
+      } catch (error) {
+        console.log('Error creating directory in cloud storage:', error);
+        console.log("Directory creation failed, but it might already exist. Continuing with file move.");
+      }
+      // await postFile(cloudType, parsed.data.destination_accountId, destFileName, destFolder, dataToMove.content);
+      await triggerPostFileOnRenderer(destFolder, cloudType, parsed.data.destination_accountId, destFileName);
+      if (!sourceProvider) {
+        return {
+          content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}` }],
+        };
+      } else {
+        return {
+          content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from ${sourceProvider}:${parsed.data.source_accountId} to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}` }],
+        };
+      }
+    }
+  }
+
+  async function handleSearchFileTool(args: any) {
+    const parsed = SearchFilesArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for search_files: ${parsed.error}`);
+    }
+    const provider = parsed.data.provider;
+    const accountId = parsed.data.accountId;
+    const patterns = parsed.data.patterns || [];
+    const excludePatterns = parsed.data.excludePatterns || [];
+    if (patterns.length === 0) {
+      throw new Error("At least one pattern is required for local file search");
+    }
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
+      // local storage
+      const validPath = await validatePath(parsed.data.path);
+      // Exclude patterns are optional
+      const results: string[] = [];
+      for (const pattern of patterns) {
+        const matches = await searchFiles(validPath, pattern, excludePatterns);
+        results.push(...matches);
+      }
+      // const results = await searchFiles(validPath, parsed.data.pattern, parsed.data.excludePatterns);
+      return {
+        content: [{ type: "text", text: results.length > 0 ? results.join("\n") : "No matches found" }],
+      };
+    }
+
+    const directoryPath = parsed.data.path;
+    const cloudType = await validateProvider(provider);
+    // search files in the cloud storage
+    const cloudResults: FileSystemItem[] = [];
+    for (const pattern of parsed.data.patterns) {
+      const matches = await searchFilesFromStorageAccount(cloudType, accountId, directoryPath, pattern, excludePatterns);
+      cloudResults.push(...matches);
+    }
+    // const cloudResults: FileSystemItem[] = await searchFilesFromStorageAccount(cloudType, accountId, directoryPath, parsed.data.pattern, parsed.data.excludePatterns);
+    if (!cloudResults || cloudResults.length === 0) {
+      return {
+        content: [{ type: "text", text: "No matches found" }],
+      };
+    }
+    // get the paths of the files
+    const formattedResults = cloudResults
+      .map(item => `${item.path}`)
+      .join("\n");
+    return {
+      content: [{ type: "text", text: formattedResults }],
+    };
+  }
+
+  async function handleGetFileInfoTool(args: any) {
+    const parsed = GetFileInfoArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for get_file_info: ${parsed.error}`);
+    }
+
+    const provider = parsed.data.provider;
+    const accountId = parsed.data.accountId;
+
+    // local storage
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
+      const validPath = await validatePath(parsed.data.path);
+      const info = await getFileStats(validPath);
+      return {
+        content: [{
+          type: "text", text: Object.entries(info)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join("\n")
+        }],
+      };
+    }
+
+    // cloud storage
+    const filePath = parsed.data.path;
+    if (!filePath) {
+      throw new Error("File path is required for cloud storage operations");
+    }
+
+    const cloudType = await validateProvider(provider);
+    const fileInfo: FileSystemItem = await getFileInfo(cloudType, accountId, filePath);
+
+    if (!fileInfo) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    const infoText = Object.entries({
+      name: fileInfo.name,
+      path: fileInfo.path,
+      isDirectory: fileInfo.isDirectory,
+      size: fileInfo.size || 'N/A',
+      modifiedTime: fileInfo.modifiedTime ? new Date(fileInfo.modifiedTime).toISOString() : 'N/A',
+      id: fileInfo.id
+    })
+      .map(([key, value]) => `${key}: ${value}`)
+      .join("\n");
+
+    return {
+      content: [{
+        type: "text", text: infoText
+      }],
+    };
+  }
+
+  async function handleGetFolderInfoTool(args: any) {
+    const parsed = GetFolderInfoArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for get_folder_info: ${parsed.error}`);
+    }
+
+    const provider = parsed.data.provider;
+    const accountId = parsed.data.accountId;
+
+    if (!provider || !accountId || provider.toLowerCase() === 'local') {
+      // local storage
+      const validPath = await validatePath(parsed.data.path);
+      const info = await getDirectoryInfoLocal(validPath);
+      return {
+        content: [{
+          type: "text", text: Object.entries(info)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join("\n")
+        }],
+      };
+    }
+    // cloud storage
+    const cloudType = await validateProvider(provider);
+    const folderPath = parsed.data.path;
+    if (!folderPath) {
+      throw new Error("Folder path is required for cloud storage operations");
+    }
+    const folderInfo: FileSystemItem = await getDirectoryInfo(cloudType, accountId, folderPath);
+    if (!folderInfo) {
+      throw new Error(`Folder not found: ${folderPath}`);
+    }
+    // If folderInfo is found, you can use it
+    return {
+      content: [{
+        type: "text", text: Object.entries({
+          name: folderInfo.name,
+          path: folderInfo.path,
+          isDirectory: folderInfo.isDirectory,
+          size: folderInfo.size || 0,
+          modifiedTime: folderInfo.modifiedTime ? new Date(folderInfo.modifiedTime).toISOString() : 'N/A',
+          // id: folderInfo.id // id is not useful for folders
+        }).map(([key, value]) => `${key}: ${value}`).join("\n")
+      }],
+    };
+  }
+
+  async function handleRequestClarificationTool(args: any): Promise<string> {
+    const parsed = RequestClarificationArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for get_information_from_user: ${parsed.error}`);
+    } else {
+      // This tool is used to ask for clarification from the user
+      
+      return await triggerRequestClarification(parsed.data.question);
+    }
+  }
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
@@ -509,568 +1156,78 @@ export const createFsServer = async (allowedDirs: string[]) => {
 
         // TODO implement
         case "read_file": {
-          const parsed = ReadFileArgsSchema.safeParse(args);
-          if (!parsed.success) {
-            throw new Error(`Invalid arguments for read_file: ${parsed.error}`);
-          }
-          const provider = parsed.data.provider;
-          const accountId = parsed.data.accountId;
-          // local storage
-          if (!provider || !accountId) {
-            const validPath = await validatePath(parsed.data.path);
-            const content = await readFileLocal(validPath);
-            return {
-              content: [{ type: "text", text: content }],
-            };
-          }
-
-          const filePath = parsed.data.path;
-          if (!filePath) {
-            throw new Error("File path is required for cloud storage operations");
-          }
-
-          // convert provider to cloud type
-          const cloudType = await validateProvider(provider);
-
-          // read file from the cloud storage
-          try {
-            const content = await readFile(cloudType, accountId, filePath);
-
-            if (!content) {
-              throw new Error(`File not found: ${filePath}`);
-            }
-          
-            return {
-              content: [{ type: "text", text: content || '' }],
-            };
-          } catch (error) {
-            console.error('Error reading file from cloud storage:', error);
-            throw new Error(`Failed to read file ${filePath} from cloud storage: ${error instanceof Error ? error.message : String(error)}`);
-          }
+          return await handleReadFileTool(args);
         }
         // TODO: implement read_multiple_files for cloud storage
         case "read_multiple_files": {
-          const parsed = ReadMultipleFilesArgsSchema.safeParse(args);
-          if (!parsed.success) {
-            throw new Error(`Invalid arguments for read_multiple_files: ${parsed.error}`);
-          }
-
-          const provider = parsed.data.provider;
-          const accountId = parsed.data.accountId;
-          // local storage
-          if (!provider || !accountId) {
-            const results = await Promise.all(
-              parsed.data.paths.map(async (filePath: string) => {
-                try {
-                  const validPath = await validatePath(filePath);
-                  const content = await readFileLocal(validPath);
-                  return `${filePath}:\n${content}\n`;
-                } catch (error) {
-                  const errorMessage = error instanceof Error ? error.message : String(error);
-                  return `${filePath}: Error - ${errorMessage}`;
-                }
-              }),
-            );
-            return {
-              content: [{ type: "text", text: results.join("\n---\n") }],
-            };
-          }
-
-          // cloud storage
-          const filePaths = parsed.data.paths;
-          if (!filePaths || filePaths.length === 0) {
-            throw new Error("File paths are required for cloud storage operations");
-          }
-          // convert provider to cloud type
-          const cloudType = await validateProvider(provider);
-          // read multiple files from the cloud storage
-          const fileContents: string[] = await Promise.all(
-            filePaths.map(async (filePath) => {
-              try {
-                const content = await readFile(cloudType, accountId, filePath);
-                if (!content) {
-                  throw new Error(`File not found: ${filePath}`);
-                }
-                return content;
-              } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                return `${filePath}: Error - ${errorMessage}`;              }
-            })
-          );
-
-          return {
-            content: [{ type: "text", text: fileContents.join("\n---\n") }],
-          };
+          return await handleReadMultipleFilesTool(args);
         }
 
         // TODO: implement write_multiple_files for cloud storage
         case "write_file": {
-          const parsed = WriteFileArgsSchema.safeParse(args);
-          if (!parsed.success) {
-            throw new Error(`Invalid arguments for write_file: ${parsed.error}`);
-          }
-          
-          const provider = parsed.data.provider;
-          const accountId = parsed.data.accountId;
-          
-          // local storage
-          if (!provider || !accountId) {
-            const validPath = await validatePath(parsed.data.path);
-            await fs.writeFile(validPath, parsed.data.content, "utf-8");
-            return {
-              content: [{ type: "text", text: `Successfully wrote to ${parsed.data.path}` }],
-            };
-          }
-
-          // cloud storage
-          const filePath = parsed.data.path;
-          if (!filePath) {
-            throw new Error("File path is required for cloud storage operations");
-          }
-          
-          const cloudType = await validateProvider(provider);
-          const fileName = path.basename(filePath);
-          const folderPath = path.dirname(filePath);
-          const data = Buffer.from(parsed.data.content, 'utf-8');
-          
-          try {
-            await postFile(cloudType, accountId, fileName, folderPath, data);
-            return {
-              content: [{ type: "text", text: `Successfully wrote to ${filePath} in cloud storage` }],
-            };
-          } catch (error) {
-            console.error('Error writing file to cloud storage:', error);
-            throw new Error(`Failed to write file ${filePath} to cloud storage: ${error instanceof Error ? error.message : String(error)}`);
-          }
+          return await handleWriteFileTool(args);
         }
 
-        case "edit_file": {
-          const parsed = EditFileArgsSchema.safeParse(args);
-          if (!parsed.success) {
-            throw new Error(`Invalid arguments for edit_file: ${parsed.error}`);
-          }
-          const validPath = await validatePath(parsed.data.path);
-          const result = await applyFileEdits(validPath, parsed.data.edits, parsed.data.dryRun);
-          return {
-            content: [{ type: "text", text: result }],
-          };
-        }
+        // case "edit_file": {
+        //   const parsed = EditFileArgsSchema.safeParse(args);
+        //   if (!parsed.success) {
+        //     throw new Error(`Invalid arguments for edit_file: ${parsed.error}`);
+        //   }
+        //   const validPath = await validatePath(parsed.data.path);
+        //   const result = await applyFileEdits(validPath, parsed.data.edits, parsed.data.dryRun);
+        //   return {
+        //     content: [{ type: "text", text: result }],
+        //   };
+        // }
 
         // TODO: implement create_directory for cloud storage
         case "create_directory": {
-          const parsed = CreateDirectoryArgsSchema.safeParse(args);
-          if (!parsed.success) {
-            throw new Error(`Invalid arguments for create_directory: ${parsed.error}`);
-          }
-          const provider = parsed.data.provider;
-          const accountId = parsed.data.accountId;
-          // local storage
-          // need to change this to use createDirectoryLocal? TODO
-          if (!provider || !accountId) {
-            const validPath = await validatePath(parsed.data.path);
-            await createDirectoryLocal(validPath);
-            return {
-              content: [{ type: "text", text: `Successfully created directory ${parsed.data.path}` }],
-            };
-          }
-
-          // cloud storage
-          const directoryPath = parsed.data.path;
-          if (!directoryPath) {
-            throw new Error("Directory path is required for cloud storage operations");
-          }
-          // convert provider to cloud type
-          const cloudType = await validateProvider(provider);
-          // create directory in the cloud storage
-          try {
-            await createDirectory(cloudType, accountId, directoryPath); // This will create the directory if it doesn't exist
-            return {
-              content: [{ type: "text", text: `Successfully created directory ${directoryPath}` }],
-            };
-          } catch (error) {
-            console.error('Error creating directory in cloud storage:', error);
-            throw new Error(`Failed to create directory ${directoryPath} in cloud storage: ${error instanceof Error ? error.message : String(error)}`);
-          }
+          return await handleCreateDirectoryTool(args);
         }
 
         // DONE
         case "list_directory": {
-          const parsed = ListDirectoryArgsSchema.safeParse(args);
-          if (!parsed.success) {
-            throw new Error(`Invalid arguments for list_directory: ${parsed.error}`);
-          }
-          const provider = await parsed.data.provider;
-          const accountId = await parsed.data.accountId;
-          // local storage
-          if (!provider || !accountId) {
-            const validPath = await validatePath(parsed.data.path);
-            const entries = await fs.readdir(validPath, { withFileTypes: true });
-            const formatted = entries
-              .map((entry) => `${entry.isDirectory() ? "[DIR]" : "[FILE]"} ${entry.name}`)
-              .join("\n");
-            return {
-              content: [{ type: "text", text: formatted }],
-            };
-          }
-
-          // cloud storage
-          const directoryPath = parsed.data.path;
-          if (!directoryPath) {
-            throw new Error("File path is required for cloud storage operations");
-          }
-          // convert provider to cloud type
-          const cloudType = await validateProvider(provider);
-          // list directory from the cloud storage
-          const fileSystemItems: FileSystemItem[] = await readDirectory(cloudType, accountId, directoryPath);
-
-          if (!fileSystemItems) {
-            throw new Error(`Directory not found or empty: ${directoryPath}`);
-          }
-
-          const formatted = fileSystemItems
-            .map((item) => `${item.isDirectory ? "[DIR]" : "[FILE]"} ${item.name}`)
-            .join("\n");
-          return {
-            content: [{ type: "text", text: formatted }],
-          };
+          return await handleListDirectoryTool(args);
         }
 
         // TODO: implement directory_tree for cloud storage
         case "directory_tree": {
-          const parsed = DirectoryTreeArgsSchema.safeParse(args);
-          if (!parsed.success) {
-            throw new Error(`Invalid arguments for directory_tree: ${parsed.error}`);
-          }
-
-          const provider = parsed.data.provider;
-          const accountId = parsed.data.accountId;
-
-          // local storage
-          if (!provider || !accountId) {
-            interface TreeEntry {
-              name: string;
-              type: 'file' | 'directory';
-              children?: TreeEntry[];
-            }
-
-            async function buildTree(currentPath: string): Promise<TreeEntry[]> {
-              const validPath = await validatePath(currentPath);
-              const entries = await fs.readdir(validPath, { withFileTypes: true });
-              const result: TreeEntry[] = [];
-
-              for (const entry of entries) {
-                const entryData: TreeEntry = {
-                  name: entry.name,
-                  type: entry.isDirectory() ? 'directory' : 'file'
-                };
-
-                if (entry.isDirectory()) {
-                  const subPath = path.join(currentPath, entry.name);
-                  entryData.children = await buildTree(subPath);
-                }
-
-                result.push(entryData);
-              }
-
-              return result;
-            }
-
-            const treeData = await buildTree(parsed.data.path);
-            return {
-              content: [{
-                type: "text",
-                text: JSON.stringify(treeData, null, 2)
-              }],
-            };
-          }
-
-          // cloud storage
-          const directoryPath = parsed.data.path;
-          if (!directoryPath) {
-            throw new Error("Directory path is required for cloud storage operations");
-          }
-          
-          const cloudType = await validateProvider(provider);
-          const fileSystemItems: FileSystemItem[] = await getDirectoryTree(cloudType, accountId, directoryPath);
-
-          if (!fileSystemItems) {
-            throw new Error(`Directory not found or empty: ${directoryPath}`);
-          }
-
-          console.log("fileSystemItems", fileSystemItems);
-
-          // Convert FileSystemItem[] to tree structure
-          interface TreeEntry {
-            name: string;
-            type: 'file' | 'directory';
-            children?: TreeEntry[];
-          }
-
-          function buildTreeFromItems(items: FileSystemItem[], basePath: string): TreeEntry[] {
-            const tree: TreeEntry[] = [];
-            const itemMap = new Map<string, FileSystemItem>();
-
-            // Create a map of items by their full path
-            for (const item of items) {
-              const relativePath = item.path.replace(CLOUD_HOME + basePath, '').replace(/^\//, '');
-              if (relativePath) {
-                itemMap.set(relativePath, item);
-              }
-            }
-
-            // Build tree structure
-            for (const item of items) {
-              const relativePath = item.path.replace(CLOUD_HOME + basePath, '').replace(/^\//, '');
-              if (!relativePath) continue;
-
-              const pathParts = relativePath.split('/');
-              let currentLevel = tree;
-              let currentPath = '';
-
-              for (let i = 0; i < pathParts.length; i++) {
-                const part = pathParts[i];
-                currentPath = currentPath ? `${currentPath}/${part}` : part;
-
-                let existingNode = currentLevel.find(node => node.name === part);
-                if (!existingNode) {
-                  const item = itemMap.get(currentPath);
-                  if (item) {
-                    existingNode = {
-                      name: part,
-                      type: item.isDirectory ? 'directory' : 'file',
-                      children: item.isDirectory ? [] : undefined
-                    };
-                    currentLevel.push(existingNode);
-                  }
-                }
-
-                if (existingNode && existingNode.children && i < pathParts.length - 1) {
-                  currentLevel = existingNode.children;
-                }
-              }
-            }
-
-            return tree;
-          }
-
-          const treeData = buildTreeFromItems(fileSystemItems, directoryPath);
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify(treeData, null, 2)
-            }],
-          };
+          return await handleDirectoryTreeTool(args);
         }
 
         // TODO implement
         case "move_file": {
-          const parsed = MoveFileArgsSchema.safeParse(args);
-          if (!parsed.success) {
-            throw new Error(`Invalid arguments for move_file: ${parsed.error}`);
-          }
-          // move files within local storage
-          if (!parsed.data.source_provider && !parsed.data.destination_provider) {
-            const validSourcePath = await validatePath(parsed.data.source);
-            const validDestPath = await validatePath(parsed.data.destination);
-            await fs.rename(validSourcePath, validDestPath);
-            return {
-              content: [{ type: "text", text: `Successfully moved ${parsed.data.source} to ${parsed.data.destination}` }],
-            };
-          }
-
-          // move files include at least one cloud storage
-          const sourceProvider = parsed.data.source_provider;
-          const destinationProvider = parsed.data.destination_provider;
-          let dataToMove: FileContent | null;
-          if (!sourceProvider) {
-            // source is local storage
-            const validSourcePath = await validatePath(parsed.data.source);
-            // dataToMove = await getFileLocal(validSourcePath);
-            await triggerGetFileOnRenderer([parsed.data.source]);
-          } else {
-            // source is cloud storage
-            const cloudType = await validateProvider(sourceProvider);
-            if (!parsed.data.source_accountId) {
-              throw new Error("Source account ID is required for cloud storage operations");
-            }
-            console.log(`Fetching file from cloud storage: ${parsed.data.source} on ${sourceProvider}:${parsed.data.source_accountId}`);
-            await triggerGetFileOnRenderer([parsed.data.source], cloudType, parsed.data.source_accountId);
-            // dataToMove = await getFile(cloudType, parsed.data.source_accountId, parsed.data.source);
-          }
-
-          // Now we have the data to move, we can proceed with the destination
-          if (!destinationProvider) {
-            // destination is local storage
-            const validDestPath = await validatePath(parsed.data.destination);
-            const destFolder = path.dirname(validDestPath);
-            const destFileName = path.basename(validDestPath);
-            try {
-              await createDirectoryLocal(destFolder); // Ensure the destination directory exists
-            } catch (error) {
-              if (error instanceof Error && error.message.includes("Directory already exists")) {
-                // Directory already exists, no action needed
-                console.log(`Directory already exists: ${destFolder}. No creation needed.`);
-              }
-            }
-            // const response = await postFileLocal(destFileName, destFolder, dataToMove.content);
-            await triggerPostFileOnRenderer(destFolder, undefined, undefined, destFileName);
-            if (!sourceProvider) {
-              return {
-                content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination}` }],
-              };
-            } else {
-              return {
-                content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from ${sourceProvider}:${parsed.data.source_accountId} to ${parsed.data.destination}` }],
-              };
-            }
-          } else {
-            // destination is cloud storage
-            if (!parsed.data.destination_accountId) {
-              throw new Error("Destination account ID is required for cloud storage operations");
-            }
-            const cloudType = await validateProvider(destinationProvider);
-            const destFolder = path.dirname(parsed.data.destination);
-            const destFileName = path.basename(parsed.data.destination);
-            // post file to the cloud storage
-            try {
-              await createDirectory(cloudType, parsed.data.destination_accountId, destFolder); // Ensure the destination directory exists
-            } catch (error) {
-              console.log('Error creating directory in cloud storage:', error);
-              console.log("Directory creation failed, but it might already exist. Continuing with file move.");
-            }
-            // await postFile(cloudType, parsed.data.destination_accountId, destFileName, destFolder, dataToMove.content);
-            await triggerPostFileOnRenderer(destFolder, cloudType, parsed.data.destination_accountId, destFileName);
-            if (!sourceProvider) {
-              return {
-                content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}` }],
-              };
-            } else {
-              return {
-                content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from ${sourceProvider}:${parsed.data.source_accountId} to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}` }],
-              };
-            }
-          }
+          return await handleMoveFileTool(args);
         }
 
         // TODO implement the case when pattern is given as regex...
         case "search_files": {
-          const parsed = SearchFilesArgsSchema.safeParse(args);
-          if (!parsed.success) {
-            throw new Error(`Invalid arguments for search_files: ${parsed.error}`);
-          }
-          const provider = parsed.data.provider;
-          const accountId = parsed.data.accountId;
-          if (!provider || !accountId) {
-            // local storage
-            const validPath = await validatePath(parsed.data.path);
-            const results = await searchFiles(validPath, parsed.data.pattern, parsed.data.excludePatterns);
-            return {
-              content: [{ type: "text", text: results.length > 0 ? results.join("\n") : "No matches found" }],
-            };
-          }
-
-          const directoryPath = parsed.data.path;
-          const cloudType = await validateProvider(provider);
-          // search files in the cloud storage
-          const cloudResults: FileSystemItem[] = await searchFilesFromStorageAccount(cloudType, accountId, directoryPath, parsed.data.pattern, parsed.data.excludePatterns);
-          if (!cloudResults || cloudResults.length === 0) {
-            return {
-              content: [{ type: "text", text: "No matches found" }],
-            };
-          }
-          // get the paths of the files
-          const formattedResults = cloudResults
-            .map(item => `${item.path}`)
-            .join("\n");
-          return {
-            content: [{ type: "text", text: formattedResults }],
-          };
+          return await handleSearchFileTool(args);
         }
 
         // TODO: implement
         case "get_file_info": {
-          const parsed = GetFileInfoArgsSchema.safeParse(args);
-          if (!parsed.success) {
-            throw new Error(`Invalid arguments for get_file_info: ${parsed.error}`);
-          }
-          
-          const provider = parsed.data.provider;
-          const accountId = parsed.data.accountId;
-          
-          // local storage
-          if (!provider || !accountId) {
-            const validPath = await validatePath(parsed.data.path);
-            const info = await getFileStats(validPath);
-            return {
-              content: [{
-                type: "text", text: Object.entries(info)
-                  .map(([key, value]) => `${key}: ${value}`)
-                  .join("\n")
-              }],
-            };
-          }
+          return await handleGetFileInfoTool(args);
+        }
 
-          // cloud storage
-          const filePath = parsed.data.path;
-          if (!filePath) {
-            throw new Error("File path is required for cloud storage operations");
-          }
-          
-          const cloudType = await validateProvider(provider);
-          const fileInfo: FileSystemItem = await getItemInfo(cloudType, accountId, filePath);
-
-          if (!fileInfo) {
-            throw new Error(`File not found: ${filePath}`);
-          }
-
-          const infoText = Object.entries({
-            name: fileInfo.name,
-            path: fileInfo.path,
-            isDirectory: fileInfo.isDirectory,
-            size: fileInfo.size || 'N/A',
-            modifiedTime: fileInfo.modifiedTime ? new Date(fileInfo.modifiedTime).toISOString() : 'N/A',
-            id: fileInfo.id
-          })
-            .map(([key, value]) => `${key}: ${value}`)
-            .join("\n");
-
-          return {
-            content: [{
-              type: "text", text: infoText
-            }],
-          };
+        case "get_folder_info": {
+          return await handleGetFolderInfoTool(args);
         }
 
         case "list_allowed_directories": {
-          return {
-            content: [{
-              type: "text",
-              text: `Allowed directories:\n${allowedDirectories.join('\n')}`
-            }],
-          };
+          return await handleListAllowedDirectoriesTool(args);
         }
 
         // DONE
         case "list_connected_cloud_accounts": {
-          const parsed = GetConnectedAccountArgsSchema.safeParse(args);
-          if (!parsed.success) {
-            throw new Error(`Invalid arguments for list_connected_cloud_accounts: ${parsed.error}`);
-          }
-          const cloudType = await validateProvider(parsed.data.provider);
-          const connectedAccounts = await getConnectedCloudAccounts(cloudType);
-          if (!connectedAccounts || connectedAccounts.length === 0) {
-            return {
-              content: [{
-                type: "text",
-                text: `No connected cloud accounts found for provider: ${parsed.data.provider}`
-              }],
-            };
-          }
+          return await handleListConnectedCloudAccountsTool(args);
+        }
+
+        case "get_information_from_user": {
+          // Always return a value, even if the handler does not return anything
+          const result = await handleRequestClarificationTool(args);
           return {
-            content: [{
-              type: "text",
-              text: `Connected cloud accounts:\n${connectedAccounts.join('\n')}`
-            }],
+            content: [{ type: "text", text: result }],
           };
         }
 

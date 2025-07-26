@@ -5,7 +5,7 @@
  * It can work with both files on your computer (local) and files in the cloud (Google Drive, Dropbox, etc.).
  */
 
-import React, {useEffect, useState, useRef, useCallback, memo, use, useMemo} from "react"
+import React, { useEffect, useState, useRef, useCallback, memo, use, useMemo, useImperativeHandle } from "react"
 import {
     ChevronLeft,
     ChevronRight,
@@ -52,13 +52,13 @@ import {
     MoreHorizontal,
     FolderPlus
 } from "lucide-react"
-import type {FileContent, FileSystemItem} from "@Types/fileSystem"
-import {Input} from "@/components/ui/input"
-import {Button} from "@/components/ui/button"
-import {cn} from "@/lib/utils"
-import {CLOUD_HOME, CloudType} from "@Types/cloudType"
-import {useBoxDrag} from "@/contexts/BoxDragContext";
-import {useTransferState} from "@/contexts/TransferStateContext";
+import type { FileContent, FileSystemItem } from "@Types/fileSystem"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import { CLOUD_HOME, CloudType } from "@Types/cloudType"
+import { useBoxDrag } from "@/contexts/BoxDragContext";
+import { useTransferState } from "@/contexts/TransferStateContext";
 import {
     Dialog,
     DialogContent,
@@ -83,7 +83,7 @@ import { randomInt } from "crypto"
  */
 interface FileExplorerProps {
     cloudType?: CloudType                                                                   // Cloud storage provider type 
-                                                                                            // (e.g., 'dropbox', 'google', 'onedrive')
+    // (e.g., 'dropbox', 'google', 'onedrive')
     accountId?: string                                                                      // Unique identifier for the cloud account 
     zoomLevel: number                                                                       // Zoom level for the file explorer
     tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string, fileName?: string) => void  // Function to post a file to the cloud
@@ -100,6 +100,10 @@ interface FileExplorerProps {
 
 
 
+
+export const FileExplorer = memo(
+    React.forwardRef(FileExplorerInner),
+);
 
 
 export const FileExplorer = memo(function FileExplorer ({
@@ -139,23 +143,23 @@ export const FileExplorer = memo(function FileExplorer ({
 
     /** Whether to show hidden files (files that start with a dot) */
     const [showHidden, setShowHidden] = useState(false)
-    
+
     /** Selection State (which files are selected) */
 
     const selectedItemsRef = useRef<Set<string>>(new Set()) // Set of selected file IDs
     const lastSelectedItemRef = useRef<string | null>(null) // ID of the last selected file
-    
+
     /** Drag selection state (selecting with mouse drag) */
     const isSelectingRef = useRef(false) // Whether we're currently selecting files with a drag box
-    const selectionStartRef = useRef({x: 0, y: 0}) // Starting position of the selection box
-    const selectionStartViewRef = useRef({scrollTop: 0}); // Starting scroll position of the container when selection started
+    const selectionStartRef = useRef({ x: 0, y: 0 }) // Starting position of the selection box
+    const selectionStartViewRef = useRef({ scrollTop: 0 }); // Starting scroll position of the container when selection started
     const selectionBoxRef = useRef<HTMLDivElement | null>(null); // Reference to the selection box element
     const isAdditiveDragRef = useRef(false); // Whether the current drag is additive (Ctrl/Cmd key pressed)
     const selectionSnapshotRef = useRef<Set<string>>(new Set()); // Snapshot of selected items at the start of a drag operation
 
     /** Drag and drop state */
-    const dragStartPosRef = useRef({x: 0, y: 0}) // Position where the drag started
-    const mouseOffsetRef = useRef({x: 0, y: 0}) // Offset of the mouse from the top-left corner of the dragged item
+    const dragStartPosRef = useRef({ x: 0, y: 0 }) // Position where the drag started
+    const mouseOffsetRef = useRef({ x: 0, y: 0 }) // Offset of the mouse from the top-left corner of the dragged item
     const draggedItemsRef = useRef<string[]>([]) // IDs of items currently being dragged
     const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null) // Timeout for throttling drag events
     const boxDragTimeoutRef = useRef<NodeJS.Timeout | null>(null) // Timeout for box drag operations
@@ -165,20 +169,20 @@ export const FileExplorer = memo(function FileExplorer ({
 
     /** Connect to the system that handles dragging files between boxes from @Context/BoxDragContext */
     const BoxDrag = useBoxDrag();
-    
+
     /** Connect to the system that tracks files being transferred */
     const { isFileTransferring, getFileTransferInfo } = useTransferState();
-    
+
     /** UI State */
     const [isOpeningBrowser, setIsOpeningBrowser] = useState(false); // Whether we're currently opening a file in the browser
     // const [containerWidth, setContainerWidth] = useState(0); // Width of the file explorer container for responsive design
     const containerWidthRef = useRef(0); // Reference to the container width for performance optimization
-    const [showFileOperationChoices , setShowFileOperationChoices] = useState(false); // Whether to show the file operation choices menu
+    const [showFileOperationChoices, setShowFileOperationChoices] = useState(false); // Whether to show the file operation choices menu
 
     /* DOM references */
     const containerRef = useRef<HTMLDivElement>(null) // Reference to the main container element
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map()) // Map of file IDs to their DOM elements for quick access
-    
+
 
     /** File Stats dialog state */
     const [showStatsDialog, setShowStatsDialog] = useState(false); // Whether to show the file stats dialog
@@ -189,8 +193,8 @@ export const FileExplorer = memo(function FileExplorer ({
     const generateUniqueId = () => {
         const timestamp = Date.now().toString(36); // Base36 timestamp
         const randomPart = crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
-    return timestamp + randomPart.slice(0, 4);
-}   ;
+        return timestamp + randomPart.slice(0, 4);
+    };
     const [newFolderName, setNewFolderName] = useState(() => "untitled " + generateUniqueId()); // Name for the new folder
     const [isCreatingFolder, setIsCreatingFolder] = useState(false); // Whether we're currently creating a folder
     const [isCalculatingSize, setIsCalculatingSize] = useState(false); // Whether we're currently calculating the size of a folder
@@ -200,8 +204,19 @@ export const FileExplorer = memo(function FileExplorer ({
     const zoomLevelRef = useRef(zoomLevel);
 
     const lastMoveTimeRef = useRef(0);
-    
 
+
+    const [showDropdown, setShowDropdown] = React.useState(false);
+    const [dropdownPosition, setDropdownPosition] = React.useState<{ x: number; y: number } | null>(null);
+
+    // used by agent to update the current path in file explorer
+    useImperativeHandle(ref, () => ({
+        updatePath: (newPath: string) => {
+            if (newPath !== cwd) {
+                navigateTo(newPath);
+            }
+        }
+    }));
 
     /** 
      * Files filtered by search query and hidden file setting 
@@ -241,7 +256,7 @@ export const FileExplorer = memo(function FileExplorer ({
      */
     useEffect(() => {
         const fetchHome = async () => {
-            if (cloudType && accountId) { 
+            if (cloudType && accountId) {
                 // Cloud storage - use cloud home directory
                 setCwd(CLOUD_HOME)
                 setHistory([CLOUD_HOME])
@@ -260,16 +275,17 @@ export const FileExplorer = memo(function FileExplorer ({
 
     /** Loads files when the current directory changes */
     useEffect(() => {
-        if (!cwd || cwd === "") 
-             return
+        if (!cwd || cwd === "")
+            return
 
         setIsLoading(true)
-        
+
         if (onCurrentPathChange) {
             onCurrentPathChange(cwd)
         }
 
         if (cloudType && accountId) {
+            console.log(`Loading cloud directory: ${cwd} for account: ${accountId} on provider: ${cloudType}`);
             // Load files from cloud storage
             (window as any).cloudFsApi.readDirectory(cloudType, accountId, cwd)
                 .then((files: FileSystemItem[]) => {
@@ -284,7 +300,7 @@ export const FileExplorer = memo(function FileExplorer ({
                 .catch((err: Error) => {
                     console.error(err)
                     setIsLoading(false)
-                    
+
                     toast.error("Cloud Directory Access Failed", {
                         description: `Failed to load cloud directory: ${err.message || 'Unknown error'}`,
                         duration: 2000,
@@ -293,7 +309,7 @@ export const FileExplorer = memo(function FileExplorer ({
         } else {
             // Load files from local storage
             window.fsApi
-                .readDirectory(cwd) 
+                .readDirectory(cwd)
                 .then((files) => {
                     setItems(files) // Update the file list
                     updatePathSegments(cwd) // Update breadcrumb path
@@ -306,7 +322,7 @@ export const FileExplorer = memo(function FileExplorer ({
                 .catch((err) => {
                     console.error(err)
                     setIsLoading(false)
-                    
+
                     // Show error toast with error message
                     if (err && typeof err === 'object' && 'message' in err) {
                         const errorMessage = (err as Error).message;
@@ -339,7 +355,7 @@ export const FileExplorer = memo(function FileExplorer ({
         if (cwd === "") {
             return
         }
-        
+
         // Use silent refresh if silentRefresh flag is true, otherwise use normal refresh
         if (silentRefresh) {
             refreshDirectorySilent();
@@ -355,12 +371,12 @@ export const FileExplorer = memo(function FileExplorer ({
     const openFile = async (e: React.MouseEvent, item: FileSystemItem) => {
         e.preventDefault();
         setIsOpeningBrowser(true);
-        
+
         try {
             let fileContent: FileContent | null = null;
             if (!cloudType || !accountId) {
                 // Get file from local storage
-                fileContent =  await (window as any).fsApi.getFile(item.path);
+                fileContent = await (window as any).fsApi.getFile(item.path);
             } else {
                 // Get file from cloud storage
                 fileContent = await (window as any).cloudFsApi.getFile(cloudType, accountId, item.path);
@@ -374,7 +390,7 @@ export const FileExplorer = memo(function FileExplorer ({
                 });
                 return;
             }
-            
+
             if (fileContent.url) {
                 // File has a URL (common for cloud files) - open in browser/default app
                 const response = await (window as any).electronAPI.openExternalUrl(fileContent.url);
@@ -406,7 +422,7 @@ export const FileExplorer = memo(function FileExplorer ({
             }
         } catch (error) {
             console.error("Error opening file:", error);
-            
+
             if (error && typeof error === 'object' && 'message' in error) {
                 const errorMessage = (error as Error).message;
                 if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
@@ -509,7 +525,7 @@ export const FileExplorer = memo(function FileExplorer ({
                 .catch((err: Error) => {
                     console.error(err)
                     setIsLoading(false)
-                    
+
                     toast.error("Cloud Refresh Failed", {
                         description: `Failed to refresh cloud directory: ${err.message || 'Unknown error'}`,
                         duration: 2000,
@@ -534,7 +550,7 @@ export const FileExplorer = memo(function FileExplorer ({
                 .catch((err) => {
                     console.error(err)
                     setIsLoading(false)
-                    
+
                     if (err && typeof err === 'object' && 'message' in err) {
                         const errorMessage = (err as Error).message;
                         if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
@@ -668,8 +684,8 @@ export const FileExplorer = memo(function FileExplorer ({
         if (e.shiftKey) {
             selectedItemsRef.current = new Set([...selectedItemsRef.current, item.id]);
             lastSelectedItemRef.current = item.id;
-        } 
-        
+        }
+
         // Multi-selection with Ctrl/Cmd key
         else if (ctrlOrMeta) {
             const newSelectedItemsUpdate = new Set(selectedItemsRef.current);
@@ -682,7 +698,7 @@ export const FileExplorer = memo(function FileExplorer ({
             }
             selectedItemsRef.current = newSelectedItemsUpdate;
             lastSelectedItemRef.current = item.id;
-        } 
+        }
         // Single selection
         else {
             selectedItemsRef.current = new Set([item.id]);
@@ -804,7 +820,7 @@ export const FileExplorer = memo(function FileExplorer ({
                 bottom: itemRect.bottom - containerRect.top + containerRef.current.scrollTop,
             };
 
-        
+
 
             // Check if selection box and item rectangle overlap
             const isIntersecting = !(
@@ -823,7 +839,7 @@ export const FileExplorer = memo(function FileExplorer ({
         selectedItemsRef.current = isAdditiveDragRef.current
             ? new Set([...selectionSnapshotRef.current, ...itemsCurrentlyInBox]) // Add to existing selection
             : itemsCurrentlyInBox; // Replace selection with new items
-        
+
         updateSelectedItemsColor();
     }, [sortedItems]);
 
@@ -848,9 +864,9 @@ export const FileExplorer = memo(function FileExplorer ({
         // Calculate detection box (for finding intersecting files)
         const detectSelectionBox = {
             left: (Math.min(selectionStartRef.current.x, currentX)),
-            top: (Math.min(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop , currentY + containerRef.current.scrollTop )),
-            width: Math.abs(currentX - selectionStartRef.current.x) ,
-            height: Math.abs(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop - (currentY + containerRef.current.scrollTop ))
+            top: (Math.min(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop, currentY + containerRef.current.scrollTop)),
+            width: Math.abs(currentX - selectionStartRef.current.x),
+            height: Math.abs(selectionStartRef.current.y + selectionStartViewRef.current.scrollTop - (currentY + containerRef.current.scrollTop))
         };
 
         updateSelectedItemsFromBox(detectSelectionBox);
@@ -879,7 +895,7 @@ export const FileExplorer = memo(function FileExplorer ({
         } else if (e.clientY > rect.bottom - scrollThreshold) {
             containerRef.current.scrollTop += scrollAmount; // Scroll down
         }
-        
+
         updateSelectionBox(currentX, currentY);
     }, [isSelectingRef.current, updateSelectedItemsFromBox, selectionStartRef.current.x, selectionStartRef.current.y]);
 
@@ -908,7 +924,7 @@ export const FileExplorer = memo(function FileExplorer ({
         if (e.button !== 0) return; // Only handle left mouse button
 
         // Remember where the drag started
-        dragStartPosRef.current = {x: e.clientX, y: e.clientY}
+        dragStartPosRef.current = { x: e.clientX, y: e.clientY }
 
         // Calculate mouse offset from top-left of item
         const itemElement = itemRefs.current.get(item.id)
@@ -985,7 +1001,7 @@ export const FileExplorer = memo(function FileExplorer ({
             const dx = e.clientX - dragStartPosRef.current.x
             const dy = e.clientY - dragStartPosRef.current.y
             const distance = Math.sqrt(dx * dx + dy * dy)
-            
+
             // Start dragging if mouse moved more than 5 pixels
             if (distance > 5) {
                 BoxDrag.setIsDragging(true);
@@ -1002,7 +1018,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     cloudType,
                     accountId
                 );
-                
+
             } else {
                 return
             }
@@ -1028,7 +1044,7 @@ export const FileExplorer = memo(function FileExplorer ({
 
             if (isWithinContainer) {
                 let foundDropTarget = false
-                
+
                 // Check each file/folder to see if mouse is over it
                 for (const item of sortedItems) {
                     // Skip files that are being dragged
@@ -1047,7 +1063,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     // Check if mouse is over this item
                     if (relativeX >= itemLeft && relativeX <= itemRight &&
                         relativeY >= itemTop && relativeY <= itemBottom) {
-                        
+
                         if (item.isDirectory) {
                             // Set this item as the drop target
                             BoxDrag.setTarget({
@@ -1067,7 +1083,7 @@ export const FileExplorer = memo(function FileExplorer ({
                         }
                     }
                 }
-                
+
                 if (!foundDropTarget) {
                     resetTarget(); // No valid drop target found
                 }
@@ -1114,7 +1130,6 @@ export const FileExplorer = memo(function FileExplorer ({
                     );
                     const filePaths = draggedFileItems.map(item => item.path);
 
-
                     //(filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string)
                     if (handleBoxFileTransfer){
                         console.log("handle Item Mouse Up - Moving files:", filePaths, "to target:", targetItem.path);
@@ -1138,7 +1153,7 @@ export const FileExplorer = memo(function FileExplorer ({
                             // User cancelled - no need to show error
                             return;
                         }
-                        
+
                         if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
                             toast.error("Permission Error", {
                                 description: "Unable to move files.",
@@ -1212,7 +1227,7 @@ export const FileExplorer = memo(function FileExplorer ({
             document.removeEventListener("mouseup", handleItemMouseUp);
             document.removeEventListener("mousemove", handleMouseMove);
             document.removeEventListener("mouseup", handleSelectionEnd)
-            
+
             // Clear any pending timers
             if (throttleTimeoutRef.current) {
                 clearTimeout(throttleTimeoutRef.current)
@@ -1251,7 +1266,7 @@ export const FileExplorer = memo(function FileExplorer ({
                 lastSelectedItemRef.current = null;
                 setSelectedCount(0);
                 updateSelectedItemsColor();
-                
+
                 // Cancel any active drag operations
                 if (BoxDrag.isDragging) {
                     if (boxDragTimeoutRef.current) {
@@ -1262,7 +1277,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     BoxDrag.setDragItems([], null);
                     BoxDrag.setIsDragging(false);
                 }
-                
+
                 // Cancel selection mode
                 if (isSelectingRef.current) {
                     isSelectingRef.current = false;
@@ -1295,28 +1310,28 @@ export const FileExplorer = memo(function FileExplorer ({
                 Array.from(selectedItemsRef.current).map(async (itemId) => {
                     const item = sortedItems.find((i) => i.id === itemId);
                     if (!item) return;
-                    
+
                     if (!cloudType || !accountId) {
                         // Local file system deletion
                         await (window as any).fsApi.deleteFile(item.path);
                     } else {
                         // Cloud file system deletion
                         await (window as any).cloudFsApi.deleteFile(
-                            cloudType, 
-                            accountId, 
+                            cloudType,
+                            accountId,
                             item.path
                         );
                     }
                 })
             );
-    
+
             // Refresh directory and clear selection after successful deletion
             await refreshDirectory();
             selectedItemsRef.current = new Set();
             setSelectedCount(0);
         } catch (error) {
             console.error("Error deleting items:", error);
-            
+
             if (error && typeof error === 'object' && 'message' in error) {
                 const errorMessage = (error as Error).message;
                 if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
@@ -1354,11 +1369,11 @@ export const FileExplorer = memo(function FileExplorer ({
         }
 
         setIsCreatingFolder(true);
-        
+
         try {
             // Create the folder path in the current directory
             const folderPath = `${cwd}/${newFolderName.trim()}`;
-            
+
             if (!cloudType || !accountId) {
                 // Local directory creation
                 await (window as any).fsApi.createDirectory(folderPath);
@@ -1376,13 +1391,13 @@ export const FileExplorer = memo(function FileExplorer ({
             // Reset dialog state
             setNewFolderName("");
             setShowNewFolderDialog(false);
-            
+
             // Refresh directory to show the new folder
             await refreshDirectory();
-            
+
         } catch (error) {
             console.error("Error creating folder:", error);
-            
+
             if (error && typeof error === 'object' && 'message' in error) {
                 const errorMessage = (error as Error).message;
                 if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
@@ -1434,9 +1449,9 @@ export const FileExplorer = memo(function FileExplorer ({
         const selectedFiles = Array.from(selectedItemsRef.current)
             .map(id => sortedItems.find(item => item.id === id))
             .filter((item): item is FileSystemItem => item !== undefined);
-        
+
         if (selectedFiles.length === 0) return;
-        
+
         setSelectedFilesForStats(selectedFiles);
         setShowStatsDialog(true);
     };
@@ -1451,7 +1466,7 @@ export const FileExplorer = memo(function FileExplorer ({
             const selectedFiles = Array.from(selectedItemsRef.current)
                 .map(id => sortedItems.find(fileItem => fileItem.id === id))
                 .filter((fileItem): fileItem is FileSystemItem => fileItem !== undefined);
-            
+
             setSelectedFilesForStats(selectedFiles);
         } else {
             // Otherwise, show stats for just the right-clicked item
@@ -1460,11 +1475,83 @@ export const FileExplorer = memo(function FileExplorer ({
         setShowStatsDialog(true);
     };
 
+    const showContextMenu = (e: React.MouseEvent, item: FileSystemItem, mousePosition: { x: number; y: number }) => {
+        e.preventDefault(); // Prevent default context menu
+        e.stopPropagation(); // Prevent bubbling up to container
+        if (!selectedItemsRef.current.has(item.id)) {
+            // If the item is not selected, clear the selection and select this item
+            selectedItemsRef.current = new Set([item.id]);
+            lastSelectedItemRef.current = item.id;
+            setSelectedCount(1);
+            updateSelectedItemsColor();
+        }
+        setShowDropdown(true);
+        setDropdownPosition({x: mousePosition.x + 10, y: mousePosition.y - 30});
+    };
+
     return (
         <div className="flex h-full w-full flex-col text-white rounded-lg overflow-hidden select-none">
-            
+            {/*  display context menu only if not transferring
+                         the context menu should include options like getinfo, rename, delete, and copy/move options
+                         should contain all the current selected items */}
+            <DropdownMenu open={showDropdown} onOpenChange={setShowDropdown} >
+                {/* Dropdown menu content */}
+                <DropdownMenuContent
+                    style={{ position: "absolute", top: dropdownPosition?.y, left: dropdownPosition?.x }}
+                    className="w-36 bg-white dark:bg-slate-800 shadow-lg rounded-lg z-50 opacity-90 duration-200"
+                >
+                    <DropdownMenuItem
+                        onClick={showFileStats}
+                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-sky-600 transition-colors"
+                    >
+                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 dark:bg-primary/20">
+                            <Info className="h-3 w-3 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                            <div className="text-[12px] font-medium">Get Info</div>
+                            <div className="text-[8px] text-muted-foreground">View file details</div>
+                        </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        onClick={() => {/* Copy Function */ }}
+                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-sky-600 transition-colors"
+                    >
+                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50">
+                            <Copy className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div className="flex-1">
+                            <div className="text-[12px] font-medium">Copy</div>
+                            <div className="text-[8px] text-muted-foreground">Copy to clipboard</div>
+                        </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        onClick={() => {/* Move Function */ }}
+                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-sky-600 transition-colors"
+                    >
+                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50">
+                            <Move className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <div className="flex-1">
+                            <div className="text-[12px] font-medium">Move</div>
+                            <div className="text-[8px] text-muted-foreground">Move to location</div>
+                        </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        onClick={handleDelete}
+                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-destructive/10 text-destructive hover:bg-sky-600 transition-colors"
+                    >
+                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-100 dark:bg-red-900/50">
+                            <Trash className="h-3 w-3 text-red-600 dark:text-red-400" />
+                        </div>
+                        <div className="flex-1">
+                            <div className="text-[12px] font-medium">Delete</div>
+                            <div className="text-[8px] text-muted-foreground">Remove permanently</div>
+                        </div>
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
             { /* Breadcrumbs */}
-            <div className="pl-4 pt-4 bg-white dark:bg-slate-800">
+            <div className="grid grid-flow-col place-content-between pl-4 pt-2 bg-white dark:bg-slate-800">
                 <div className="flex items-center space-x-1 text-sm text-gray-400">
                     {currentPath.map((segment, index) => (
                         <React.Fragment key={index}>
@@ -1476,22 +1563,27 @@ export const FileExplorer = memo(function FileExplorer ({
                                     navigateTo(path)
                                 }}
                             >
-                {segment}
-              </span>
+                                {segment}
+                            </span>
                         </React.Fragment>
                     ))}
+                </div>
+                <div>
+                    <span className="text-sm text-gray-500 mr-5 mb-2">
+                        {selectedCount > 0 ? `${selectedCount} item${selectedCount > 1 ? 's' : ''} selected` : ''}
+                    </span>
                 </div>
             </div>
 
             {/* Toolbar that contains navigation buttons and search bar */}
-            <div className="flex items-center gap-1 p-4 bg-white dark:bg-slate-800">
-                
+            <div className="flex items-center gap-1 p-1 bg-white dark:bg-slate-800">
+
                 {/* Home button - goes to user's home directory */}
                 <Button
                     onClick={goToHome}
                     className="p-2 rounded-md hover:bg-slate-100 text-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 >
-                    <Home className="h-5 w-5"/>
+                    <Home className="h-5 w-5" />
                 </Button>
 
                 {/* Up button - goes to parent folder */}
@@ -1499,7 +1591,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     onClick={navigateUp}
                     className="p-2 rounded-md hover:bg-slate-100 text-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 >
-                    <ArrowUp className="h-5 w-5"/>
+                    <ArrowUp className="h-5 w-5" />
                 </Button>
 
                 {/* Navigation buttons for history */}
@@ -1508,7 +1600,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     disabled={historyIndex <= 0}
                     className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    <ChevronLeft className="h-5 w-5"/>
+                    <ChevronLeft className="h-5 w-5" />
                 </Button>
 
                 {/* Forward button - goes to next folder in history */}
@@ -1517,7 +1609,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     disabled={historyIndex >= history.length - 1}
                     className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    <ChevronRight className="h-5 w-5"/>
+                    <ChevronRight className="h-5 w-5" />
                 </Button>
 
                 {/* Refresh button - reloads the current directory */}
@@ -1525,7 +1617,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     onClick={refreshDirectory}
                     className={`p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 ${isLoading ? "animate-spin" : ""}`}
                 >
-                    <RefreshCw className="h-5 w-5"/>
+                    <RefreshCw className="h-5 w-5" />
                 </Button>
 
                 {/* folder button - creates a new folder in current directory */}
@@ -1534,7 +1626,7 @@ export const FileExplorer = memo(function FileExplorer ({
                     className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200"
                     title="Create new folder"
                 >
-                    <FolderPlus className="h-5 w-5"/>
+                    <FolderPlus className="h-5 w-5" />
                 </Button>
 
                 {/* Show/Hide hidden files button */}
@@ -1543,167 +1635,21 @@ export const FileExplorer = memo(function FileExplorer ({
                     className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200"
                     title={showHidden ? "Hide hidden files" : "Show hidden files"}
                 >
-                    {showHidden ? <EyeOff className="h-5 w-5"/> : <Eye className="h-5 w-5"/>}
+                    {showHidden ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </Button>
 
                 {/* Search bar for filtering files */}
                 <div className="relative ml-auto flex-1 max-w-md">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500"/>
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
                     <Input
                         type="text"
                         placeholder="Search files..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-9 text-slate-800 dark:text-slate-200 h-10 placeholder:text-gray-500 focus-visible:ring-blue-500 focus-visible:ring-offset-0 focus-visible:border-blue-500"
+                        className="pl-9 text-slate-800 dark:text-slate-200 h-8 placeholder:text-gray-500 focus-visible:ring-blue-500 focus-visible:ring-offset-0 focus-visible:border-blue-500"
                     />
                 </div>
             </div>
-
-            {/* File Actions Bar (Only shows when files are selected) */}
-            {selectedCount > 0 && (
-                <div
-                    className="file-action-bar flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 backdrop-blur-sm selected-menu-enter">
-
-                    {/* Selection counter - shows how many files are selected */}
-                    <div className="flex items-center gap-2">
-                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/20 dark:bg-primary/30">
-                            <span className="text-xs font-bold font-semibold dark:text-blue-400 text-blue-600">
-                                {selectedCount}
-                            </span>
-                        </div>
-                        <span className="text-sm font-semibold dark:text-blue-400 text-blue-600">
-                            {selectedCount === 1 ? "item selected" : "items selected"}
-                        </span>
-                    </div>
-
-                    {/* Action buttons - positioned on the right side / show when container is wide */}
-                    <div className="ml-auto flex gap-2">
-                        <div
-                            className="actions-container" // css responsible for showing actions when container is wide enough
-                        >
-                            {/* Get Info button - shows file details in a dialog */}
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex items-center gap-2 text-xs font-medium text-black dark:text-white transition-all duration-200 action-button"
-                                onClick={showFileStats}
-                            >
-                                <Info className="h-3.5 w-3.5"/>
-                                Get Info
-                            </Button>
-                            
-                            {/* Copy button - copies selected files (TODO: Not implemented yet) */}
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex items-center gap-2 text-xs font-medium border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 transition-all duration-200 action-button"
-                                onClick={() => {}}
-                            >
-                                <Copy className="h-3.5 w-3.5"/>
-                                Copy
-                            </Button>
-
-                            {/* Move button - moves selected files (TODO: Not implemented yet) */}
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex items-center gap-2 text-xs font-medium border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 transition-all duration-200 action-button"
-                                onClick={() => {}}
-                            >
-                                <Move className="h-3.5 w-3.5"/>
-                                Move
-                            </Button>
-
-                            {/* Delete button - permanently removes selected files */}
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex items-center gap-2 text-xs font-medium border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/50 hover:bg-red-100 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 transition-all duration-200 action-button"
-                                onClick={handleDelete}
-                            >
-                                <Trash className="h-3.5 w-3.5"/>
-                                Delete
-                            </Button>
-                        </div>
-                        {/* Collapse actions into dropdown menu for small screens */}
-                        <div
-                            className="dropdown-container" // css responsible for showing dropdown menu when container is narrow
-                        >
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="flex items-center gap-2 text-xs font-medium text-black dark:text-white transition-all duration-200 action-button"
-                                    >
-                                        <MoreHorizontal className="h-3.5 w-3.5"/>
-                                        Actions
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                
-                                {/* Dropdown menu content */}
-                                <DropdownMenuContent 
-                                    align="end" 
-                                    className="w-56 bg-popover/95 backdrop-blur-sm border border-border/50 shadow-xl dropdown-content"
-                                    sideOffset={8}
-                                >
-                                    <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-b border-border/50">
-                                        {selectedCount} {selectedCount === 1 ? "item" : "items"} selected
-                                    </div>
-                                    <DropdownMenuItem 
-                                        onClick={showFileStats}
-                                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors"
-                                    >
-                                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 dark:bg-primary/20">
-                                            <Info className="h-4 w-4 text-primary"/>
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="text-sm font-medium">Get Info</div>
-                                            <div className="text-xs text-muted-foreground">View file details</div>
-                                        </div>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem 
-                                        onClick={() => {/* Copy functionality to be implemented */}}
-                                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors"
-                                    >
-                                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50">
-                                            <Copy className="h-4 w-4 text-blue-600 dark:text-blue-400"/>
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="text-sm font-medium">Copy</div>
-                                            <div className="text-xs text-muted-foreground">Copy to clipboard</div>
-                                        </div>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem 
-                                        onClick={() => {/* Move functionality to be implemented */}}
-                                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors"
-                                    >
-                                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50">
-                                            <Move className="h-4 w-4 text-amber-600 dark:text-amber-400"/>
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="text-sm font-medium">Move</div>
-                                            <div className="text-xs text-muted-foreground">Move to location</div>
-                                        </div>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem 
-                                        onClick={handleDelete}
-                                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-destructive/10 text-destructive transition-colors"
-                                    >
-                                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-100 dark:bg-red-900/50">
-                                            <Trash className="h-4 w-4 text-red-600 dark:text-red-400"/>
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="text-sm font-medium">Delete</div>
-                                            <div className="text-xs text-muted-foreground">Remove permanently</div>
-                                        </div>
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* This is where files and folders are displayed in a grid */}
             <div
@@ -1720,26 +1666,26 @@ export const FileExplorer = memo(function FileExplorer ({
 
                 {/* Display loading indicator when opening browser or loading files */}
                 {isOpeningBrowser ? (
-                        <div className="flex justify-center items-center h-full">
-                            <RefreshCw className="h-8 w-8 text-blue-400 animate-spin"/>
-                        </div>
+                    <div className="flex justify-center items-center h-full">
+                        <RefreshCw className="h-8 w-8 text-blue-400 animate-spin" />
+                    </div>
                 ) : (
                     isLoading ? (
                         /* Loading spinner when loading folder contents */
                         <div className="flex justify-center items-center h-full">
-                            <RefreshCw className="h-8 w-8 text-blue-400 animate-spin"/>
+                            <RefreshCw className="h-8 w-8 text-blue-400 animate-spin" />
                         </div>
                     ) : sortedItems.length > 0 ? (
 
                         /* Grid of files and folders when there are items to show */
                         <div className="grid grid-cols-[repeat(auto-fill,minmax(95px,1fr))] gap-2">
-                            
+
                             {/* Loop through each file/folder and create a display item */}
                             {sortedItems.map((item) => {
                                 // Check if this file is currently being transferred
                                 const isTransferring = isFileTransferring(item.path, cloudType, accountId);
                                 const transferInfo = getFileTransferInfo(item.path, cloudType, accountId);
-                                
+
                                 return (
                                     <FileItem
                                         key={item.id}
@@ -1750,7 +1696,7 @@ export const FileExplorer = memo(function FileExplorer ({
                                         draggedItemsRef={draggedItemsRef}
                                         handleItemClick={handleItemClick}
                                         handleItemMouseDown={handleItemMouseDown}
-                                        handleItemRightClick={showFileStatsForItem}
+                                        handleItemRightClick={showContextMenu}
                                         itemRefs={itemRefs}
                                         isTransferring={isTransferring}
                                         transferInfo={transferInfo}
@@ -1762,7 +1708,7 @@ export const FileExplorer = memo(function FileExplorer ({
                         /* Empty folder message when no files are found */
                         <div
                             className="flex flex-col items-center justify-center h-full text-slate-800 dark:text-slate-200">
-                            <FolderIcon className="w-16 h-16 mb-4 opacity-30"/>
+                            <FolderIcon className="w-16 h-16 mb-4 opacity-30" />
                             <p>This folder is empty</p>
                         </div>
                     )
@@ -1794,7 +1740,7 @@ export const FileExplorer = memo(function FileExplorer ({
                             Enter a name for the new folder.
                         </DialogDescription>
                     </DialogHeader>
-                    
+
                     <div className="space-y-4 pt-4">
                         <Input
                             type="text"
@@ -1813,7 +1759,7 @@ export const FileExplorer = memo(function FileExplorer ({
                             autoFocus
                             disabled={isCreatingFolder}
                         />
-                        
+
                         <div className="flex justify-end gap-2">
                             <Button
                                 variant="outline"
@@ -1846,4 +1792,4 @@ export const FileExplorer = memo(function FileExplorer ({
             </Dialog>
         </div>
     )
-});
+};

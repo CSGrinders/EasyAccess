@@ -44,7 +44,7 @@ export interface CloudStorage {
     cloudToCloudUploadChunk(transferId: string, fileName: string, sourcePath: string, sessionId: string, chunk: Buffer, offset: number, totalSize: number, progressCallback?: (data: progressCallbackData) => void, isDirectory?: boolean, abortSignal?: AbortSignal): Promise<void>;
     finishResumableUpload(transferId: string, fileName: string, sourcePath: string, sessionId: string, targetFilePath: string, fileSize: number, progressCallback?: (data: progressCallbackData) => void, isDirectory?: boolean, abortSignal?: AbortSignal): Promise<void>;
     moveOrCopyItem(transferId: string, sourcePath: string, targetPath: string, itemName: string, copy: boolean, progressCallback?: (data: progressCallbackData) => void, abortSignal?: AbortSignal): Promise<void>; // Move file or directory within the same cloud storage account
-
+    getDirectoryInfo(dirPath: string): Promise<FileSystemItem>; // Get information about a directory
     isDirectory(filePath: string): Promise<boolean>;
     searchFiles(rootPath: string, pattern: string, excludePatterns: string[]): Promise<FileSystemItem[]>;
     getItemInfo(filePath: string): Promise<FileSystemItem>;

@@ -116,7 +116,7 @@ export interface StorageWideWindowProps {
     show: boolean;
     
     /** Function to add a new storage box */
-    addStorage: (type: string, title: string, icon: React.ReactNode, cloudType?: CloudType, accountId?: string) => void;
+    addStorage: (type: string, title: string, cloudType?: CloudType, accountId?: string) => void;
     
     /** Callback when a cloud account is deleted */
     onAccountDeleted?: (cloudType: CloudType, accountId: string) => void;

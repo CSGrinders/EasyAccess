@@ -78,3 +78,17 @@ export interface CanvaSettingsProps {
     isDisabled: boolean;
 }
 
+export interface DashboardState {
+    scale: number;
+    pan: { x: number; y: number };
+    boxes: Array<{
+        id: string;
+        title: string;
+        type: string;
+        position: { x: number; y: number };
+        size: { width: number; height: number };
+        zIndex: number;
+        cloudType?: string;
+        accountId?: string;
+    }>;
+}

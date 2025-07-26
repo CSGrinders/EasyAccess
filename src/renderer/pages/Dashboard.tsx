@@ -6,7 +6,8 @@ import { CanvasContainer } from "@/components/canvas/CanvasContainer";
 import { StorageBox } from "@/components/box/StorageBox";
 import { type StorageBoxData } from "@Types/box";
 import StorageSideWindow from '@/components/box/StorageSideWindow';
-import { CloudType } from '@Types/cloudType';
+import { CLOUD_HOME, CloudType } from '@Types/cloudType';
+import { DashboardState } from '@Types/canvas';
 import { BoxDragProvider } from "@/contexts/BoxDragContext";
 import { BoxDragPreview } from '@/components/box/BoxDragPreview';
 import SettingsPanel from '@/pages/SettingsPanel';
@@ -17,6 +18,10 @@ import { UploadConfirmationDialog } from '@/components/transactions/UploadConfir
 import { useTransferService } from '@/services/TransferService';
 import { RendererIpcCommandDispatcher } from '@/services/AgentControlService';
 
+import { FaDropbox, FaGoogleDrive} from "react-icons/fa";
+import { TbBrandOnedrive } from "react-icons/tb";
+import { AgentClarificationDialog } from '@/components/box/AgentClarificationDialog';
+import AgentAction  from '@/components/box/AgentAction';
 
 const Dashboard = () => {
     const [zoomLevel, setZoomLevel] = useState(1);
@@ -28,9 +33,13 @@ const Dashboard = () => {
     const canvasVwpRef = useRef<HTMLDivElement>({} as HTMLDivElement);
     const [canvasVwpSize, setCanvasViewportSize] = useState({ width: 0, height: 0 });
     const [showStorageWindow, setShowStorageWindow] = useState(false);
-    const [nextBoxId, setNextBoxId] = useState(3);
-    const [showMcpTest, setShowMcpTest] = useState(false);
     const [disabledAction, setDisabledAction] = useState(false);
+
+    // This is used to position boxes by Agent
+    // when they are opened or accessed by the agent
+    // Rotate among these offsets to avoid overlap
+    const directionOffsets = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+    let offsetIndexRef = useRef(0);
 
     const boxRefs = useRef(new Map());
 
@@ -41,17 +50,7 @@ const Dashboard = () => {
         return boxRefs.current.get(id);
     };
 
-    const [storageBoxes, setStorageBoxes] = useState<StorageBoxData[]>([
-        {
-            id: 1,
-            title: "Local Directory",
-            type: "local",
-            icon: <HardDrive className="h-6 w-6" />,
-            position: { x: -250, y: -200 },
-            size: { width: 400, height: 300 },
-            zIndex: 1,
-        }
-    ]);
+    const [storageBoxes, setStorageBoxes] = useState<StorageBoxData[]>([]);
 
     // To sync storageBoxes with a ref for performance.. not sure actually..
     const storageBoxesRef = useRef<StorageBoxData[]>(storageBoxes);
@@ -78,11 +77,6 @@ const Dashboard = () => {
 
     const toggleShowSideWindow = () => {
         setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
-    };
-
-    const toggleShowAgentWindow = () => {
-        console.log("Toggling MCP Test window visibility");
-        setShowMcpTest(!showMcpTest); // Toggle the storage window visibility
     };
 
     useEffect(() => {
@@ -115,21 +109,54 @@ const Dashboard = () => {
         };
     }, [canvasVwpRef.current]);
 
-    const addStorageBox = (type: string, title: string, icon?: React.ReactNode, cloudType?: CloudType, accountId?: string) => {
-        console.log(`Adding storage box: type=${type}, title=${title}, icon=${icon}, cloudType=${cloudType}, accountId=${accountId}`);
+    function getNextBoxId() {
+        // Get the next box ID based on the current state
+        const setUsedIds = new Set(storageBoxes.map(box => box.id));
+        let nextId = 1;
+        while (setUsedIds.has(nextId)) {
+            nextId++;
+        }
+        return nextId;
+    }
+
+    const addStorageBox = (type: string, title: string, cloudType?: CloudType, accountId?: string) => {
+        console.log(`Adding storage box: type=${type}, title=${title}, cloudType=${cloudType}, accountId=${accountId}`);
+        const nextBoxId = getNextBoxId();
+        // add the icon if not provided
+        let icon: React.ReactNode | undefined;
+        if (!icon) {
+            switch (type) {
+                case "local":
+                    icon = <HardDrive className="h-6 w-6" />;
+                    break;
+                case "cloud":
+                    if (cloudType === CloudType.GoogleDrive) {
+                        icon = <FaGoogleDrive className="h-6 w-6" />;
+                    } else if (cloudType === CloudType.Dropbox) {
+                        icon = <FaDropbox className="h-6 w-6" />;
+                    } else if (cloudType === CloudType.OneDrive) {
+                        icon = <TbBrandOnedrive className="h-6 w-6" />;
+                    } else {
+                        icon = <HardDrive className="h-6 w-6" />;
+                    }
+                    break;
+                default:
+                    icon = <HardDrive className="h-6 w-6" />;
+                    break;
+            }
+        }
         const newStorageBox: StorageBoxData = {
             id: nextBoxId,
             title: title,
             type: type,
             icon: icon,
-            position: { x: 0, y: 0 },
+            position: { x: -position.x - 200, y: -position.y - 150 }, // open in the current view position, center to the screen...
             size: { width: 400, height: 300 },
             // zIndex: nextZIndexRef.current,
             cloudType: cloudType,
             accountId: accountId,
         };
         setStorageBoxes([...storageBoxes, newStorageBox]);
-        setNextBoxId(nextBoxId + 1);
         // setNextZIndex(nextZIndex + 1);
         // nextZIndexRef.current += 1;
         setShowStorageWindow(false); // Close the storage window after adding
@@ -156,6 +183,8 @@ const Dashboard = () => {
     };
 
     const bringToFront = useCallback((id: number) => {
+        // there can be better algorithm to handle z-index management TODO
+        // but now its fine i guess...
         // Skip if box is maximized
         if (maximizedBoxes.has(id)) return;
 
@@ -169,7 +198,7 @@ const Dashboard = () => {
             if (boxRef && boxRef.current) {
                 // Set higher z-index for clicked box, lower for others
                 boxRef?.current?.setStyle({
-                    zIndex: box.id === id ? newZIndex : (box.zIndex || 1) - 1,
+                    zIndex: box.id === id ? newZIndex : (box.zIndex ? (box.zIndex > 2 ? box.zIndex - 1 : 2) : 2),
                 });
             }
         });
@@ -192,17 +221,122 @@ const Dashboard = () => {
 
     const handleActionChange: React.Dispatch<React.SetStateAction<string>> = (newAction) => {
         if (newAction === "settings") {
-            setShowMcpTest(false);
             setShowStorageWindow(false);
             setDisabledAction(true)
         } else if (newAction === "transfers") {
-            setShowMcpTest(false);
             setShowStorageWindow(false);
             setDisabledAction(true)
         } else {
             setDisabledAction(false)
         }
         setAction(newAction);
+    };
+
+    // Helper function to position and highlight a storage box
+    const activateStorageBoxFromAgent = (storageBox: StorageBoxData, path?: string) => {
+        const boxRef = getRefForBox(storageBox.id);
+        if (!boxRef.current) return;
+        
+        // check if the box is in the screen 
+        const canvasRect = canvasVwpRef.current.getBoundingClientRect();
+        const boxPosition = boxRef.current.getCurrentState().position;
+        const boxSize = boxRef.current.getCurrentState().size;
+        
+        // get the possbile position range of the storage box that it can be so that it is in the viewport
+        const boxViewOffset = 20; // Offset to ensure the box is not too close to the edges
+        const left_boundary = -position.x - canvasRect.width / 2 + boxViewOffset;
+        const right_boundary = left_boundary + canvasRect.width - 2 * boxViewOffset;
+        const top_boundary = -position.y - canvasRect.height / 2 + boxViewOffset;
+        const bottom_boundary = top_boundary + canvasRect.height - 2 * boxViewOffset;
+
+        const isBoxInViewport = (
+            left_boundary < boxPosition.x && right_boundary > boxPosition.x + boxSize.width &&
+            top_boundary < boxPosition.y && bottom_boundary > boxPosition.y + boxSize.height
+        );
+
+        // If the box is not in the viewport, position it at a calculated offset
+        if (!isBoxInViewport) {
+            const offset = directionOffsets[offsetIndexRef.current];
+            offsetIndexRef.current = (offsetIndexRef.current + 1) % directionOffsets.length;
+
+            boxRef.current.setPosition({
+                x: -position.x + offset[0] * canvasRect.width / 5 - boxSize.width / 2,
+                y: -position.y + offset[1] * canvasRect.height / 5 - boxSize.height / 2
+            });
+        }
+        
+        bringToFront(storageBox.id);
+        boxRef.current.highlightBoxAnimation();
+        // get parent Folder path out of full path
+        if (path) {
+            const pathParts = path.split('/');
+            pathParts.pop(); // Remove the last part to get the parent folder
+            path = pathParts.join('/');
+        }
+        console.log(`Navigating to: ${path}`);
+        if (!path?.startsWith('/')) {
+            path = `/${path}`; // Ensure path starts with a slash
+        }
+        if (storageBox.type === "cloud") {
+            boxRef.current.setPath(`${CLOUD_HOME + (path || '')}`);
+        } else {
+            boxRef.current.setPath(path || '');
+        }
+    };
+
+    const agentOpenStorageBox = (provider: string | null, accountId: string | null, path?: string) => {
+        console.log("Opening storage box:", { provider, accountId, path });
+        console.log("Current position:", position);
+        if (!provider || !accountId) {
+            // local file system
+            let localBox = storageBoxesRef.current.find(box => box.type === "local");
+            
+            // Main logic
+            if (localBox) {
+                activateStorageBoxFromAgent(localBox, path);
+            } else {
+                addStorageBox("local", "Local Directory");
+                // wait 5 seconds to ensure the box is rendered before highlighting
+                setTimeout(() => {
+                    localBox = storageBoxesRef.current.find(box => box.type === "local");
+                    if (!localBox) return;
+                    activateStorageBoxFromAgent(localBox, path);
+                }, 1000); // Delay to ensure the box is rendered before highlighting
+                return;
+            }
+            return;
+        }
+        let cloudType: CloudType | undefined;
+        if (provider.toLowerCase().includes('google')) {
+            cloudType = CloudType.GoogleDrive;
+        } else if (provider.toLowerCase().includes('onedrive')) {
+            cloudType = CloudType.OneDrive;
+        } else if (provider.toLowerCase().includes('dropbox')) {
+            cloudType = CloudType.Dropbox;
+        } else {
+            console.warn("Unknown provider type:", provider);
+            return;
+        } 
+        // Implement logic to open the storage box in the UI
+        let storageBox = storageBoxesRef.current.find(box =>
+            box.cloudType === cloudType && box.accountId === accountId
+        );
+        
+        // Main logic
+        if (storageBox) {
+            activateStorageBoxFromAgent(storageBox, path);
+        } else {
+            addStorageBox("cloud", `${accountId}`, cloudType, accountId);
+            // wait 5 seconds to ensure the box is rendered before highlighting
+            setTimeout(() => {
+                storageBox = storageBoxesRef.current.find(box =>
+                    box.cloudType === cloudType && box.accountId === accountId
+                );
+                if (!storageBox) return;
+                activateStorageBoxFromAgent(storageBox, path);
+            }, 1000); // Delay to ensure the box is rendered before highlighting
+            return;
+        }
     };
 
 
@@ -212,13 +346,114 @@ const Dashboard = () => {
         dispatcher.register('openAccountWindow', addStorageBox);
         dispatcher.register('getFileOnRenderer', tempGetFile);
         dispatcher.register('postFileOnRenderer', tempPostFile);
+        dispatcher.register('openStorageBox', agentOpenStorageBox);
 
         return () => {
             dispatcher.unregister('openAccountWindow');
             dispatcher.unregister('getFileOnRenderer');
             dispatcher.unregister('postFileOnRenderer');
+            dispatcher.unregister('openStorageBox');
         };
     }, [tempPostFile, tempGetFile, addStorageBox]);
+
+    // Move the listener setup into a useEffect to properly handle state updates
+    useEffect(() => {
+        const layoutHandler = () => {
+            console.log("Requesting layout for Dashboard");
+            const currentState: DashboardState = {
+                scale: zoomLevel,  // Now this will have the current value
+                pan: position,
+                boxes: storageBoxesRef.current.map(box => {
+                    const boxRef = getRefForBox(box.id);
+                    const boxState = boxRef.current?.getCurrentState();
+                    return {
+                        id: box.id.toString(),
+                        title: box.title,
+                        type: box.type,
+                        position: boxState?.position || { x: -1, y: -1 },
+                        size: boxState?.size || { width: 400, height: 300 },
+                        zIndex: box.zIndex ?? 0,
+                        cloudType: box.cloudType ? String(box.cloudType) : undefined,
+                        accountId: box.accountId,
+                    };
+                }),
+            };
+            console.log("Current state:", currentState);
+            return currentState;
+        };
+
+        // Register the handler
+        (window as any).electronAPI.onRequestLayout(layoutHandler);
+
+
+        (window as any).electronAPI.onLoadSavedState((state: DashboardState | undefined) => {
+            if (!state) {
+                console.warn("No saved state found, initializing with default");
+                setZoomLevel(1);
+                setPosition({ x: 0, y: 0 });
+                setStorageBoxes([
+                    {
+                        id: 1,
+                        title: "Local Directory",
+                        type: "local",
+                        icon: <HardDrive className="h-6 w-6" />,
+                        position: { x: -250, y: -200 },
+                        size: { width: 400, height: 300 },
+                        zIndex: 1,
+                    }
+                ]);
+                return;
+            }
+            console.log("Loading saved state for Dashboard");
+            console.log("Loaded state:", state);
+            setZoomLevel(state.scale);
+            setPosition(state.pan);
+            if (state.boxes.length === 0) {
+                console.warn("No boxes found in saved state, initializing with default box");
+                setStorageBoxes([
+                    {
+                        id: 1,
+                        title: "Local Directory",
+                        type: "local",
+                        icon: <HardDrive className="h-6 w-6" />,
+                        position: { x: -250, y: -200 },
+                        size: { width: 400, height: 300 },
+                        zIndex: 1,
+                    }
+                ]);
+                return;
+            }
+            setStorageBoxes(state.boxes.map(box => {
+                let icon = <HardDrive className="h-6 w-6" />;
+                if (box.cloudType === CloudType.GoogleDrive) {
+                    icon = <FaGoogleDrive className="h-6 w-6" />;
+                } else if (box.cloudType === CloudType.Dropbox) {
+                    icon = <FaDropbox className="h-6 w-6" />;
+                } else if (box.cloudType === CloudType.OneDrive) {
+                    icon = <TbBrandOnedrive className="h-6 w-6" />;
+                }
+                return {
+                    id: parseInt(box.id, 10),
+                    title: box.title,
+                    type: box.type,
+                    position: box.position,
+                    size: box.size,
+                    zIndex: box.zIndex,
+                    cloudType: box.cloudType as CloudType | undefined,
+                    accountId: box.accountId,
+                    icon: icon,
+                };
+            }));
+        });
+
+        // Cleanup on unmount
+        return () => {
+            // Assuming you have a way to remove the listener
+            (window as any).electronAPI.removeRequestLayoutListener(layoutHandler);
+            (window as any).electronAPI.removeLoadSavedStateListener();
+        };
+    }, [zoomLevel, position]); // Add dependencies that should trigger updates
+
 
     return (
         <div className="flex flex-col h-screen bg-white dark:bg-gray-900 text-black dark:text-white">
@@ -248,26 +483,28 @@ const Dashboard = () => {
                     isHidden={action === "transfers"}
                     isTransferPanelOpen={action === "transfers"}
                 />
-                <ActionBar action={action} setAction={handleActionChange} toggleShowSideWindow={toggleShowSideWindow} toggleShowAgentWindow={toggleShowAgentWindow} />
+                <ActionBar action={action} setAction={handleActionChange} toggleShowSideWindow={toggleShowSideWindow} />
                 <BoxDragProvider>
                     <div className="relative flex flex-1">
                         <StorageSideWindow show={showStorageWindow} addStorage={addStorageBox} onAccountDeleted={closeStorageBoxesForAccount} />
                         <div className="relative flex flex-col flex-1">
-                            {action === "settings" ? (
+                            <div className={`absolute inset-0 ${action === "settings" ? 'block' : 'hidden'}`}>
                                 <SettingsPanel onAccountsCleared={handleAccountsCleared} />
-                            ) : action === "transfers" ? (
+                            </div>
+                            <div className={`absolute inset-0 ${action === "transfers" ? 'block' : 'hidden'}`}>
                                 <TransferDetailPanel 
                                     transfers={transferQueue.transfers}
                                     onCancelTransfer={handleCancelTransfer}
                                     onCloseTransfer={handleCloseTransfer}
                                     onRetryTransfer={handleRetryTransfer}
                                 />
-                            ) : canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
+                            </div>
+                            {canvasVwpSize.width > 0 && canvasVwpSize.height > 0 ? (
                                 <CanvasContainer
                                     zoomLevel={zoomLevel}
                                     setZoomLevel={setZoomLevel}
                                     isPanMode={isPanMode}
-                                    className="relative"
+                                    className={`absolute inset-0 ${action !== "settings" && action !== "transfers" ? 'block' : 'hidden'}`}
                                     position={position}
                                     setPosition={setPosition}
                                     boxMaximized={anyBoxMaximized}
@@ -293,13 +530,12 @@ const Dashboard = () => {
                                 </CanvasContainer>
                             ) : (
                                 <div className="flex-1 flex items-center justify-center">Loading canvas...</div>
-                            )}                      
-                             <AgentWindow show={showMcpTest} />
+                            )}     
+                            <AgentAction/>
                         </div>
                     </div>
                     <BoxDragPreview zoomLevel={zoomLevel} />
                 </BoxDragProvider>
-                
                 <UploadConfirmationDialog
                     isOpen={showUploadDialog}
                     onConfirm={handleUploadDialogConfirm}

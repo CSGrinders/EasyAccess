@@ -120,6 +120,13 @@ directory_tree
 {"path": "/", "provider": "onedrive", "accountId": "sohn5312@gmail.com"}
 {"path": "Users/hojinsohn/Documents/HWs"}
 
+----------------------------------------------------------------------------------------
+get_folder_info
+{"path": "/A52-photos", "provider": "google", "accountId": "sohn5312@gmail.com"}
+{"path": "/", "provider": "dropbox", "accountId": "sohn5312@gmail.com"}
+{"path": "/", "provider": "onedrive", "accountId": "sohn5312@gmail.com"}
+
+----------------------------------------------------------------------------------------
 Left to be implemented:
 read_file
 read_multiple_files

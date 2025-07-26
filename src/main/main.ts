@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, shell, ipcRenderer } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, ipcRenderer, dialog } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
+import Store from 'electron-store';
 import { config } from 'dotenv';
 import { connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getDirectoryTree, readFile, getItemInfo } from './cloud/cloudManager';
 import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteItemLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal } from './local/localFileSystem';
@@ -19,11 +20,122 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { PermissionManager } from './permissions/permissionManager';
 import { createFsServer } from './MCP/globalFsMcpServer';
 import { v4 as uuidv4 } from 'uuid';
+import { DashboardState } from '@Types/canvas';
+import http from 'http';
 import { transferManager } from './transfer/transferManager';
 import {progressCallbackData} from '../types/transfer';
 
+// Load environment variables
+// In development, load from project root; in production, load from app Contents directory
+const envPath = app.isPackaged 
+    ? path.join(path.dirname(app.getAppPath()), '..', '..', '.env')
+    : path.join(__dirname, '../../.env');
+
+console.log('Loading .env from:', envPath);
+config({ path: envPath });
+
+export const AppConfig = {
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_PUBLIC_KEY: process.env.GOOGLE_PUBLIC_KEY,
+    DROPBOX_KEY: process.env.DROPBOX_KEY,
+    MICROSOFT_CLIENT_ID: process.env.MICROSOFT_CLIENT_ID,
+    NODE_ENV: process.env.NODE_ENV || 'development',
+    AGENT_AUTH_REDIRECT_URL: process.env.AGENT_AUTH_REDIRECT_URL,
+    AGENT_AUTH_PORT: process.env.AGENT_AUTH_PORT || 8080 // Default port for agent auth
+}
+
+const store = new Store();
+
+// let mcpClient: MCPClient | null = null;
 let mcpClient: MCPClient | null = null;
 let mainWindow: BrowserWindow | null = null;
+
+ipcMain.handle('start-auth-server', async () => {
+    const code = await startAuthServer();
+    return code;
+});
+
+export const focusMainWindow = () => {
+    if (mainWindow) {
+        mainWindow.show();       
+        mainWindow.focus();       
+        mainWindow.setAlwaysOnTop(true); 
+        mainWindow.setAlwaysOnTop(false);
+    } else {
+        console.error("Main window is not available to focus.");
+    }
+};
+
+const startAuthServer = (): Promise<string> => {
+    return new Promise(async (resolve, reject) => {
+        const server = http.createServer((req, res) => {
+            if (req.url?.startsWith('/supabase/auth/callback')) {
+                console.log("Auth callback received:", req.url);
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                // Respond with a simple HTML page that will extract the tokens
+                // Redirect page to EasyAccess website? Currently, set to github.com
+                res.end(`
+                <html>
+                    <body>
+                    <script>
+                        const params = new URLSearchParams(window.location.hash.slice(1));
+                        const accessToken = params.get('access_token');
+                        const refreshToken = params.get('refresh_token');
+
+                        // Send to Electron (via postMessage or redirection)
+                        fetch('http://127.0.0.1:8080/token', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ accessToken, refreshToken })
+                        }).then(() => {
+                            window.location.replace("https://github.com/");
+                        });
+                    </script>
+                    </body>
+                </html>
+                `);
+            } else if (req.url === '/token' && req.method === 'POST') {
+                let body = '';
+                req.on('data', chunk => body += chunk);
+                req.on('end', () => {
+                    const data = JSON.parse(body);
+                    const { accessToken, refreshToken } = data;
+
+                    mainWindow?.webContents.send('agent-auth-token', { accessToken, refreshToken });
+
+                    // focus main window
+                    focusMainWindow();
+
+                    res.writeHead(200);
+                    res.end();
+                    server.close();
+                    resolve(accessToken || '');
+                });
+            } else {
+                res.writeHead(404);
+                res.end('Not Found');
+            }
+        });
+
+        // redirect URI for OAuth2...
+        server.listen(8080, () => {
+            console.log("Auth server listening on port 8080");
+        });
+
+        // Handle server errors
+        server.on('error', (error: any) => {
+            console.error("Auth server error:", error);
+        });
+
+        // Add timeout to prevent hanging
+        setTimeout(() => {
+            server.close();
+            reject(new Error('Authentication timeout - no response received'));
+        }, 300000); // 5 minute timeout
+    });
+}
+
+
 
 const setUpMCP = async () => {
     const mcpClient = new MCPClient();
@@ -62,6 +174,46 @@ const setUpMCP = async () => {
     return mcpClient;
 };
 
+const saveCurrentLayout = async () => {
+    /*
+    Save the current layout of the main window to a file.
+    current scale
+    current view position
+    storage boxes that are open
+    Each Storagebox:
+    - cloud type
+    - account id
+    - current path
+    - box position in canvas
+    - box size
+    */
+    return new Promise<void>((resolve, reject) => {
+        // Set up one-time listener for the response
+        const layoutResponseHandler = (event: Electron.IpcMainEvent, state: DashboardState) => {
+            ipcMain.removeListener('save-current-state', layoutResponseHandler);
+            try {
+                console.log('Saving current layout:', state.scale, state.pan, state.boxes);
+                store.set('savedAppState', state);
+                resolve();
+            } catch (error) {
+                reject(error);
+            }
+        };
+
+        // Register the one-time listener
+        ipcMain.once('save-current-state', layoutResponseHandler);
+
+        // Request layout from renderer
+        mainWindow?.webContents.send('request-current-state');
+
+        // Add timeout to prevent hanging
+        setTimeout(() => {
+            ipcMain.removeListener('save-current-state', layoutResponseHandler);
+            reject(new Error('Timeout waiting for layout save response'));
+        }, 5000);
+    });
+};
+
 const createWindow = async () => {
     const win = new BrowserWindow({
         width: 1200,
@@ -98,29 +250,62 @@ const createWindow = async () => {
     // load auth tokens from local storage
     loadStoredAccounts(); 
 
-    if (process.env.NODE_ENV === 'development') {
+    if (AppConfig.NODE_ENV === 'development') {
+        console.log("Development mode - loading from localhost");
         win.loadURL('http://localhost:3000').then(r => console.log("loaded"));
     } else {
+        console.log("Production mode - loading from index.html");
         win.loadFile(path.join(__dirname, '../index.html')).then(r => console.log("loaded"));
     }
-    
+
+    win.on('close', function (e) {
+        e.preventDefault(); // Prevent default close behavior
+        dialog.showMessageBox(win, {
+            type: 'question',
+            buttons: ['Yes', 'No'],
+            title: 'Confirm',
+            message: 'Are you sure you want to quit?',
+            checkboxLabel: 'Save current layout before closing?',
+            checkboxChecked: true
+        }).then(async (result) => {
+            if (result.response === 0) { // Yes
+                try {
+                    if (result.checkboxChecked) {
+                        console.log("Saving current layout before closing...");
+                        await saveCurrentLayout();
+                        console.log("Layout saved successfully");
+                    } else {
+                        console.log("Skipping layout save");
+                        console.log("Remove the savedAppState from store");
+                        store.delete('savedAppState'); // Remove saved state if not saving
+                    }
+                    win.destroy(); // Close the window
+                } catch (error) {
+                    console.error("Error saving layout:", error);
+                }
+            }
+        });
+    });
+
     win.once('ready-to-show', () => {
+        console.log('Window is ready to show');
+        // Load saved layout if available
+        const savedState = store.get('savedAppState') as DashboardState | undefined;
+        if (savedState) {
+            console.log(savedState.scale, savedState.pan, savedState.boxes);
+        }
+        win.webContents.send('load-saved-state', savedState);
         win.show()
         win.webContents.openDevTools({ mode: 'right' })
     })
 
     // Add IPC handler for MCP queries
-    ipcMain.handle('mcp-process-query', async (_e, query: string) => {
-        try {
-            if (!mcpClient) {
-                throw new Error('MCP client not initialized - insufficient permissions');
-            }
-            console.log("Processing MCP query:", query);
-            return await mcpClient.processQuery(query);
-        } catch (error) {
-            console.error("Error in MCP query:", error);
-            throw error;
+    ipcMain.handle('mcp-process-query', async (_e, query: string, access_token: string) => {
+        if (!mcpClient) {
+            throw new Error('MCP client not initialized - insufficient permissions');
         }
+        console.log("Processing MCP query:", query);
+        return await mcpClient.processQuery(query, access_token);
     });
 };
 
@@ -314,66 +499,7 @@ ipcMain.handle('get-mcp-status', async (_e) => {
 });
 
 
-/**
- * Recursively calculates the total size of a directory.
- * This version calculates size based on blocks allocated on disk.
- */
-async function calculateDirectorySize(
-    dirPath: string, 
-    processedInodes: Set<string> = new Set(),
-    depth: number = 0
-): Promise<number> {
 
-    // Prevent infinite recursion 
-    if (depth > 100) {
-        console.warn(`Max recursion depth reached at ${dirPath}`);
-        return 0;
-    }
-
-    let stats;
-    try {
-        // Use lstat to get file info without following symlinks.
-        stats = await fs.promises.lstat(dirPath);
-    } catch (error: any) {
-        if (error.code !== 'ENOENT' && error.code !== 'EPERM' && error.code !== 'EACCES') {
-            console.warn(`Cannot lstat ${dirPath}: ${error.code}`);
-        }
-        return 0;
-    }
-
-    //  if we've seen this inode, don't count it again.
-    const inodeKey = `${stats.dev}-${stats.ino}`;
-    if (processedInodes.has(inodeKey)) {
-        return 0;
-    }
-    processedInodes.add(inodeKey);
-
-    // If it's a directory, sum the sizes of its children recursively.
-    // If it's a file, return its allocated size on disk.
-    if (stats.isDirectory()) {
-        let totalSize = 0;
-        try {
-            const items = await fs.promises.readdir(dirPath, { withFileTypes: true });
-            
-            // Use Promise.all for concurrent recursion.
-            const childSizes = await Promise.all(items.map(item => {
-                const itemPath = path.join(dirPath, item.name);
-                return calculateDirectorySize(itemPath, processedInodes, depth + 1);
-            }));
-
-            totalSize = childSizes.reduce((sum, size) => sum + size, 0);
-
-        } catch (error: any) {
-            if (error.code !== 'EPERM' && error.code !== 'EACCES') {
-                console.warn(`Cannot read directory ${dirPath}: ${error.code}`);
-            }
-        }
-        return totalSize;
-    }
-
-    // For files and symlinks, return their allocated size.
-    return (stats.blocks || 0) * 512;
-}
 
 ipcMain.handle('read-directory', async (_e, dirPath: string) => {
     return await readDirectoryLocal(dirPath);
@@ -500,6 +626,10 @@ export async function triggerRefreshAgentMessage(text: string) {
     return await invokeRendererFunction('refreshAgentMessage', text);
 }
 
+export async function triggerSendTextDelta(delta: string) {
+    return await invokeRendererFunction('sendTextDeltaMessage', delta);
+}
+
 export async function triggerOpenAccountWindow(type: string, title: string, icon?: React.ReactNode, cloudType?: CloudType, accountId?: string) {
     return await invokeRendererFunction('openAccountWindow', type, title, icon, cloudType, accountId);
 }
@@ -513,6 +643,10 @@ export async function triggerGetFileOnRenderer(filePaths: string[], cloudType?: 
     return await invokeRendererFunction('getFileOnRenderer', filePaths, cloudType, accountId, showProgress);
 }
 
+export async function triggerRequestClarification(question: string) {
+    return await invokeRendererFunction('requestClarification', question);
+}
+
 // tempPostFile: (parentPath: string, cloudType?: CloudType, accountId?: string) => Promise<void>;
 export async function triggerPostFileOnRenderer(parentPath: string, cloudType?: CloudType, accountId?: string, fileName?: string) {
     return await invokeRendererFunction('postFileOnRenderer', parentPath, cloudType, accountId, fileName);
@@ -520,6 +654,107 @@ export async function triggerPostFileOnRenderer(parentPath: string, cloudType?: 
 
 export async function triggerChangeDirectoryOnAccountWindow(dir: string, cloudType?: CloudType, accountId?: string | undefined) {
     return await invokeRendererFunction('changeDirectoryOnAccountWindow', dir, cloudType, accountId);
+}
+
+export async function triggerAgentWorkStop(reason: string) {
+    return await invokeRendererFunction('agentWorkStop', reason);
+}
+
+// prevent hang on the renderer
+export async function triggerGracefulClose() {
+    return await invokeRendererFunction('gracefulClose');
+}
+
+export async function triggerToolResultMessage(toolName: string, toolArgs: any, resultContent: any, isError: boolean) {
+    // implement rendering the tool result in readable format
+    console.log("Triggering tool result message:", toolName, toolArgs, resultContent, isError);
+    if (isError) {
+        return await invokeRendererFunction('toolResultMessage', "Something went wrong while processing the request...");
+    }
+    let message: string;
+
+    if (toolArgs.provider && toolArgs.provider !== "local" && toolArgs.accountId) {
+        message = `<tool_header><provider>${toolArgs.provider}</provider>\t<accountId>${toolArgs.accountId}</accountId></tool_header>`;
+    } else {
+        message = `<tool_header>Local file system</tool_header>`;
+    }
+    switch (toolName) {
+        case "read_file":
+            message += `\nRead a file at "${toolArgs.path}".`;
+            break;
+
+        case "read_multiple_files":
+            message += `\nRead files: ${
+                Array.isArray(toolArgs.paths) ? toolArgs.paths.join(", ") : ""
+            }.`;
+            break;
+
+        case "write_file":
+            message += `\nWrote content to "${toolArgs.path}".`;
+            break;
+
+        case "create_directory":
+            message += `\nCreated a directory at "${toolArgs.path}".`;
+            break;
+
+        case "list_directory":
+            message += `\nContents under "${toolArgs.path}":\n${resultContent.map((item: any) => item.text).join("\n")}.`;
+            break;
+
+        case "directory_tree":
+            message += `\nDirectory tree for "${toolArgs.path}":\n${resultContent.map((item: any) => item.text).join("\n")}.`;
+            break;
+
+        case "move_file":
+            message += `\nStarted moving a file from "${toolArgs.source}" to "${toolArgs.destination}".`;
+            break;
+
+        case "search_files":
+            message += `\nSearch "${toolArgs.path}" for "${toolArgs.patterns}":\n${resultContent.map((item: any) => item.text).join("\n")}`;
+            break;
+
+        case "get_file_info":
+            message += `Get file info for "${toolArgs.path}".\nDetails:\n${resultContent.map((item: any) => item.text).join("\n")}`;
+            break;
+
+        case "get_folder_info":
+            message += `Get folder info for "${toolArgs.path}".\nDetails:\n${resultContent.map((item: any) => item.text).join("\n")}`;
+            break;
+
+        case "list_allowed_directories":
+            message += `${resultContent.map((item: any) => item.text).join("\n")}`;
+            break;
+
+        case "list_connected_cloud_accounts":
+            message = `Connected cloud accounts for "${toolArgs.provider}":\n${resultContent.map((item: any) => item.text).join("\n")}`;
+            break;
+
+        case "get_information_from_user":
+            message = `${toolArgs.question}\n • ${resultContent.map((item: any) => item.text).join("\n")}`;
+            break;
+
+        default:
+            message += `Attempted to handle an unknown tool: "${toolName}".`;
+            break;
+    }
+
+    await invokeRendererFunction('toolResultMessage', message);
+
+    if (toolArgs.provider && toolArgs.provider !== "local" && toolArgs.accountId) {
+        // display corresponding storage box in the canvas
+        console.log(`Displaying storage box for provider: ${toolArgs.provider}, accountId: ${toolArgs.accountId}`);
+        // You can implement logic to open or focus the corresponding storage box in the canvas here
+        // For example, you might send a message to the renderer to open or focus the box
+        await invokeRendererFunction('openStorageBox', 
+            toolArgs.provider,
+            toolArgs.accountId,
+            toolArgs.path || "/"
+        );
+    } else if (toolArgs.path) {
+        // If it's a local file system operation, open the local storage box
+        console.log(`Displaying local storage box for path: ${toolArgs.path}`);
+        await invokeRendererFunction('openStorageBox', 'local', null, toolArgs.path);
+    }
 }
 
 // Handler for creating new directories in local file system

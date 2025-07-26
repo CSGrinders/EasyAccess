@@ -17,10 +17,9 @@ interface ActionBarProps {
     action: string                                              // Current active action/page
     setAction: React.Dispatch<React.SetStateAction<string>>     // Function to change the current action/page
     toggleShowSideWindow: () => void                            // Function to toggle the storage side window
-    toggleShowAgentWindow: () => void                           // Function to toggle the AI agent window
 }
 
-const ActionBar = ({action, setAction, toggleShowSideWindow, toggleShowAgentWindow}: ActionBarProps) => {
+const ActionBar = ({action, setAction, toggleShowSideWindow}: ActionBarProps) => {
 
     return (
         <>
@@ -85,18 +84,6 @@ const ActionBar = ({action, setAction, toggleShowSideWindow, toggleShowAgentWind
                             </>
                         )}
                     </div>
-
-
-
-                        {/* Button to open AI chat, only works on main page */}
-                        <Button onClick={() => toggleShowAgentWindow()}
-                            variant="outline"
-                            disabled={action !== "dashboard"}
-                            size="icon"
-                            className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-200 hover:border-blue-300 dark:hover:border-blue-700"
-                            >
-                            <Brain className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                        </Button>
                 </div>
 
                 {/* App version number at the bottom */}

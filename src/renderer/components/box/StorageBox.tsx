@@ -87,9 +87,7 @@ function StorageBoxInner({
                              tempGetFile,       // Function to download files
                              handleBoxFileTransfer, // Function to handle box file transfer with confirmation first
                          }: StorageBoxProps, 
-                         ref: React.Ref<{
-                            callDoRefresh: (silent?: boolean) => void; 
-                                }>
+                         ref: React.Ref<{}>
                         ) {
 
     /** Get the basic info from the box data */
@@ -143,6 +141,7 @@ function StorageBoxInner({
      */
     const nextRefreshSilentRef = useRef(false);
 
+    const fileExplorerRef = React.createRef<any>();
 
     /** 
      * Function to refresh the file list
@@ -167,6 +166,70 @@ function StorageBoxInner({
                 Object.assign(boxRef.current.style, style);
             }
         },
+        getCurrentState: () => {
+            return {
+                position: positionRef.current,
+                size: sizeRef.current,
+                currentPath: currentPath,
+                isMaximized: isMaximized,
+            };
+        },
+        // used by dashboard.tsx to set the position of the box (invoked when agent worked on it)
+        setPosition: (newPosition: {x: number, y: number}) => {
+            if (boxRef.current) {
+                positionRef.current = newPosition;
+                boxRef.current.style.transform = `translate3d(${newPosition.x}px, ${newPosition.y}px, 0)`;
+            }
+        },
+
+        setPath: (newPath: string) => {
+            if (boxRef.current) {
+                setCurrentPath(newPath);
+                if (fileExplorerRef.current) {
+                    fileExplorerRef.current.updatePath(newPath);
+                }
+            }
+        },
+
+        // Highlight the box with a pulsing animation
+        // used when storage box is moved to current view position by Agent
+        highlightBoxAnimation: (duration: number = 400) => {
+            if (boxRef.current) {
+                const element = boxRef.current;
+                
+                // Add CSS class for smooth pulsing animation
+                const style = document.createElement('style');
+                style.textContent = `
+                    @keyframes pulseGlow {
+                        0%, 100% { 
+                            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5), 
+                                        0 0 20px rgba(59, 130, 246, 0.3),
+                                        0 0 40px rgba(59, 130, 246, 0.1); 
+                        }
+                        50% { 
+                            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.8), 
+                                        0 0 30px rgba(59, 130, 246, 0.5),
+                                        0 0 60px rgba(59, 130, 246, 0.2); 
+                        }
+                    }
+                    .highlight-pulse {
+                        animation: pulseGlow ${duration}ms ease-in-out;
+                        border-radius: 8px;
+                    }
+                `;
+                
+                if (!document.head.querySelector('#highlight-styles')) {
+                    style.id = 'highlight-styles';
+                    document.head.appendChild(style);
+                }
+                
+                element.classList.add('highlight-pulse');
+                
+                setTimeout(() => {
+                    element.classList.remove('highlight-pulse');
+                }, duration);
+            }
+        }
     }));
 
     /** Update the current folder path when user navigates */
@@ -815,6 +878,7 @@ function StorageBoxInner({
                 {type == "local" ? (
                     /* Local file explorer */
                     <FileExplorer 
+                        ref={fileExplorerRef}
                         zoomLevel={canvasZoom} 
                         tempGetFile={tempGetFile} 
                         tempPostFile={tempPostFile} 
@@ -827,6 +891,7 @@ function StorageBoxInner({
                 ) : (
                     /* Cloud file explorer */
                     <FileExplorer 
+                        ref={fileExplorerRef}
                         zoomLevel={canvasZoom} 
                         cloudType={box.cloudType} 
                         accountId={box.accountId} 

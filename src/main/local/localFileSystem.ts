@@ -324,3 +324,91 @@ export const createDirectoryLocal = async (dirPath: string) => {
         throw error; 
     }
 }
+
+export async function getDirectoryInfoLocal(dirPath: string): Promise<FileSystemItem> {
+    const permissionManager = PermissionManager.getInstance();
+
+    // Check if we have permission for this path
+    if (!permissionManager.hasPermissionForPath(dirPath)) {
+        throw new Error(`Access denied to ${dirPath}. Insufficient permissions.`);
+    }
+
+    try {
+        const dirSize = await calculateDirectorySize(dirPath);
+        const stats = await fs.promises.stat(dirPath);
+        return {
+            id: "--", // ID is not used for directories
+            name: path.basename(dirPath),
+            path: dirPath,
+            isDirectory: true,
+            size: dirSize,
+            modifiedTime: stats.mtimeMs,
+        };
+    } catch (error: any) {
+        if (error.code !== 'EPERM' && error.code !== 'EACCES') {
+            console.error('Error reading directory:', error);
+        }
+        throw error;
+    }
+}
+
+/**
+ * Recursively calculates the total size of a directory.
+ * This version calculates size based on blocks allocated on disk.
+ */
+export async function calculateDirectorySize(
+    dirPath: string, 
+    processedInodes: Set<string> = new Set(),
+    depth: number = 0
+): Promise<number> {
+
+    // Prevent infinite recursion 
+    if (depth > 100) {
+        console.warn(`Max recursion depth reached at ${dirPath}`);
+        return 0;
+    }
+
+    let stats;
+    try {
+        // Use lstat to get file info without following symlinks.
+        stats = await fs.promises.lstat(dirPath);
+    } catch (error: any) {
+        if (error.code !== 'ENOENT' && error.code !== 'EPERM' && error.code !== 'EACCES') {
+            console.warn(`Cannot lstat ${dirPath}: ${error.code}`);
+        }
+        return 0;
+    }
+
+    //  if we've seen this inode, don't count it again.
+    const inodeKey = `${stats.dev}-${stats.ino}`;
+    if (processedInodes.has(inodeKey)) {
+        return 0;
+    }
+    processedInodes.add(inodeKey);
+
+    // If it's a directory, sum the sizes of its children recursively.
+    // If it's a file, return its allocated size on disk.
+    if (stats.isDirectory()) {
+        let totalSize = 0;
+        try {
+            const items = await fs.promises.readdir(dirPath, { withFileTypes: true });
+            
+            // Use Promise.all for concurrent recursion.
+            const childSizes = await Promise.all(items.map(item => {
+                const itemPath = path.join(dirPath, item.name);
+                return calculateDirectorySize(itemPath, processedInodes, depth + 1);
+            }));
+
+            totalSize = childSizes.reduce((sum, size) => sum + size, 0);
+
+        } catch (error: any) {
+            if (error.code !== 'EPERM' && error.code !== 'EACCES') {
+                console.warn(`Cannot read directory ${dirPath}: ${error.code}`);
+            }
+        }
+        return totalSize;
+    }
+
+    // For files and symlinks, return their allocated size.
+    return (stats.blocks || 0) * 512;
+}
