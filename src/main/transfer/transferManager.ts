@@ -48,46 +48,94 @@ class ProgressCallbackScheduler {
         lastData: progressCallbackData, 
         lastUpdate: number,
         isActive: boolean,
-        priority: number // Higher priority transfers get shown more often
+        priority: number,
+        firstSeen: number,
+        isError: boolean,
+        errorDisplayTime?: number
     }>();
     private currentActiveTransfer: string | null = null;
-    private displayDuration: number; // Configurable display duration per transfer
+    private displayDuration: number;
+    private minDisplayTime: number;
+    private errorDisplayDuration: number; 
     private lastSwitch = 0;
     private originalCallback: (data: progressCallbackData) => void;
+    private stabilizationPeriod: number;
     
-    constructor(originalCallback: (data: progressCallbackData) => void, displayDurationMs: number = 3000) {
+    constructor(originalCallback: (data: progressCallbackData) => void, displayDurationMs: number = 3000, minDisplayTimeMs: number = 1500) {
         this.originalCallback = originalCallback;
         this.displayDuration = displayDurationMs;
+        this.minDisplayTime = minDisplayTimeMs;
+        this.errorDisplayDuration = 5000; 
+        this.stabilizationPeriod = 2000;
     }
     
     updateProgress(data: progressCallbackData) {
         const now = Date.now();
         const transferKey = `${data.transferId}-${data.sourcePath}-${data.fileName}`;
         
-        // Calculate priority based on transfer 
-        let priority = 1;
-        if (data.isDirectory) priority += 2; // Directories get higher priority
-        if (data.total > 100 * 1024 * 1024) priority += 1; // Large files get higher priority
-        if (data.transfered / data.total > 0.8) priority += 1; // Nearly complete transfers get higher priority
+        // Check if this is an error
+        const isError = !!data.errorItemDirectory;
+        
+        // Calculate priority based on transfer state
+        let priority = this.calculatePriority(data);
+        
+        const existingTransfer = this.activeTransfers.get(transferKey);
+        const firstSeen = existingTransfer?.firstSeen || now;
         
         // Update the transfer data
         this.activeTransfers.set(transferKey, {
             lastData: data,
             lastUpdate: now,
             isActive: true,
-            priority
+            priority,
+            firstSeen,
+            isError,
+            errorDisplayTime: isError ? now : existingTransfer?.errorDisplayTime
         });
         
-        // Clean up finished transfers
         this.cleanupFinishedTransfers(now);
         
         this.scheduleDisplay(now);
     }
     
+    private calculatePriority(data: progressCallbackData): number {
+        let priority = 1;
+        
+        // Errors get highest priority
+        if (data.errorItemDirectory) priority += 10;
+        
+        // Base priority adjustments
+        if (data.isDirectory) priority += 2;
+        if (data.total > 100 * 1024 * 1024) priority += 1; // Large files
+        
+        // Progress priority
+        const progressRatio = data.total > 0 ? data.transfered / data.total : 0;
+        if (progressRatio > 0.8) priority += 2; // Nearly complete
+        else if (progressRatio > 0.5) priority += 1; // Half complete
+        
+        // Stated priority
+        if (data.isFetching) priority += 1; // Active operations
+        
+        return priority;
+    }
+    
     private cleanupFinishedTransfers(now: number) {
-        const timeout = 10000; 
+        const timeout = 15000;
         for (const [key, transfer] of this.activeTransfers.entries()) {
+            let shouldRemove = false;
+            
+            // Remove transfers that haven't been updated in a while
             if (now - transfer.lastUpdate > timeout) {
+                shouldRemove = true;
+            }
+            
+            // Remove errors after they've been displayed for the error duration
+            if (transfer.isError && transfer.errorDisplayTime && 
+                (now - transfer.errorDisplayTime) > this.errorDisplayDuration) {
+                shouldRemove = true;
+            }
+            
+            if (shouldRemove) {
                 this.activeTransfers.delete(key);
                 if (this.currentActiveTransfer === key) {
                     this.currentActiveTransfer = null;
@@ -97,16 +145,7 @@ class ProgressCallbackScheduler {
     }
     
     private scheduleDisplay(now: number) {
-        const activeTransferKeys = Array.from(this.activeTransfers.keys())
-            .sort((a, b) => {
-                const transferA = this.activeTransfers.get(a)!;
-                const transferB = this.activeTransfers.get(b)!;
-                // Sort by priority first, then by last update
-                if (transferA.priority !== transferB.priority) {
-                    return transferB.priority - transferA.priority;
-                }
-                return transferB.lastUpdate - transferA.lastUpdate;
-            });
+        const activeTransferKeys = this.getEligibleTransfers(now);
         
         if (activeTransferKeys.length === 0) {
             return;
@@ -114,26 +153,147 @@ class ProgressCallbackScheduler {
         
         // If only one transfer, always show it
         if (activeTransferKeys.length === 1) {
-            this.currentActiveTransfer = activeTransferKeys[0];
-            this.lastSwitch = now;
-        }
-        // If no active transfer or it's time to switch
-        else if (!this.currentActiveTransfer || 
-                 !this.activeTransfers.has(this.currentActiveTransfer) ||
-                 (now - this.lastSwitch >= this.displayDuration)) {
-            
-            // Find next transfer in round-robin fashion
-            let nextIndex = 0;
-            if (this.currentActiveTransfer) {
-                const currentIndex = activeTransferKeys.indexOf(this.currentActiveTransfer);
-                nextIndex = (currentIndex + 1) % activeTransferKeys.length;
-            }
-            
-            this.currentActiveTransfer = activeTransferKeys[nextIndex];
-            this.lastSwitch = now;
+            this.setCurrentTransfer(activeTransferKeys[0], now);
+            this.sendCurrentProgress();
+            return;
         }
         
-        // Send the progress update for the currently active transfer
+        // Check if we should switch transfers
+        const shouldSwitch = this.shouldSwitchTransfer(now, activeTransferKeys);
+        
+        if (shouldSwitch) {
+            const nextTransfer = this.selectNextTransfer(activeTransferKeys);
+            this.setCurrentTransfer(nextTransfer, now);
+        }
+        
+        this.sendCurrentProgress();
+    }
+    
+    private getEligibleTransfers(now: number): string[] {
+        return Array.from(this.activeTransfers.entries())
+            .filter(([key, transfer]) => {
+                // Always show errors immediately
+                if (transfer.isError) {
+                    // But only if they haven't exceeded their display time
+                    if (transfer.errorDisplayTime && 
+                        (now - transfer.errorDisplayTime) <= this.errorDisplayDuration) {
+                        return true;
+                    }
+                    return false;
+                }
+                
+                // For non-errors, apply stabilization period
+                const isStabilized = (now - transfer.firstSeen) >= this.stabilizationPeriod;
+                const isComplete = transfer.lastData.transfered === transfer.lastData.total && transfer.lastData.total > 0;
+                
+                return isStabilized || isComplete;
+            })
+            .sort((a, b) => {
+                const transferA = a[1];
+                const transferB = b[1];
+                
+                // Errors always come first
+                if (transferA.isError && !transferB.isError) return -1;
+                if (!transferA.isError && transferB.isError) return 1;
+                
+                // Sort by priority first, then by age
+                if (transferA.priority !== transferB.priority) {
+                    return transferB.priority - transferA.priority;
+                }
+                return transferA.firstSeen - transferB.firstSeen;
+            })
+            .map(([key]) => key);
+    }
+    
+    private shouldSwitchTransfer(now: number, eligibleTransfers: string[]): boolean {
+        // No current transfer
+        if (!this.currentActiveTransfer) {
+            return true;
+        }
+        
+        // Current transfer no longer exists
+        if (!this.activeTransfers.has(this.currentActiveTransfer)) {
+            return true;
+        }
+        
+        // Current transfer not in eligible list
+        if (!eligibleTransfers.includes(this.currentActiveTransfer)) {
+            return true;
+        }
+        
+        const currentTransfer = this.activeTransfers.get(this.currentActiveTransfer)!;
+        
+        // If there's an error transfer available and current is not an error, switch immediately
+        const hasErrorTransfer = eligibleTransfers.some(key => {
+            const transfer = this.activeTransfers.get(key);
+            return transfer?.isError;
+        });
+        
+        if (hasErrorTransfer && !currentTransfer.isError) {
+            return true;
+        }
+        
+        // If current transfer is an error, keep showing it for the full error duration
+        if (currentTransfer.isError) {
+            if (currentTransfer.errorDisplayTime && 
+                (now - currentTransfer.errorDisplayTime) >= this.errorDisplayDuration) {
+                return true;
+            }
+            return false; // Keep showing error
+        }
+        
+        // Respect minimum display time for regular transfers
+        if ((now - this.lastSwitch) < this.minDisplayTime) {
+            return false;
+        }
+        
+        // Check if it's time to switch based on display duration
+        if ((now - this.lastSwitch) >= this.displayDuration) {
+            return true;
+        }
+        
+        // Check if a much higher priority transfer is available
+        const highestPriorityTransfer = this.activeTransfers.get(eligibleTransfers[0]);
+        
+        if (highestPriorityTransfer && 
+            highestPriorityTransfer.priority > currentTransfer.priority + 2 &&
+            (now - this.lastSwitch) >= this.minDisplayTime) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    private selectNextTransfer(eligibleTransfers: string[]): string {
+        // Always prioritize errors first
+        const errorTransfer = eligibleTransfers.find(key => {
+            const transfer = this.activeTransfers.get(key);
+            return transfer?.isError;
+        });
+        
+        if (errorTransfer) {
+            return errorTransfer;
+        }
+        
+        // If current transfer is still eligible and not an error, find the next one in round-robin
+        if (this.currentActiveTransfer && eligibleTransfers.includes(this.currentActiveTransfer)) {
+            const currentIndex = eligibleTransfers.indexOf(this.currentActiveTransfer);
+            const nextIndex = (currentIndex + 1) % eligibleTransfers.length;
+            return eligibleTransfers[nextIndex];
+        }
+        
+        // Otherwise, return the highest priority transfer
+        return eligibleTransfers[0];
+    }
+    
+    private setCurrentTransfer(transferKey: string, now: number) {
+        if (this.currentActiveTransfer !== transferKey) {
+            this.currentActiveTransfer = transferKey;
+            this.lastSwitch = now;
+        }
+    }
+    
+    private sendCurrentProgress() {
         if (this.currentActiveTransfer) {
             const activeTransfer = this.activeTransfers.get(this.currentActiveTransfer);
             if (activeTransfer) {
