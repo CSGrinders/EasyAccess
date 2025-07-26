@@ -3,10 +3,18 @@ import * as path from 'path'
 import * as fs from 'fs'
 import Store from 'electron-store';
 import { config } from 'dotenv';
-import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getFileInfo, getDirectoryTree, readFile } from './cloud/cloudManager';
-import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal, calculateDirectorySize } from './local/localFileSystem';
-import { CloudType } from "@Types/cloudType";
-import { FileContent, FileSystemItem } from '@Types/fileSystem';
+import { connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getDirectoryTree, readFile, getItemInfo } from './cloud/cloudManager';
+import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteItemLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal } from './local/localFileSystem';
+// Load environment variables
+// In development, load from project root; in production, load from app Contents directory
+const envPath = app.isPackaged 
+    ? path.join(path.dirname(app.getPath('exe')), '..', '.env')
+    : path.join(__dirname, '../../.env');
+
+console.log('Loading .env from:', envPath);
+config({ path: envPath });
+import { CloudType } from "../types/cloudType";
+import { FileContent, FileSystemItem } from '../types/fileSystem';
 import MCPClient from './MCP/mcpClient';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { PermissionManager } from './permissions/permissionManager';
@@ -14,6 +22,8 @@ import { createFsServer } from './MCP/globalFsMcpServer';
 import { v4 as uuidv4 } from 'uuid';
 import { DashboardState } from '@Types/canvas';
 import http from 'http';
+import { transferManager } from './transfer/transferManager';
+import {progressCallbackData} from '../types/transfer';
 
 // Load environment variables
 // In development, load from project root; in production, load from app Contents directory
@@ -312,14 +322,105 @@ ipcMain.handle('get-connected-cloud-accounts', async (_e, cloudType: CloudType) 
 ipcMain.handle('cloud-read-directory', async (_e, cloudType: CloudType, accountId: string, dir: string) => {
     return readDirectory(cloudType, accountId, dir);
 });
-ipcMain.handle('cloud-get-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
-    return getFile(cloudType, accountId, filePath);
+
+// Map to store active download abort controllers by transfer ID
+const activeDownloads = new Map<string, AbortController>();
+
+ipcMain.handle('cloud-get-file', async (event, cloudType: CloudType, accountId: string, filePath: string, transferId?: string) => {
+    // Create abort controller for this download if transferId is provided
+    let abortController: AbortController | undefined;
+    if (transferId) {
+        abortController = new AbortController();
+        activeDownloads.set(transferId, abortController);
+    }
+    
+    // Create progress callback that sends updates to renderer
+    const progressCallback = (downloaded: number, total: number) => {
+        const fileName = filePath.split('/').pop() || filePath; 
+        console.log('Main process sending download progress:', { fileName, downloaded, total });
+        event.sender.send('cloud-download-progress', { fileName, downloaded, total });
+    };
+    
+    try {
+        const result = await getFile(cloudType, accountId, filePath, progressCallback, abortController?.signal);
+        return result;
+    } finally {
+        // Clean up abort controller
+        if (transferId) {
+            activeDownloads.delete(transferId);
+        }
+    }
 });
-ipcMain.handle('cloud-post-file', async (_e, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer | any) => {
-    // Ensure data is a Buffer (handle IPC serialization issues)
-    const bufferData = Buffer.isBuffer(data) ? data : Buffer.from(data.data || data);
-    return postFile(cloudType, accountId, fileName, folderPath, bufferData);
+
+
+// ipcMain.handle('cloud-post-file', async (event, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer | any, transferId?: string) => {
+//     // Ensure data is a Buffer (handle IPC serialization issues)
+//     const bufferData = Buffer.isBuffer(data) ? data : Buffer.from(data.data || data);
+    
+//     // Create abort controller for this upload if transferId is provided
+//     let abortController: AbortController | undefined;
+//     if (transferId) {
+//         abortController = new AbortController();
+//         activeUploads.set(transferId, abortController);
+//     }
+    
+//     // Create progress callback that sends updates to renderer
+//     const progressCallback = (uploaded: number, total: number) => {
+//         console.log('Main process sending upload progress:', { fileName, uploaded, total });
+//         event.sender.send('cloud-upload-progress', { fileName, uploaded, total });
+//     };
+    
+//     try {
+//         const result = await postFile(cloudType, accountId, fileName, folderPath, bufferData, progressCallback, abortController?.signal);
+//         return result;
+//     } finally {
+//         // Clean up abort controller
+//         if (transferId) {
+//             activeUploads.delete(transferId);
+//         }
+//     }
+// });
+
+
+
+// Map to store active upload abort controllers by transfer ID
+const activeTransfer = new Map<string, AbortController>();
+
+// Transfer Operations 
+ipcMain.handle('transfer-manager', async (event, transferInfo: any) => { 
+    let abortController: AbortController | undefined;
+    if (transferInfo.transferId) {
+        abortController = new AbortController();
+        activeTransfer.set(transferInfo.transferId, abortController);
+    }
+    // Create progress callback that sends updates to renderer
+    const progressCallback = (data: progressCallbackData) => {
+        console.log('Main process sending download progress:', data);
+        event.sender.send('transfer-progress', data);
+    };
+    
+    try {
+        return transferManager(transferInfo, progressCallback, abortController?.signal);
+    } finally {
+        // Clean up abort controller
+        if (transferInfo.transferId) {
+            activeDownloads.delete(transferInfo.transferId);
+        }
+    }
 });
+
+ipcMain.handle('transfer-cancel', async (_e, transferId: string) => {
+    const abortController = activeTransfer.get(transferId);
+    if (abortController) {
+        abortController.abort();
+        activeTransfer.delete(transferId);
+        return true;
+    }
+    return false;
+});
+
+
+
 ipcMain.handle('cloud-delete-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return deleteFile(cloudType, accountId, filePath);
 });
@@ -329,8 +430,8 @@ ipcMain.handle('cloud-calculate-folder-size', async (_e, cloudType: CloudType, a
 ipcMain.handle('cloud-create-directory', async (_e, cloudType: CloudType, accountId: string, dirPath: string) => {
     return createDirectory(cloudType, accountId, dirPath);
 });
-ipcMain.handle('cloud-get-file-info', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
-    return getFileInfo(cloudType, accountId, filePath);
+ipcMain.handle('cloud-get-item-info', async (_e, cloudType: CloudType, accountId: string, itemPath: string) => {
+    return getItemInfo(cloudType, accountId, itemPath);
 });
 ipcMain.handle('cloud-get-directory-tree', async (_e, cloudType: CloudType, accountId: string, dirPath: string) => {
     return getDirectoryTree(cloudType, accountId, dirPath);
@@ -451,7 +552,7 @@ ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, dat
 });
 
 ipcMain.handle('delete-file', async (_e, filePath: string)  => {
-    return await deleteFileLocal(filePath);
+    return await deleteItemLocal(filePath);
 });
 
 ipcMain.handle('mcp-process-query-test', (_e, toolName, toolArgs) => {

@@ -3,42 +3,54 @@
  * Handles transfer state, progress tracking, and error handling
  */
 
+import { CloudType } from "./cloudType";
+
 /**
  * Represents a single file transfer operation with progress tracking and error handling
  */
 export interface TransferItem {
   /** Unique identifier for the transfer operation */
   id: string;
-  /** Total number of items to be transferred */
-  itemCount: number;
   /** Name of the currently processing item */
-  currentItem: string;
+  currentItem?: string;
   /** Transfer progress as a percentage (0-100) */
-  progress: number;
+  progress?: number;
+  /** Directory Name */
+  directoryName?: string;
+  /** Transfer current item is from directory **/
+  isCurrentDirectory?: boolean;
+  /** Get the transfer status */
+  status: "completed" | "fetching" | "cancelled" | "uploading" | "downloading" | "moving" | "copying" | "error";
   /** Error message if the transfer failed, null if successful */
-  error: string | null;
-  /** Whether the transfer has completed (successfully or with errors) */
-  isCompleted: boolean;
+  cancelledMessage?: string;
   /** Timestamp when the transfer operation started */
   startTime: number;
+  /** Timestamp when the transfer operation completed */
+  endTime?: number;
   /** Whether to keep the original files after transfer */
   keepOriginal: boolean;
-  /** Human-readable description of the source location */
-  sourceDescription: string;
-  /** Human-readable description of the target location */
-  targetDescription: string;
-  /** Controller for aborting the transfer operation */
-  abortController: AbortController;
-  /** Whether the transfer is currently being cancelled */
-  isCancelling: boolean;
+  /** StorageName of the source location */
+  sourceStorageType: CloudType
+  /* Accountid of the source location if it is a cloud */
+  sourceAccountId: string;
+  /**  Storage Name of the target location */
+  targetStorageType: CloudType;
+  /* Accountid of the target location if it is a cloud */
+  targetAccountId: string;
+  /** Source path */
+  sourcePath: string;
+  /** Target path */
+  targetPath: string;
+  /** Total number of items to be transferred */
+  itemCount: number;
   /** List of all files included in the transfer operation */
   fileList?: string[];
   /** List of files that have been successfully transferred */
   completedFiles?: string[];
   /** List of files that failed to transfer with their error messages */
   failedFiles?: { file: string; error: string }[];
-  /** Timestamp when the transfer operation completed */
-  endTime?: number;
+  /* Files Failed to Delete */
+  failedToDeleteItems?: { file: string; error: string }[];
 }
 
 /**
@@ -49,4 +61,16 @@ export interface TransferQueueState {
   transfers: TransferItem[];
   /** Counter for generating unique transfer IDs */
   nextId: number;
+}
+
+/** Trasnfer progress claback data items */
+export interface progressCallbackData {
+    transferId: string;
+    sourcePath?: string;
+    fileName: string;
+    transfered: number;
+    total: number;
+    isDirectory?: boolean;
+    errorItemDirectory?: string;
+    isFetching?: boolean; 
 }
