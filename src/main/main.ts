@@ -40,19 +40,8 @@ const store = new Store();
 let mcpClient: MCPClient | null = null;
 let mainWindow: BrowserWindow | null = null;
 
-const AUTH_REDIRECT_URL = AppConfig.AGENT_AUTH_REDIRECT_URL; // Define the redirect URL for OAuth
-
-
-app.setAsDefaultProtocolClient('easyaccess'); // Register the protocol handler
-
-app.on('open-url', (event, url) => {
-    event.preventDefault();
-    console.log("Received URL:", url);
-    const urlObj = new URL(url);
-});
-
 ipcMain.handle('start-auth-server', async () => {
-    const code = await startAuthServer(); // your existing logic
+    const code = await startAuthServer();
     return code;
 });
 
@@ -74,7 +63,7 @@ const startAuthServer = (): Promise<string> => {
                 console.log("Auth callback received:", req.url);
                 res.writeHead(200, { 'Content-Type': 'text/html' });
                 // Respond with a simple HTML page that will extract the tokens
-                // Redirect page to EasyAccess website? Currently, set to my portfolio
+                // Redirect page to EasyAccess website? Currently, set to github.com
                 res.end(`
                 <html>
                     <body>

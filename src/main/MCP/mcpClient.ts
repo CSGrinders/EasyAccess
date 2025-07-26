@@ -77,6 +77,13 @@ class MCPClient {
 
     // Process query
     async processQuery(query: string, access_token: string): Promise<string> {
+        // if query is too long, throw an error
+        const MAX_QUERY_LENGTH = 400;
+        if (query.length > MAX_QUERY_LENGTH) {
+            triggerGracefulClose(); // Call a function to handle graceful close if needed
+            return "";
+        }
+
         // check if prev messages are too long
         console.log("Using previous messages:", this.prev_messages);
         if (this.prev_messages.length > 20) {

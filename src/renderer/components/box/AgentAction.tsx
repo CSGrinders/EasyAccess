@@ -40,6 +40,8 @@ const AgentAction = memo(function AgentAction() {
     const MAX_HEIGHT = 450; // Maximum height of the container
     const MIN_HEIGHT = 200; // Minimum height of the container
 
+    const MAX_QUERY_LENGTH = 400;
+
     const [session, setSession] = useState<any | null>(null);
 
     const agentWorkVisibilityRef = useRef<boolean>(false);
@@ -325,6 +327,12 @@ const AgentAction = memo(function AgentAction() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        // If the query is too long, show an error message
+        if (query.length > MAX_QUERY_LENGTH) {
+            console.warn("Query is too long:", query.length);
+            showErrorPopup("Query Too Long", `Your query exceeds the maximum length of ${MAX_QUERY_LENGTH} characters. Please shorten your query.`);
+            return;
+        }
 
         if (waitForResponseRef.current) {
             console.log("Response received, resolving wait...");
