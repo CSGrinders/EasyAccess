@@ -16,8 +16,7 @@ import mime from "mime-types";
 import { progressCallbackData } from '../../types/transfer';
 import { Semaphore } from '../transfer/transferManager';
 import { Item } from '@radix-ui/react-dropdown-menu';
-
-dotenv.config();
+import { AppConfig, focusMainWindow } from '../main';
 
 
 //https://cloud.google.com/nodejs/docs/reference/google-auth-library/latest
@@ -184,6 +183,42 @@ export class GoogleDriveStorage implements CloudStorage {
     }
     throw new Error(`File "${filePath}" not found`);
   }
+
+      async getFileInfo(filePath: string): Promise<FileSystemItem> {
+        await this.refreshOAuthClientIfNeeded();
+        if (!this.oauth2Client) {
+            throw new Error('OAuth2 client is not initialized');
+        }
+        
+        const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+        
+        try {
+            const fileId = await this.getFileId(filePath);
+            const response = await drive.files.get({
+                fileId: fileId,
+                fields: 'id,name,mimeType,size,modifiedTime,createdTime'
+            });
+            
+            const file = response.data;
+            if (!file) {
+                throw new Error('File not found');
+            }
+            
+            const fileSystemItem: FileSystemItem = {
+                id: file.id || '',
+                name: file.name || '',
+                isDirectory: file.mimeType === 'application/vnd.google-apps.folder',
+                path: CLOUD_HOME + filePath,
+                size: file.size ? Number(file.size) : undefined,
+                modifiedTime: file.modifiedTime ? new Date(file.modifiedTime).getTime() : undefined,
+            };
+            
+            return fileSystemItem;
+        } catch (error) {
+            console.error('Error getting file info from Google Drive:', error);
+            throw error;
+        }
+    }
 
   async readDir(dir: string): Promise<FileSystemItem[]> {
 

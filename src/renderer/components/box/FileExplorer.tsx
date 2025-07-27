@@ -100,25 +100,24 @@ interface FileExplorerProps {
 
 
 
-
 export const FileExplorer = memo(
     React.forwardRef(FileExplorerInner),
 );
 
-
-export const FileExplorer = memo(function FileExplorer ({
-                                                            zoomLevel,                  // How zoomed in the view is
-                                                            cloudType,                  // Cloud storage type (e.g., 'dropbox', 'google', 'onedrive')
-                                                            accountId,                  // Unique identifier for the cloud account
-                                                            tempPostFile,               // Function to post a file to the cloud
-                                                            tempGetFile,                // Function to get a file from the cloud
-                                                            boxId,                      // Unique identifier for the box
-                                                            isBoxToBoxTransfer = false, // Whether the transfer is between boxes
-                                                            refreshToggle,              // Toggle to refresh the file explorer
-                                                            silentRefresh = false,      // Whether to refresh silently without loading indicator
-                                                            onCurrentPathChange,       // Callback when the current path changes
-                                                            handleBoxFileTransfer,     // Function to handle file transfers between boxes
-                                                        }: FileExplorerProps) {
+function FileExplorerInner({
+    zoomLevel,                  // How zoomed in the view is
+    cloudType,                  // Cloud storage type (e.g., 'dropbox', 'google', 'onedrive')
+    accountId,                  // Unique identifier for the cloud account
+    tempPostFile,               // Function to post a file to the cloud
+    tempGetFile,                // Function to get a file from the cloud
+    boxId,                      // Unique identifier for the box
+    isBoxToBoxTransfer = false, // Whether the transfer is between boxes
+    refreshToggle,              // Toggle to refresh the file explorer
+    silentRefresh = false,      // Whether to refresh silently without loading indicator
+    onCurrentPathChange,         // Callback when the current path changes
+    handleBoxFileTransfer,     // Function to handle file transfers between boxes
+}: FileExplorerProps, 
+    ref: React.Ref<{}>) {
    
     /** List of all files and folders in the current directory */                                               
     const [items, setItems] = useState<FileSystemItem[]>([])

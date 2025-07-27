@@ -4,7 +4,7 @@ import * as fs from 'fs'
 import Store from 'electron-store';
 import { config } from 'dotenv';
 import { connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getDirectoryTree, readFile, getItemInfo } from './cloud/cloudManager';
-import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteItemLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal } from './local/localFileSystem';
+import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteItemLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal, calculateDirectorySize } from './local/localFileSystem';
 // Load environment variables
 // In development, load from project root; in production, load from app Contents directory
 const envPath = app.isPackaged 
@@ -25,14 +25,6 @@ import http from 'http';
 import { transferManager } from './transfer/transferManager';
 import {progressCallbackData} from '../types/transfer';
 
-// Load environment variables
-// In development, load from project root; in production, load from app Contents directory
-const envPath = app.isPackaged 
-    ? path.join(path.dirname(app.getAppPath()), '..', '..', '.env')
-    : path.join(__dirname, '../../.env');
-
-console.log('Loading .env from:', envPath);
-config({ path: envPath });
 
 export const AppConfig = {
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,

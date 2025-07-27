@@ -48,26 +48,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
     
     // Transfer queue state
     const [transferQueue, setTransferQueue] = useState<TransferQueueState>({
-        transfers: [
-   
-            {
-                id: 'example-transfer-id',
-                itemCount: 0,
-                progress: 0,
-                status: 'uploading',
-                startTime: Date.now(),
-                keepOriginal: false,
-                sourceStorageType: CloudType.Local,
-                sourceAccountId: '',
-                targetStorageType: CloudType.Local,
-                targetAccountId: '',
-                sourcePath: '',
-                targetPath: '',
-                fileList: [],
-                completedFiles: [],
-                failedFiles: [],
-            }
-        ],
+        transfers: [],
         nextId: 1
     });
 

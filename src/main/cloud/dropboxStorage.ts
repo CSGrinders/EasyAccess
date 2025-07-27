@@ -11,6 +11,7 @@ const mime = require('mime-types');
 import { minimatch } from 'minimatch';
 import { progressCallbackData } from '@Types/transfer';
 import path from 'path';
+import { AppConfig, focusMainWindow } from '../main';
 
 const PORT = 53685; // Port for the local server to handle Dropbox OAuth redirect
 const REDIRECT_URI = 'http://127.0.0.1:' + PORT;
@@ -226,6 +227,41 @@ export class DropboxStorage implements CloudStorage {
         return [];
     }
 
+        async getFileInfo(filePath: string): Promise<FileSystemItem> {
+        await this.initClient();
+        if (!this.client) {
+            console.error('Dropbox client is not initialized');
+            throw new Error('Dropbox client is not initialized');
+        }
+
+        try {
+            const response = await this.client.filesGetMetadata({ path: filePath });
+            if (!response.result) {
+                throw new Error('File not found');
+            }
+            const metadata = response.result;
+
+            // Check if file is deleted
+            if (metadata['.tag'] === 'deleted') {
+                throw new Error('File not found or has been deleted');
+            }
+
+            const fileSystemItem: FileSystemItem = {
+                id: (metadata as any).id || '',
+                name: metadata.name || '',
+                isDirectory: metadata['.tag'] === 'folder',
+                path: CLOUD_HOME + filePath,
+                size: (metadata as any).size || 0,
+                modifiedTime: (metadata as any).server_modified ? new Date((metadata as any).server_modified).getTime() : undefined,
+            };
+
+            return fileSystemItem;
+        } catch (error) {
+            console.error('Error getting file info from Dropbox:', error);
+            throw error;
+        }
+    }
+
     async readFile(filePath: string): Promise<string> {
         await this.initClient();
         if (!this.client) {
@@ -245,6 +281,7 @@ export class DropboxStorage implements CloudStorage {
             throw error;
         }
     }
+    
     getAccountId(): string {
         return this.accountId || '';
     }
