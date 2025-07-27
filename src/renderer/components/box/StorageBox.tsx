@@ -83,9 +83,7 @@ function StorageBoxInner({
                              canvasPan,         // Where the view is looking
                              isMaximized,       // Is this box full screen?
                              setIsMaximized,    // Function to make box full screen or no
-                             tempPostFile,      // Function to upload files
-                             tempGetFile,       // Function to download files
-                             handleBoxFileTransfer, // Function to handle box file transfer with confirmation first
+                             handleItemTransfer, // Function to handle box file transfer with confirmation first
                          }: StorageBoxProps, 
                          ref: React.Ref<{}>
                         ) {
@@ -387,7 +385,7 @@ function StorageBoxInner({
                                     
                                     
                                     const filePaths = draggedItems.map(item => item.path);
-                                    await handleBoxFileTransfer?.(
+                                    await handleItemTransfer?.(
                                         filePaths, 
                                         sourceCloudType as any, 
                                         sourceAccountId,
@@ -397,13 +395,7 @@ function StorageBoxInner({
                                     );
                                 } catch (error) {
                                 }
-                            } else {
-                                // Regular transfer (not drag and drop)
-                                try {
-                                    await tempPostFile?.(currentPath, box.cloudType, box.accountId);
-                                } catch (error) {
-                                }
-                            }
+                            } 
                         };
                         
                         await handleDragDropTransfer();
@@ -880,13 +872,11 @@ function StorageBoxInner({
                     <FileExplorer 
                         ref={fileExplorerRef}
                         zoomLevel={canvasZoom} 
-                        tempGetFile={tempGetFile} 
-                        tempPostFile={tempPostFile} 
                         boxId={id} 
                         onCurrentPathChange={handleCurrentPathChange} 
                         refreshToggle={refreshToggle}
                         silentRefresh={nextRefreshSilentRef.current}
-                        handleBoxFileTransfer={handleBoxFileTransfer} // for within box transfers...
+                        handleItemTransfer={handleItemTransfer} // for out box transfers...
                     />
                 ) : (
                     /* Cloud file explorer */
@@ -895,13 +885,11 @@ function StorageBoxInner({
                         zoomLevel={canvasZoom} 
                         cloudType={box.cloudType} 
                         accountId={box.accountId} 
-                        tempGetFile={tempGetFile} 
-                        tempPostFile={tempPostFile} 
                         boxId={id} 
                         onCurrentPathChange={handleCurrentPathChange} 
                         refreshToggle={refreshToggle} 
                         silentRefresh={nextRefreshSilentRef.current}
-                        handleBoxFileTransfer={handleBoxFileTransfer} // for within box transfers...
+                        handleItemTransfer={handleItemTransfer} // for out box transfers...
                     />
                 )}
             </div>

@@ -30,11 +30,8 @@ interface TransferServiceReturn {
     handleCancelTransfer: (transferId: string) => void;
     handleCloseTransfer: (transferId: string) => void;
     handleRetryTransfer: (transferId: string) => void;
-    
     // Transfer operations
-    tempPostFile: (parentPath: string, cloudType?: CloudType, accountId?: string, fileName?: string) => Promise<void>;
-    tempGetFile: (filePaths: string[], cloudType?: CloudType, accountId?: string, showProgress?: boolean) => Promise<void>;
-    handleBoxFileTransfer: (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => Promise<void>;
+    handleItemTransfer: (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => Promise<void>;
     
     // Dialog functions
     showUploadConfirmation: () => Promise<{ confirmed: boolean; keepOriginal: boolean }>;
@@ -319,14 +316,9 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
         }
     }
 
-    const tempPostFile = async (parentPath: string, cloudType?: CloudType, accountId?: string, fileName?: string) => {
-    }
-
-    const tempGetFile = async (filePaths: string[], cloudType?: CloudType, accountId?: string, showProgress: boolean = false) => {
-    }
 
     // New function to handle file/dir trasnfer workflow
-    const handleBoxFileTransfer = async (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => {
+    const handleItemTransfer = async (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => {
         let transfer: TransferItem;
         console.log('Starting box transfer transfer with paths:', filePaths, 'Source:', sourceCloudType, sourceAccountId, 'Target:', targetCloudType, targetAccountId);
         try {
@@ -723,9 +715,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
         handleRetryTransfer,
         
         // Transfer operations
-        tempPostFile,
-        tempGetFile,
-        handleBoxFileTransfer,
+        handleItemTransfer,
         
         // Dialog functions
         showUploadConfirmation,

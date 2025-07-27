@@ -86,15 +86,13 @@ interface FileExplorerProps {
     // (e.g., 'dropbox', 'google', 'onedrive')
     accountId?: string                                                                      // Unique identifier for the cloud account 
     zoomLevel: number                                                                       // Zoom level for the file explorer
-    tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string, fileName?: string) => void  // Function to post a file to the cloud
-    tempGetFile?: (filePaths: string[], cloudType?: CloudType, accountId?: string) => void  // Function to get a file from the cloud
     boxId: number                                                                           // Unique identifier for the box 
     isBoxToBoxTransfer?: boolean                                                            // Whether the transfer is between boxes
     refreshToggle?: boolean                                                                 // Toggle to refresh the file explorer
     silentRefresh?: boolean                                                                 // Whether to refresh silently without loading indicator
     onCurrentPathChange?: (currentPath: string) => void                                     // Callback when the current path changes
     /** Optional drag and drop transfer handler box */
-    handleBoxFileTransfer?: (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => void;
+    handleItemTransfer?: (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => void;
     
 }
 
@@ -108,14 +106,12 @@ function FileExplorerInner({
     zoomLevel,                  // How zoomed in the view is
     cloudType,                  // Cloud storage type (e.g., 'dropbox', 'google', 'onedrive')
     accountId,                  // Unique identifier for the cloud account
-    tempPostFile,               // Function to post a file to the cloud
-    tempGetFile,                // Function to get a file from the cloud
     boxId,                      // Unique identifier for the box
     isBoxToBoxTransfer = false, // Whether the transfer is between boxes
     refreshToggle,              // Toggle to refresh the file explorer
     silentRefresh = false,      // Whether to refresh silently without loading indicator
     onCurrentPathChange,         // Callback when the current path changes
-    handleBoxFileTransfer,     // Function to handle file transfers between boxes
+    handleItemTransfer,     
 }: FileExplorerProps, 
     ref: React.Ref<{}>) {
    
@@ -1130,9 +1126,9 @@ function FileExplorerInner({
                     const filePaths = draggedFileItems.map(item => item.path);
 
                     //(filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string)
-                    if (handleBoxFileTransfer){
+                    if (handleItemTransfer){
                         console.log("handle Item Mouse Up - Moving files:", filePaths, "to target:", targetItem.path);
-                        await handleBoxFileTransfer(
+                        await handleItemTransfer(
                             filePaths,
                             cloudType,
                             accountId,
@@ -1169,21 +1165,6 @@ function FileExplorerInner({
                             description: "An unexpected error occurred while moving the files.",
                             duration: 2000,
                         });
-                    }
-                }
-            } else if (targetItem && !targetItem.isDirectory) {
-                // Handle file-to-file operation
-                try {
-                    await tempPostFile?.(targetItem.path, cloudType, accountId);
-                } catch (error) {
-                    if (error && typeof error === 'object' && 'message' in error) {
-                        const errorMessage = (error as Error).message;
-                        if (!errorMessage.includes('cancelled')) {
-                            toast.error("File Operation Failed", {
-                                description: "Failed to complete file operation.",
-                                duration: 4000,
-                            });
-                        }
                     }
                 }
             }

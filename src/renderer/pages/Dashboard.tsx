@@ -67,9 +67,7 @@ const Dashboard = () => {
         handleCancelTransfer,
         handleCloseTransfer,
         handleRetryTransfer,
-        tempPostFile,
-        tempGetFile,
-        handleBoxFileTransfer,
+        handleItemTransfer,
         handleUploadDialogConfirm,
         handleUploadDialogCancel,
     } = useTransferService({ boxRefs, storageBoxesRef });
@@ -344,17 +342,13 @@ const Dashboard = () => {
         const dispatcher = RendererIpcCommandDispatcher.getInstance();
 
         dispatcher.register('openAccountWindow', addStorageBox);
-        dispatcher.register('getFileOnRenderer', tempGetFile);
-        dispatcher.register('postFileOnRenderer', tempPostFile);
         dispatcher.register('openStorageBox', agentOpenStorageBox);
 
         return () => {
             dispatcher.unregister('openAccountWindow');
-            dispatcher.unregister('getFileOnRenderer');
-            dispatcher.unregister('postFileOnRenderer');
             dispatcher.unregister('openStorageBox');
         };
-    }, [tempPostFile, tempGetFile, addStorageBox]);
+    }, [addStorageBox]);
 
     // Move the listener setup into a useEffect to properly handle state updates
     useEffect(() => {
@@ -522,9 +516,7 @@ const Dashboard = () => {
                                             canvasPan={position}
                                             isMaximized={maximizedBoxes.has(box.id)}
                                             setIsMaximized={(isMaximized: boolean) => setBoxMaximized(box.id, isMaximized)}
-                                            tempPostFile={tempPostFile}
-                                            tempGetFile={tempGetFile}
-                                            handleBoxFileTransfer={handleBoxFileTransfer}
+                                            handleItemTransfer={handleItemTransfer}
                                         />
                                     ))}
                                 </CanvasContainer>

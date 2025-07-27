@@ -17,10 +17,6 @@ contextBridge.exposeInMainWorld('cloudFsApi', {
         ipcRenderer.invoke('cloud-read-directory', cloudType, accountId, dir) as Promise<FileSystemItem[]>,
     readFile: (cloudType: CloudType, accountId: string, filePath: string) =>
         ipcRenderer.invoke('cloud-read-file', cloudType, accountId, filePath) as Promise<string>,
-    getFile: (cloudType: CloudType, accountId: string, filePath: string, transferId?: string) =>
-        ipcRenderer.invoke('cloud-get-file', cloudType, accountId, filePath, transferId) as Promise<FileContent>,
-    postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer, transferId?: string) =>
-        ipcRenderer.invoke('cloud-post-file', cloudType, accountId, fileName, folderPath, data, transferId) as Promise<void>,
 
     // New function to handle file transfers
     transferFile: (cloudType: CloudType, accountId: string, filePath: string, transferId?: string) =>
@@ -85,10 +81,6 @@ contextBridge.exposeInMainWorld('fsApi', {
         ipcRenderer.invoke('read-file', filePath) as Promise<string>,
     calculateFolderSize: (dirPath: string) =>
         ipcRenderer.invoke('calculate-folder-size', dirPath) as Promise<number>,
-    getFile: (filePath: string) =>
-        ipcRenderer.invoke('get-file', filePath) as Promise<FileContent>,
-    postFile: (fileName: string, folderPath: string, data: Buffer) =>
-        ipcRenderer.invoke('post-file', fileName, folderPath, data) as Promise<void>,
     deleteItem: (filePath: string) =>
         ipcRenderer.invoke('delete-file', filePath) as Promise<void>,
     createDirectory: (dirPath: string, dirName: string) =>
