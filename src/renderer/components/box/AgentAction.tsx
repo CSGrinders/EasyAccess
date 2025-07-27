@@ -147,10 +147,9 @@ const AgentAction = memo(function AgentAction() {
     }, []);
 
     const processDelta = useCallback(async (delta: string) => {
-
-        // Type out the delta character by character
+        // Type out the delta character by character with smoother timing
         for (let i = 0; i < delta.length; i++) {
-            await new Promise((resolve) => setTimeout(resolve, 1));
+            await new Promise((resolve) => setTimeout(resolve, Math.random() * 15 + 5)); // Variable typing speed for more natural feel
             setResponse((prev) => prev + delta[i]);
         }
     }, []);
@@ -535,81 +534,96 @@ const AgentAction = memo(function AgentAction() {
         <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none" ref={wholeRef}>
             <div
                 ref={containerRef}
-                className="agentResponse text-gray-900 dark:text-white absolute top-1 z-50 w-full max-w-200 pointer-events-auto transition-all duration-300 ease-in-out"
+                className="agentResponse text-gray-900 dark:text-white absolute top-1 z-50 w-full max-w-4xl pointer-events-auto glass-effect"
                 style={{
                     maxHeight: `${MAX_HEIGHT}px`,
                     minHeight: `${MIN_HEIGHT}px`,
+                    borderRadius: '16px',
+                    transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                 }}
             >
-                {/* Move handle */}
                 <div
                     onMouseDown={handleMouseDownMoveBox}
-                    className="absolute top-0 w-full h-6 bg-transparent z-10 cursor-move transition-colors duration-200 flex items-center justify-center rounded-t-[32px]"
+                    className="absolute top-0 w-full h-8 bg-gradient-to-b from-white/5 to-transparent z-10 cursor-move transition-all duration-300 flex items-center justify-center rounded-t-2xl group hover:from-white/10"
                     style={{
                         touchAction: 'none',
                         userSelect: 'none',
                     }}
                 >
+                    <div className="w-12 h-1.5 bg-white/20 rounded-full transition-all duration-300 group-hover:bg-white/40 group-hover:w-16" />
                 </div>
                 <div className="flex flex-col h-full">
                     {/* Header - Fixed height */}
-                    <div ref={headerRef} className="flex-shrink-0">
-                        <div className="flex items-center justify-between mb-1 mt-1 mx-3">
-                            <p className="text-md font-normal text-white">
-                                {isLoading ? "Working..." : "Agent Response"}
-                            </p>
+                    <div ref={headerRef} className="flex-shrink-0 mt-6">
+                        <div className="flex items-center justify-between mb-3 mx-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-2 h-2 rounded-full bg-gradient-to-r from-blue-400 to-purple-500 animate-pulse"></div>
+                                <p className="text-lg font-medium text-white/90 tracking-wide">
+                                    {isLoading ? (
+                                        <span className="flex items-center gap-2">
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            Processing...
+                                        </span>
+                                    ) : "Agent Response"}
+                                </p>
+                            </div>
 
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={handleClose}
-                                    className="p-1 hover:bg-white/10 rounded transition-colors"
+                                    className="p-2 hover:bg-white/10 rounded-lg transition-all duration-200 group"
                                 >
-                                    <X className="text-black w-4 h-4 dark:text-white hover:text-red-500" />
+                                    <X className="w-4 h-4 text-white/70 group-hover:text-red-400 transition-colors" />
                                 </button>
                             </div>
                         </div>
-                        <hr className="border-black/10 dark:border-white/10 w-full" />
+                        <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
                     </div>
                     
                     {/* Content - Flexible height with scrolling */}
                     <div className="flex-1 flex flex-col min-h-0 relative px-4 py-3">
                         <div 
-                            className="flex-1 overflow-y-auto pr-2"
+                            className="flex-1 overflow-y-auto pr-2 scrollbar-hide"
                             ref={messagesRef}
                             style={{
                                 minHeight: `${MIN_HEIGHT - 100}px`,
                                 maxHeight: `${MAX_HEIGHT - 100}px`,
                             }}
                         >
-                            <div className="flex justify-end pl-1 pr-3 my-2">
-                                <p className="userQuery text-sm text-white/50">{userQuery}</p>
-                            </div>
+                            {userQuery && (
+                                <div className="flex justify-end pl-1 pr-3 my-2">
+                                    <div className="bg-blue-500/20 rounded-lg px-3 py-2 border border-blue-500/30">
+                                        <p className="text-sm text-blue-200/80">{userQuery}</p>
+                                    </div>
+                                </div>
+                            )}
                             
                             <div className="pb-2">
-                                {/* <p className="break-normal whitespace-pre-wrap text-black dark:text-white/90 text-sm leading-relaxed">
-                                    {response}
-                                </p> */}
-                                <div className="space-y-3">
+                                <div className="space-y-4">
                                     {parsed.map((part, index) =>
                                     part.type === "tool" ? (
-                                        <ToolResult content={part.content} />
-                                        // <div key={index} className="tool-part p-2 text-sm">
-                                        //     <pre className="whitespace-pre-wrap">{part.content}</pre>
-                                        // </div>
+                                        <ToolResult key={index} content={part.content} />
                                     ) : (
-                                        <p key={index} className="text-sm leading-relaxed whitespace-pre-wrap text-white/90">
-                                        {part.content}
-                                        </p>
+                                        <div key={index} className="animate-in fade-in-0 slide-in-from-left-2 duration-300">
+                                            <p className="text-sm leading-relaxed whitespace-pre-wrap text-white/90 selection:bg-white/20">
+                                                {part.content}
+                                            </p>
+                                        </div>
                                     )
                                     )}
+                                    {isLoading && (
+                                        <div className="flex items-center gap-2 text-white/60">
+                                            <div className="w-1 h-4 bg-white/60 animate-pulse rounded"></div>
+                                            <span className="text-xs">Thinking...</span>
+                                        </div>
+                                    )}
                                 </div>
-
                             </div>
                         </div>
 
                         {isLoading && (
                             <div className="absolute bottom-2 right-2 p-2">
-                                <Loader2 className="animate-spin w-4 h-4 text-black dark:text-white" />
+                                <Loader2 className="animate-spin w-4 h-4 text-white/80" />
                             </div>
                         )}
                     </div>
@@ -626,16 +640,13 @@ const AgentAction = memo(function AgentAction() {
                     </div> */}
                 </div>
             </div>
-            {/* User Input */}
-            {/* Enhanced Chat Interface */}
-            <div className="absolute pointer-events-auto bottom-8 left-1/2 transform -translate-x-1/2 w-[75%] max-w-[800px]">
+            <div className="absolute pointer-events-auto bottom-12 left-1/2 transform -translate-x-1/2 w-[75%] max-w-[800px]">
                 <span ref={questionRef}
                     className={`text-center text-xs text-gray-500 mb-4`}
                 >
                     waiting for your response on agent question...
                 </span>
-                <div className="bg-white/80 dark:bg-stone-950/30 rounded-xl border border-gray-200/50 dark:border-gray-700/50 backdrop-blur-xl shadow-lg p-2 transition-all duration-300 hover:shadow-3xl">
-                    {/* Chat Form */}
+                <div className="bg-white/80 dark:bg-stone-950/30 rounded-xl border border-gray-200/50 dark:border-gray-700/50 backdrop-blur-xl shadow-lg p-2 transition-all duration-300 hover:shadow-xl">
                     <form onSubmit={handleSubmit} className="relative">
                         <div className="flex items-center gap-3 p-1 bg-gray-50/50 dark:bg-gray-800/50 rounded-xl border border-gray-200/50 dark:border-gray-700/50 focus-within:border-blue-500/50 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all duration-200">
 
@@ -645,7 +656,7 @@ const AgentAction = memo(function AgentAction() {
                                     value={query}
                                     onChange={(e) => setQuery(e.target.value)}
                                     placeholder="Talk to your helpful agent!"
-                                    className="h-1 text-sm w-full bg-transparent border-0 placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-gray-100 px-4 py-3 text-base focus:outline-none focus:ring-0 focus:ring-transparent focus:border-transparent"
+                                    className="w-full bg-transparent border-0 placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-gray-100 px-4 py-3 text-sm focus:outline-none focus:ring-0"
                                     disabled={isLoading || !session}
                                     autoComplete="off"
                                     onKeyDown={(e) => {
@@ -669,7 +680,7 @@ const AgentAction = memo(function AgentAction() {
                                 type="submit"
                                 disabled={isLoading || !query.trim()}
                                 size="sm"
-                                className="relative overflow-hidden bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-500 text-white font-medium p-3 rounded-lg transition-all duration-200 transform active:scale-95 disabled:scale-100 disabled:opacity-50 group"
+                                className="enhanced-button relative overflow-hidden bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-500 text-white font-medium p-3 rounded-lg transition-all duration-200 transform active:scale-95 disabled:scale-100 disabled:opacity-50 group"
                             >
                                 {isLoading ? (
                                     <Loader2 className="animate-spin w-5 h-5" />

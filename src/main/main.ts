@@ -244,6 +244,8 @@ const createWindow = async () => {
     const win = new BrowserWindow({
         width: 1200,
         height: 800,
+        minWidth: 800,   
+        minHeight: 600,  
         frame: false,
         titleBarStyle: 'hiddenInset',
         webPreferences: {

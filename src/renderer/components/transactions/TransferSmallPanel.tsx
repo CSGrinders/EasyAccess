@@ -324,9 +324,9 @@ export function TransferManager({
 
   return (
     <div className={cn(
-      "select-none fixed bottom-6 right-6 bg-white/95 dark:bg-slate-800/95 border border-slate-200 dark:border-slate-700",
-      "rounded-xl shadow-xl backdrop-blur-sm overflow-hidden",
-      "animate-in fade-in-0 slide-in-from-bottom-3 duration-300",
+      "select-none fixed bottom-32 right-0 bg-white/95 dark:bg-slate-800/95 border-l border-t border-b border-slate-200 dark:border-slate-700",
+      "rounded-l-xl shadow-xl backdrop-blur-sm overflow-hidden",
+      "animate-in fade-in-0 slide-in-from-right-3 duration-300",
       "min-w-[350px] max-w-[450px]",
       "backdrop-saturate-150"
     )}
