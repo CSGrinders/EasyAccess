@@ -165,7 +165,7 @@ export function TransferDetailPanel({
             </Card>
           ) : (
             <div className="select-none grid gap-4">
-              {getCurrentTransfers().map(transfer => renderTransferCard(transfer))}
+              {getCurrentTransfers().slice().reverse().map(transfer => renderTransferCard(transfer))}
             </div>
           )}
         </div>

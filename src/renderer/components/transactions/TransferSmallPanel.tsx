@@ -397,7 +397,7 @@ export function TransferManager({
       {!isCollapsed && (
         <div className="max-h-80 overflow-y-auto p-3 space-y-2">
           {/* Render all transfers in a single list to avoid key conflicts */}
-          {[...activeTransfers, ...errorTransfers, ...completedTransfers].map(transfer => 
+          {[...activeTransfers, ...errorTransfers.slice().reverse(), ...completedTransfers.slice().reverse()].map(transfer => 
             renderTransferItem(transfer)
           )}
         </div>
