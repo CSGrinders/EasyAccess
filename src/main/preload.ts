@@ -114,6 +114,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(tokens);
         });
     },
+
+    saveTransferState: (transferState: any) => ipcRenderer.invoke('save-transfer-state', transferState),
+    loadTransferState: () => ipcRenderer.invoke('load-transfer-state'),
+    onSaveTransferStateOnQuit: (callback: () => void) => {
+        const unsubscribe = () => ipcRenderer.removeListener('save-transfer-state-on-quit', callback);
+        ipcRenderer.on('save-transfer-state-on-quit', callback);
+        return unsubscribe;
+    },
+
+
     removeAgentAuthTokenListener: () => {
         ipcRenderer.removeAllListeners('agent-auth-token');
     },

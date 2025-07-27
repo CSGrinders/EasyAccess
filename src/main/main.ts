@@ -166,6 +166,40 @@ const setUpMCP = async () => {
     return mcpClient;
 };
 
+// Add transfer state storage 
+const TRANSFER_STATE_FILE = path.join(app.getPath('userData'), 'transferState.json');
+
+// Save transfer state function
+const saveTransferState = (transferState: any) => {
+  try {
+    fs.writeFileSync(TRANSFER_STATE_FILE, JSON.stringify(transferState, null, 2));
+  } catch (error) {
+    console.error('Failed to save transfer state:', error);
+  }
+};
+
+// Load transfer state 
+const loadTransferState = () => {
+  try {
+    if (fs.existsSync(TRANSFER_STATE_FILE)) {
+      const data = fs.readFileSync(TRANSFER_STATE_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('Failed to load transfer state:', error);
+  }
+  return { transfers: [], nextId: 1 };
+};
+
+ipcMain.handle('save-transfer-state', async (event, transferState) => {
+  saveTransferState(transferState);
+});
+
+ipcMain.handle('load-transfer-state', async () => {
+  return loadTransferState();
+});
+
+
 const saveCurrentLayout = async () => {
     /*
     Save the current layout of the main window to a file.
@@ -277,6 +311,18 @@ const createWindow = async () => {
                 }
             }
         });
+
+        // 
+        try {
+            const mainWindow = BrowserWindow.getAllWindows()[0];
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('save-transfer-state-on-quit');
+            }
+            new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (error) {
+            console.error('Failed to save transfer state on quit:', error);
+        }
+
     });
 
     win.once('ready-to-show', () => {

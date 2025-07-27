@@ -64,27 +64,135 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
     const fileContentsCacheRef = useRef<FileContent[]>([]);
     const filesBeingTransferred = useRef<Set<string>>(new Set()); // Track files currently being transferred
 
+    React.useEffect(() => {
+        const loadPersistedState = async () => {
+            try {
+                const savedState = await (window as any).electronAPI?.loadTransferState();
+                if (savedState && savedState.transfers && savedState.transfers.length > 0) {
+                    // Filter out completed transfers older than 24 hours and active transfers
+                    const now = Date.now();
+                    const filteredTransfers = savedState.transfers.filter((transfer: TransferItem) => {
+                        // Keep cancelled and failed transfers that are recent
+                        if (transfer.status === "cancelled" && transfer.endTime) {
+                            return (now - transfer.endTime) < 24 * 60 * 60 * 1000; // 24 hours
+                        }
+
+                        // Remove active transfers 
+                        if (!transfer.status || 
+                            transfer.status === "downloading" || 
+                            transfer.status === "uploading" || 
+                            transfer.status === "moving" || 
+                            transfer.status === "copying" || 
+                            transfer.status === "fetching") {
+                            return false;
+                        }
+                        return true;
+                    });
+
+                    if (filteredTransfers.length > 0) {
+                        setTransferQueue({
+                            transfers: filteredTransfers,
+                            nextId: savedState.nextId || 1
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load transfer state:', error);
+            }
+        };
+        loadPersistedState();
+    }, []);
+
+    React.useEffect(() => {
+        const handleSaveOnQuit = async () => {
+            try {
+                // Get current transfer queue
+                const currentQueue = transferQueueRef.current;
+                
+                // Find all active transfers
+                const activeTransfers = currentQueue.transfers.filter(transfer => 
+                    transfer.status === "downloading" || 
+                    transfer.status === "uploading" || 
+                    transfer.status === "moving" || 
+                    transfer.status === "copying" || 
+                    transfer.status === "fetching"
+                );
+
+                // Cancel all active transfers
+                if (activeTransfers.length > 0) {
+                    console.log(`Cancelling ${activeTransfers.length} active transfers on quit`);
+                    
+                    // Cancel each transfer and update its status
+                    const cancelledTransfers = currentQueue.transfers.map(transfer => {
+                        if (activeTransfers.some(activeTransfer => activeTransfer.id === transfer.id)) {
+                            const completedFiles = transfer.completedFiles || [];
+                            const allFiles = transfer.fileList || [];
+                            const failedFiles = allFiles
+                                .filter(fileName => !completedFiles.includes(fileName))
+                                .map(fileName => ({ file: fileName, error: "Transfer cancelled due to app quit" }));
+
+                            return {
+                                ...transfer,
+                                status: "cancelled" as const,
+                                cancelledMessage: "Transfer cancelled due to app quit",
+                                endTime: Date.now(),
+                                failedFiles: [...(transfer.failedFiles || []), ...failedFiles]
+                            };
+                        }
+                        return transfer;
+                    });
+
+                    // Update the queue with cancelled transfers
+                    const updatedQueue = {
+                        ...currentQueue,
+                        transfers: cancelledTransfers
+                    };
+
+                    // Cancel transfers in main process
+                    await Promise.all(
+                        activeTransfers.map(transfer => 
+                            (window as any).transferApi?.cancelTransfer(transfer.id).catch(() => {
+                            })
+                        )
+                    );
+
+                    // Save the updated state with cancelled transfers
+                    await (window as any).electronAPI?.saveTransferState(updatedQueue);
+                } else {
+                    // No active transfers, just save current state
+                    await (window as any).electronAPI?.saveTransferState(currentQueue);
+                }
+            } catch (error) {
+                console.error('Failed to save transfer state on quit:', error);
+            }
+        };
+
+        return (window as any).electronAPI?.onSaveTransferStateOnQuit?.(handleSaveOnQuit);;
+    }, [transferQueue]);
+        
+
+    
     // Helper function to refresh both source and target storage boxes
     const refreshSourceAndTargetBoxes = (fileContentsCache: FileContent[], targetCloudType?: CloudType, targetAccountId?: string) => {
         // Refresh source boxes (where files came from)
         fileContentsCache.forEach(fileContent => {
             storageBoxesRef.current.forEach((box) => {
-                if (box.accountId === fileContent.sourceAccountId && box.cloudType === fileContent.sourceCloudType ||
+                if ((box.accountId === fileContent.sourceAccountId && box.cloudType === fileContent.sourceCloudType) ||
                     (!box.accountId && !fileContent.sourceAccountId && !box.cloudType && !fileContent.sourceCloudType) // Local file system
                 ) {
                     const ref = boxRefs.current.get(box.id);
-                    ref.current?.callDoRefresh?.(true); // Pass true for silent refresh
+                    ref?.current?.callDoRefresh?.(true); // Pass true for silent refresh
                 }
             });
         });
 
         // Refresh target boxes (where files went to)
         storageBoxesRef.current.forEach((box) => {
-            if (box.accountId === targetAccountId && box.cloudType === targetCloudType ||
+            if ((box.accountId === targetAccountId && box.cloudType === targetCloudType) ||
                 (!box.accountId && !targetAccountId && !box.cloudType && !targetCloudType) // Local file system
             ) {
                 const ref = boxRefs.current.get(box.id);
-                ref.current?.callDoRefresh?.(true); // Pass true for silent refresh
+                ref?.current?.callDoRefresh?.(true); // Pass true for silent refresh
             }
         });
     };
@@ -577,11 +685,12 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                     // Create fake file content cache for refresh function
                     const fakeFileContents = filePaths.map(filePath => ({
                         path: filePath,
-                        sourceCloudType,
-                        sourceAccountId,
+                        sourceCloudType: sourceCloudType,
+                        sourceAccountId: sourceAccountId,
+                        
                     })) as FileContent[];
                     refreshSourceAndTargetBoxes(fakeFileContents, targetCloudType, targetAccountId);
-                }, 100);
+                }, 500);
 
             } catch (error) {
                 console.error("transfer cancelled 2");
@@ -614,7 +723,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
                         sourceAccountId,
                     })) as FileContent[];
                     refreshSourceAndTargetBoxes(fakeFileContents, targetCloudType, targetAccountId);
-                }, 100);
+                }, 500);
             }
         } catch (error) {
             // This catches errors before transfer creation (like user cancellation)
