@@ -1,4 +1,4 @@
-import { ArrowUp, Loader2, X, Command, CornerDownLeft, ChevronDown, ChevronUp, Copy } from "lucide-react";
+import { ArrowUp, Loader2, X, Command, CornerDownLeft, ChevronDown, ChevronUp, Copy, MessageSquare } from "lucide-react";
 import React, { useState, useRef, useCallback, useEffect, memo } from "react";
 import { Button } from "../ui/button";
 import { RendererIpcCommandDispatcher } from "@/services/AgentControlService";
@@ -126,11 +126,16 @@ const AgentAction = memo(function AgentAction() {
         selection.addRange(range);
     }, [response]);
 
+    const [isAgentInterfaceVisible, setIsAgentInterfaceVisible] = useState(true);
+
     const toggleVisibility = useCallback(() => {
         console.log("Toggling visibility of agent response box");
         // reset the position of agent work box
         if (wholeRef.current) {
-            wholeRef.current.style.display = wholeRef.current.style.display === 'none' ? 'flex' : 'none';
+            const isCurrentlyVisible = wholeRef.current.style.display !== 'none';
+            const newDisplay = isCurrentlyVisible ? 'none' : 'flex';
+            wholeRef.current.style.display = newDisplay;
+            setIsAgentInterfaceVisible(!isCurrentlyVisible);
         }
     }, []);
 
@@ -414,6 +419,11 @@ const AgentAction = memo(function AgentAction() {
         setResponse('');
         setUserQuery('');
         setIsResponseCollapsed(false);
+        // When closing via the X button, also hide the entire interface
+        if (wholeRef.current) {
+            wholeRef.current.style.display = 'none';
+            setIsAgentInterfaceVisible(false);
+        }
     }, []);
 
     const handleToggleCollapse = useCallback(() => {
@@ -570,10 +580,30 @@ const AgentAction = memo(function AgentAction() {
 
     useEffect(() => {
         setAgentWorkVisibility(true);
+        setIsAgentInterfaceVisible(true);
     }, []);
 
     return (
-        <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none" ref={wholeRef}>
+        <>
+            {/* Floating indicator when agent interface is hidden */}
+            {!isAgentInterfaceVisible && (
+                <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto">
+                    <button
+                        onClick={toggleVisibility}
+                        className="group bg-black/20 dark:bg-white/10 hover:bg-black/30 dark:hover:bg-white/20 backdrop-blur-sm text-gray-700 dark:text-gray-300 px-3 py-1.5 rounded-full transition-all duration-200 flex items-center gap-2 border border-gray-300/50 dark:border-gray-600/50"
+                        title="Show Agent Interface"
+                    >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span className="text-xs">Agent</span>
+                        <div className="flex items-center gap-1 text-xs opacity-60">
+                            <span className="bg-gray-500/20 dark:bg-gray-400/20 px-1 py-0.5 rounded text-xs">⌘</span>
+                            <span className="bg-gray-500/20 dark:bg-gray-400/20 px-1 py-0.5 rounded text-xs">↵</span>
+                        </div>
+                    </button>
+                </div>
+            )}
+
+            <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none" ref={wholeRef}>
             <div
                 ref={containerRef}
                 className="agentResponse text-gray-900 dark:text-white absolute top-1 z-50 w-full max-w-4xl pointer-events-auto bg-white/95 dark:bg-gray-900/80 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 shadow-xl dark:shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
@@ -824,15 +854,6 @@ const AgentAction = memo(function AgentAction() {
                                         <span className="text-xs">↑/↓</span>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                    <span>Select All</span>
-                                    <div className="flex items-center p-1 bg-gray-100 dark:bg-gray-600 rounded">
-                                        <Command className="w-3 h-3"/>
-                                    </div>
-                                    <div className="flex items-center p-1 bg-gray-100 dark:bg-gray-600 rounded">
-                                        <span className="text-xs">A</span>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     </form>
@@ -852,7 +873,8 @@ const AgentAction = memo(function AgentAction() {
                     </DialogHeader>
                 </DialogContent>
             </Dialog>
-        </div>
+            </div>
+        </>
     );
 });
 

@@ -730,7 +730,253 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
         }
     }
 
+    // Function to handle retry transfer without user confirmation
+    const retryTransferFiles = async (
+        transfer: TransferItem, 
+        filePaths: string[], 
+        sourceCloudType?: CloudType, 
+        sourceAccountId?: string, 
+        targetPath?: string, 
+        targetCloudType?: CloudType, 
+        targetAccountId?: string,
+        keepOriginal?: boolean
+    ) => {
+        const totalFiles = filePaths.length;
+        let processedFiles = 0;
+        let currentCompletedFiles: string[] = [...(transfer.completedFiles || [])]; // Start with existing completed files
+        let currentFailedFiles: { file: string; error: string }[] = [];
 
+        try {
+            // Process each failed file: download then upload (but only show upload progress)
+            for (let i = 0; i < filePaths.length; i++) {
+                const filePath = filePaths[i];
+                const fileName = filePath.split('/').pop() || filePath;
+                
+                // Update status to show current file being processed
+                batchUpdateTransfer(transfer.id, {
+                    currentItem: `${fileName}`,
+                    status: "fetching",
+                    progress: (processedFiles / totalFiles) * 100
+                });
+
+                let progressListener: any = null;
+                let includeFailure = false;
+
+                try {
+                    // Set up progress listener
+                    const isLocalToLocal = transfer.sourceStorageType === CloudType.Local && transfer.targetStorageType === CloudType.Local;
+                    const isCloudtoCloud = transfer.sourceStorageType !== CloudType.Local && transfer.targetStorageType !== CloudType.Local;
+                    const isLocaltoCloud = transfer.sourceStorageType === CloudType.Local && transfer.targetStorageType !== CloudType.Local;
+                    const isCloudToLocal = transfer.sourceStorageType !== CloudType.Local && transfer.targetStorageType === CloudType.Local;
+
+                    progressListener = (window as any).transferApi.onTransferProgress((data: progressCallbackData) => {
+                        const latestTransfer = getTransfer(transfer.id);
+                        if (latestTransfer?.status === "cancelled") {
+                            return;
+                        }
+
+                        if (transfer && data.transferId == transfer.id) {
+                            if (data.errorItemDirectory) {
+                                currentFailedFiles.push({ file: data.fileName, error: data.errorItemDirectory });
+                                includeFailure = true;
+                                console.error(`Error in retry transfer for file ${data.fileName}:`, data.errorItemDirectory);
+                            }
+                            
+                            if (data.isFetching) {
+                                batchUpdateTransfer(transfer.id, {
+                                    currentItem: data.fileName,
+                                    status: "fetching",
+                                    isCurrentDirectory: data.isDirectory,
+                                    cancelledMessage: data.errorItemDirectory || "",
+                                    directoryName: data.isDirectory ? fileName : "unknown",
+                                    progress: (processedFiles / totalFiles) * 100
+                                }); 
+                            } else {
+                                const fileProgress = (data.transfered / data.total) * (100 / totalFiles);
+                                const overallProgress = (processedFiles / totalFiles) * 100 + fileProgress;
+                                
+                                if (isLocalToLocal || isCloudtoCloud) {
+                                    batchUpdateTransfer(transfer.id, {
+                                        currentItem: data.fileName,
+                                        directoryName: data.isDirectory ? fileName : "unknown",
+                                        isCurrentDirectory: data.isDirectory,
+                                        status: transfer.keepOriginal ? "copying" : "moving",
+                                        cancelledMessage: data.errorItemDirectory || "",
+                                        progress: Math.min(overallProgress, 100)
+                                    });
+                                } else if (isLocaltoCloud) {
+                                    batchUpdateTransfer(transfer.id, {
+                                        currentItem: data.fileName,
+                                        directoryName: data.isDirectory ? fileName : "unknown",
+                                        isCurrentDirectory: data.isDirectory,
+                                        status: transfer.keepOriginal ? "copying" : "uploading",
+                                        cancelledMessage: data.errorItemDirectory || "",
+                                        progress: Math.min(overallProgress, 100)
+                                    });
+                                } else if (isCloudToLocal) {
+                                    batchUpdateTransfer(transfer.id, {
+                                        currentItem: data.fileName,
+                                        directoryName: data.isDirectory ? fileName : "unknown",
+                                        isCurrentDirectory: data.isDirectory,
+                                        status: transfer.keepOriginal ? "copying" : "downloading",
+                                        cancelledMessage: data.errorItemDirectory || "",
+                                        progress: Math.min(overallProgress, 100)
+                                    });
+                                }
+                            }
+                        }
+                    });
+
+                    await new Promise(resolve => setTimeout(resolve, 10));
+
+                    // Prepare transfer information
+                    const copy = keepOriginal || false;
+                    const transferWithinSameAccount = sourceCloudType === targetCloudType && sourceAccountId === targetAccountId;
+                    
+                    const transferInfo = {
+                        transferId: transfer.id,
+                        fileName,
+                        sourcePath: filePath,
+                        sourceCloudType,
+                        sourceAccountId,
+                        targetCloudType,
+                        targetAccountId,
+                        targetPath,
+                        copy
+                    };
+
+                    await (window as any).transferApi.transferManager(transferInfo);
+
+                    const latestTransfer = getTransfer(transfer.id);
+                    
+                    // Clean up progress listener
+                    if (progressListener) {
+                        (window as any).transferApi.removeTransferProgressListener(progressListener);
+                    }
+
+                    if (latestTransfer?.status !== "cancelled") {
+                        console.log(`Retry file ${fileName} processed successfully`);
+                        currentCompletedFiles.push(fileName);
+
+                        // Delete from source if not keeping original and not including failure
+                        if (!includeFailure && !copy && !transferWithinSameAccount) {
+                            console.log(`Deleting source file ${fileName} after retry transfer`);
+                            deleteFileFromSource({
+                                sourceCloudType,
+                                sourceAccountId,
+                                sourcePath: filePath
+                            }, copy).catch(err => {
+                                console.warn(`Failed to delete source file ${fileName} during retry:`, err);
+                            });
+                        }
+
+                        processedFiles++;
+                        batchUpdateTransfer(transfer.id, {
+                            completedFiles: [...currentCompletedFiles],
+                            progress: (processedFiles / totalFiles) * 100,
+                        });
+                    }
+
+                } catch (err: any) {
+                    console.error(`Error processing retry file ${fileName}:`, err);
+                    const latestTransfer = getTransfer(transfer.id);
+                    if (latestTransfer?.status === "cancelled") {
+                        throw err;
+                    }
+
+                    if ((latestTransfer?.itemCount ?? 0) <= 1) {
+                        throw err;
+                    }
+
+                    const parts = err instanceof Error ? err.message.split(':') : ["Transfer failed"];
+                    const errorMessage = parts[parts.length - 1].trim() + ". Continuing with next file...";
+                    
+                    currentFailedFiles.push({
+                        file: fileName,
+                        error: errorMessage
+                    });
+
+                    if (progressListener) {
+                        (window as any).transferApi.removeTransferProgressListener(progressListener);
+                    }
+
+                    batchUpdateTransfer(transfer.id, {
+                        failedFiles: [...currentFailedFiles],
+                        progress: (processedFiles / totalFiles) * 100,
+                        cancelledMessage: errorMessage,
+                    });
+                    
+                    await cancellableWait(5000, transfer.id, getTransfer);
+                    processedFiles++;
+                    batchUpdateTransfer(transfer.id, { cancelledMessage: "" });
+                    continue;
+                }
+            }
+
+            // Update final status
+            if (currentFailedFiles.length > 0) {
+                console.error("Retry transfer completed with errors:", currentFailedFiles);
+                batchUpdateTransfer(transfer.id, {
+                    status: "completed",
+                    endTime: Date.now(),
+                    cancelledMessage: `Retry failed for: ${currentFailedFiles.map(f => f.error).join(', ')}`,
+                    completedFiles: currentCompletedFiles,
+                    failedFiles: currentFailedFiles
+                });
+            } else {
+                console.log("Retry transfer completed successfully");
+                batchUpdateTransfer(transfer.id, {
+                    progress: 100,
+                    status: "completed",
+                    endTime: Date.now(),
+                    completedFiles: currentCompletedFiles,
+                    failedFiles: []
+                });
+            }
+
+            // Refresh UI
+            setTimeout(() => {
+                const fakeFileContents = filePaths.map(filePath => ({
+                    path: filePath,
+                    sourceCloudType: sourceCloudType,
+                    sourceAccountId: sourceAccountId,
+                })) as FileContent[];
+                refreshSourceAndTargetBoxes(fakeFileContents, targetCloudType, targetAccountId);
+            }, 500);
+
+        } catch (error) {
+            console.error("Retry transfer cancelled or failed:", error);
+            const parts = error instanceof Error ? error.message.split(':') : ["Retry transfer failed"];
+            const errorMessage = parts[parts.length - 1].trim();
+        
+            const allFiles = filePaths.map(path => path.split('/').pop() || path);
+            const failedFiles = allFiles
+                .filter(fileName => !currentCompletedFiles.includes(fileName))
+                .map(fileName => ({ file: fileName, error: errorMessage }));
+
+            // Clean up partially transferred files from target
+            await cleanupFailedTransferFiles(failedFiles, targetPath, targetCloudType, targetAccountId);
+
+            batchUpdateTransfer(transfer.id, {
+                status: "cancelled",
+                endTime: Date.now(),
+                cancelledMessage: errorMessage,
+                completedFiles: currentCompletedFiles,
+                failedFiles: [...currentFailedFiles, ...failedFiles]
+            });
+
+            removeTransferringFiles(transfer.id);
+
+            setTimeout(() => {
+                const fakeFileContents = filePaths.map(filePath => ({
+                    path: filePath,
+                    sourceCloudType,
+                    sourceAccountId,
+                })) as FileContent[];
+                refreshSourceAndTargetBoxes(fakeFileContents, targetCloudType, targetAccountId);
+            }, 500);
+        }
+    };
 
     const cleanupFailedTransferFiles = async (
         failedFiles: { file: string; error: string }[],
@@ -780,30 +1026,71 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
         }
     };
 
-    const handleRetryTransfer = useCallback((transferId: string) => {
+    const handleRetryTransfer = useCallback(async (transferId: string) => {
         const transfer = getTransfer(transferId);
-        if (!transfer) return;
+        if (!transfer) {
+            console.warn("Transfer not found for retry:", transferId);
+            return;
+        }
 
-        // Reset transfer state for retry
-        batchUpdateTransfer(transferId, {
-            status: "fetching",
-            startTime: Date.now(),
-        });
+        // Check if transfer has failed files to retry
+        const failedFiles = transfer.failedFiles || [];
+        if (failedFiles.length === 0) {
+            console.warn("No failed files to retry for transfer:", transferId);
+            return;
+        }
+
+        console.log(`Retrying transfer ${transferId} with ${failedFiles.length} failed files:`, failedFiles.map(f => f.file));
 
         try {
-            //TODO: Implement retry logic based on transfer type
-            // For now, we just reset the state - the actual retry implementation
-            console.log(`Retry functionality not yet implemented for transfer ${transferId}`);
-            
+            const filePaths = failedFiles.map(failedFile => {
+                const basePath = transfer.sourcePath || '';
+                return basePath ? `${basePath}/${failedFile.file}` : failedFile.file;
+            });
+
+            // Mark files as being transferred in the UI using the same transfer ID
+            const transferringFiles = filePaths.map(filePath => ({
+                path: filePath,
+                name: filePath.split('/').pop() || filePath,
+                sourceCloudType: transfer.sourceStorageType === CloudType.Local ? undefined : transfer.sourceStorageType,
+                sourceAccountId: transfer.sourceAccountId || undefined,
+                targetCloudType: transfer.targetStorageType === CloudType.Local ? undefined : transfer.targetStorageType,
+                targetAccountId: transfer.targetAccountId || undefined,
+                transferId: transfer.id,
+                isMove: !transfer.keepOriginal
+            }));
+
+            addTransferringFiles(transferringFiles);
+
+            // Reset the transfer status for retry
+            batchUpdateTransfer(transferId, {
+                status: "fetching",
+                progress: 0,
+                cancelledMessage: "Retrying failed files...",
+                completedFiles: transfer.completedFiles || [],
+                failedFiles: [] 
+            });
+
+            // Start the retry transfer process using the same transfer
+            await retryTransferFiles(
+                transfer, 
+                filePaths,
+                transfer.sourceStorageType === CloudType.Local ? undefined : transfer.sourceStorageType,
+                transfer.sourceAccountId || undefined,
+                transfer.targetPath,
+                transfer.targetStorageType === CloudType.Local ? undefined : transfer.targetStorageType,
+                transfer.targetAccountId || undefined,
+                transfer.keepOriginal
+            );
+
         } catch (error) {
+            console.error("Error during transfer retry:", error);
             const errorMessage = error instanceof Error ? error.message : "Retry failed";
-            batchUpdateTransfer(transfer.id, {
-                status: "cancelled",
-                cancelledMessage: errorMessage,
-                endTime: Date.now(),
+            batchUpdateTransfer(transferId, {
+                cancelledMessage: `Retry failed: ${errorMessage}`
             });
         }
-    }, []);
+    }, [addTransferringFiles, createTransfer, batchUpdateTransfer, getTransfer, cancellableWait, deleteFileFromSource, cleanupFailedTransferFiles, removeTransferringFiles, refreshSourceAndTargetBoxes]);
 
     return {
         transferQueue,
