@@ -770,7 +770,7 @@ function StorageBoxInner({
                 className={cn(
                     "box-container absolute flex flex-col bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden",
                     isMaximized ? "border-blue-500 dark:border-blue-400" : "rounded-xl",
-                    isDropZoneActive && "ring-4 ring-green-400 bg-green-50 dark:bg-green-900/20 border-green-400"
+                    isDropZoneActive && "ring-4 ring-green-400 bg-green-50 dark:bg-green-900/20 border-green-400 select-none"
                 )}
                 style={{
                     opacity,
@@ -799,7 +799,7 @@ function StorageBoxInner({
                     </div>
                     <div>
                         <div className="select-none text-slate-800 dark:text-slate-200">{title}</div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                        <div className="select-none text-xs text-slate-500 dark:text-slate-400">
                             {type === "local" ? "" : `(${box.accountId})`}
                         </div>
                     </div>
@@ -896,7 +896,7 @@ function StorageBoxInner({
 
             {/* Size indicator (only shown when not maximized) */}
             {!isMaximized && (
-                <div className="absolute bottom-1 right-2 text-xs text-slate-400 pointer-events-none">
+                <div className="absolute bottom-1 right-2 text-xs text-slate-400 pointer-events-none select-none">
                     {Math.round(sizeRef.current.width)} × {Math.round(sizeRef.current.height)}
                 </div>
             )}

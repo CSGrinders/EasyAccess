@@ -223,7 +223,7 @@ export const PermissionSettings = ({ children }: PermissionSettingsProps) => {
             </DialogTrigger>
 
             {/* Main dialog content */}
-            <DialogContent className="max-w-4xl w-[95vw] sm:max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl max-h-[85vh] overflow-y-auto">
+            <DialogContent className="max-w-4xl w-[95vw] sm:max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl max-h-[85vh] overflow-y-auto select-none">
                 <DialogHeader className="space-y-4">
                     <div className="flex items-center gap-4">
                         <div className="p-3 rounded-xl bg-gradient-to-br from-orange-50 to-red-100 dark:from-orange-800/30 dark:to-red-700/30">

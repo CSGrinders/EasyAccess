@@ -1,4 +1,4 @@
-import { ArrowUp, Loader2, X, Command, CornerDownLeft } from "lucide-react";
+import { ArrowUp, Loader2, X, Command, CornerDownLeft, ChevronDown, ChevronUp, Copy } from "lucide-react";
 import React, { useState, useRef, useCallback, useEffect, memo } from "react";
 import { Button } from "../ui/button";
 import { RendererIpcCommandDispatcher } from "@/services/AgentControlService";
@@ -12,14 +12,11 @@ const AGENT_AUTH_REDIRECT_URL = process.env.AGENT_AUTH_REDIRECT_URL;
 
 const AgentAction = memo(function AgentAction() {
     const [isResizing, setIsResizing] = useState(false);
-    const [isMoving, setIsMoving] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const messagesRef = useRef<HTMLDivElement>(null);
     const wholeRef = useRef<HTMLDivElement>(null);
     const [query, setQuery] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const dragStartRef = useRef({ x: 0, y: 0 });
-    const positionRef = useRef({ x: 0, y: 0 });
 
     const [showErrorDialog, setShowErrorDialog] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
@@ -27,8 +24,13 @@ const AgentAction = memo(function AgentAction() {
 
     const [showToolCalls, setShowToolCalls] = useState(false);
     const [agentWorkingMessages, setAgentWorkingMessages] = useState<string[]>([]);
-    const [response, setResponse] = useState("");
-    const [userQuery, setUserQuery] = useState("");
+    const [isResponseCollapsed, setIsResponseCollapsed] = useState(false);
+    const [response, setResponse] = useState(
+    "This is an example response from the agent. You can use this for testing purposes."
+    );
+    const [userQuery, setUserQuery] = useState(
+    "Example: 'Find all files containing the word 'report' in my cloud storage.'"
+    );
 
     const [showClarificationDialog, setShowClarificationDialog] = useState(false);
     const [question, setQuestion] = useState("");
@@ -49,11 +51,15 @@ const AgentAction = memo(function AgentAction() {
     const waitForResponseRef = useRef<boolean>(false);
     const questionRef = useRef<HTMLDivElement>(null);
 
-    const MONTHLY_REQUEST_LIMIT = 50; // Monthly request limit for the user
+    const MONTHLY_REQUEST_LIMIT = 50; 
 
-    // Add keyboard movement handler
+    // Add state for mouse tracking and copy functionality
+    const [isMouseInResponseBox, setIsMouseInResponseBox] = useState(false);
+    const [showCopyButton, setShowCopyButton] = useState(false);
+    const [copySuccess, setCopySuccess] = useState(false); 
+
+    // Add keyboard shortcut handler  
     const handleKeyDown = useCallback((e: KeyboardEvent) => {
-
         const isCmdOrCtrl = e.ctrlKey || e.metaKey;
         console.log("Key pressed:", e.key);
 
@@ -63,34 +69,68 @@ const AgentAction = memo(function AgentAction() {
             case 'Enter':
                 toggleVisibility();
                 break;
-        }
-
-        if (!containerRef.current) return;
-
-        const MOVE_AMOUNT = 60; // pixels to move per keypress
-
-        switch (e.key) {
-            case 'ArrowLeft':
-                positionRef.current.x -= MOVE_AMOUNT;
+            case 'ArrowUp':
+            case 'ArrowDown':
+                // Only toggle collapse if there's content and the agent response is visible
+                if ((userQuery || response) && agentWorkVisibilityRef.current) {
+                    e.preventDefault();
+                    setIsResponseCollapsed(prev => !prev);
+                }
                 break;
-            case 'ArrowRight':
-                positionRef.current.x += MOVE_AMOUNT;
+            case 'a':
+            case 'A':
+                // Only allow select all when mouse is in response box
+                if (isMouseInResponseBox && response) {
+                    e.preventDefault();
+                    selectAllResponseText();
+                }
                 break;
-            default:
-                return;
         }
+    }, [userQuery, response, isMouseInResponseBox]);
 
-        containerRef.current.style.transform =
-            `translate(${positionRef.current.x}px, 0px)`;
-        e.preventDefault();
+    // Function to copy response text to clipboard
+    const copyResponseToClipboard = useCallback(async () => {
+        if (!response) return;
+        
+        try {
+            // Parse the response and extract only the agent text content, excluding tool results
+            const parsed = parseMixedResponse(response);
+            const agentText = parsed
+                .filter(part => part.type === "agent")
+                .map(part => part.content)
+                .join('\n\n');
+            
+            await navigator.clipboard.writeText(agentText);
+            setCopySuccess(true);
+            setTimeout(() => setCopySuccess(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy text: ', err);
+        }
+    }, [response]);
 
-    }, []);
+    // Function to select all response text
+    const selectAllResponseText = useCallback(() => {
+        if (!messagesRef.current || !response) return;
+        
+        const selection = window.getSelection();
+        if (!selection) return;
+        
+        // Find all text content in the response area
+        const responseElements = messagesRef.current.querySelectorAll('p');
+        if (responseElements.length === 0) return;
+        
+        selection.removeAllRanges();
+        const range = document.createRange();
+        range.setStartBefore(responseElements[0]);
+        range.setEndAfter(responseElements[responseElements.length - 1]);
+        selection.addRange(range);
+    }, [response]);
 
     const toggleVisibility = useCallback(() => {
         console.log("Toggling visibility of agent response box");
         // reset the position of agent work box
         if (wholeRef.current) {
-            wholeRef.current.style.display = wholeRef.current.style.display === 'none' ? 'block' : 'none';
+            wholeRef.current.style.display = wholeRef.current.style.display === 'none' ? 'flex' : 'none';
         }
     }, []);
 
@@ -295,33 +335,18 @@ const AgentAction = memo(function AgentAction() {
         e.preventDefault();
     }, []);
 
-    const handleMouseDownMoveBox = useCallback((e: React.MouseEvent) => {
-        console.log("Starting move");
-        setIsMoving(true);
-        dragStartRef.current = {
-            x: e.clientX - positionRef.current.x,
-            y: e.clientY - positionRef.current.y
-        };
-        e.preventDefault();
-    }, []);
-
     const handleMouseMove = useCallback((e: MouseEvent) => {
         if (!containerRef.current) return;
 
-        if (isMoving) {
-            const newX = e.clientX - dragStartRef.current.x;
-            positionRef.current.x = newX;
-            containerRef.current.style.transform = `translate(${newX}px, 0px)`;
-        } else if (isResizing) {
+        if (isResizing) {
             const rect = containerRef.current.getBoundingClientRect();
             const newHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, e.clientY - rect.top));
             containerRef.current.style.height = `${newHeight}px`;
         }
-    }, [isResizing, isMoving]);
+    }, [isResizing]);
 
     const handleMouseUp = useCallback(() => {
         setIsResizing(false);
-        setIsMoving(false);
     }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -336,6 +361,11 @@ const AgentAction = memo(function AgentAction() {
         if (waitForResponseRef.current) {
             console.log("Response received, resolving wait...");
             resolveWaitForResponse(query);
+            // Reset textarea height after responding to agent question
+            const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+            if (textarea) {
+                textarea.style.height = '48px';
+            }
             return;
         }
 
@@ -360,10 +390,17 @@ const AgentAction = memo(function AgentAction() {
         setResponse('');
         setIsLoading(true);
         setUserQuery(query);
+        setIsResponseCollapsed(false);
 
         try {
             const result = await (window as any).mcpApi.processQuery(query, session?.access_token);
             setQuery('');
+            
+            // Reset textarea height after successful submission
+            const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+            if (textarea) {
+                textarea.style.height = '48px';
+            }
 
         } catch (err: any) {
             // handle error
@@ -376,11 +413,16 @@ const AgentAction = memo(function AgentAction() {
         setAgentWorkVisibility(false);
         setResponse('');
         setUserQuery('');
+        setIsResponseCollapsed(false);
+    }, []);
+
+    const handleToggleCollapse = useCallback(() => {
+        setIsResponseCollapsed(prev => !prev);
     }, []);
 
     // Add event listeners for mouse move and up
     useEffect(() => {
-        if (isResizing || isMoving) {
+        if (isResizing) {
             document.addEventListener('mousemove', handleMouseMove);
             document.addEventListener('mouseup', handleMouseUp);
         }
@@ -389,7 +431,7 @@ const AgentAction = memo(function AgentAction() {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isResizing, isMoving, handleMouseMove, handleMouseUp]);
+    }, [isResizing, handleMouseMove, handleMouseUp]);
 
 
     useEffect(() => {
@@ -527,38 +569,29 @@ const AgentAction = memo(function AgentAction() {
     }
 
     useEffect(() => {
-        setAgentWorkVisibility(false);
+        setAgentWorkVisibility(true);
     }, []);
 
     return (
         <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none" ref={wholeRef}>
             <div
                 ref={containerRef}
-                className="agentResponse text-gray-900 dark:text-white absolute top-1 z-50 w-full max-w-4xl pointer-events-auto glass-effect"
+                className="agentResponse text-gray-900 dark:text-white absolute top-1 z-50 w-full max-w-4xl pointer-events-auto bg-white/95 dark:bg-gray-900/80 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 shadow-xl dark:shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
                 style={{
-                    maxHeight: `${MAX_HEIGHT}px`,
-                    minHeight: `${MIN_HEIGHT}px`,
+                    maxHeight: isResponseCollapsed ? 'auto' : `${MAX_HEIGHT}px`,
+                    minHeight: isResponseCollapsed ? 'auto' : `${MIN_HEIGHT}px`,
+                    height: isResponseCollapsed ? 'auto' : 'auto',
                     borderRadius: '16px',
                     transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                 }}
             >
-                <div
-                    onMouseDown={handleMouseDownMoveBox}
-                    className="absolute top-0 w-full h-8 bg-gradient-to-b from-white/5 to-transparent z-10 cursor-move transition-all duration-300 flex items-center justify-center rounded-t-2xl group hover:from-white/10"
-                    style={{
-                        touchAction: 'none',
-                        userSelect: 'none',
-                    }}
-                >
-                    <div className="w-12 h-1.5 bg-white/20 rounded-full transition-all duration-300 group-hover:bg-white/40 group-hover:w-16" />
-                </div>
                 <div className="flex flex-col h-full">
                     {/* Header - Fixed height */}
-                    <div ref={headerRef} className="flex-shrink-0 mt-6">
+                    <div ref={headerRef} className="flex-shrink-0 mt-4">
                         <div className="flex items-center justify-between mb-3 mx-4">
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-2 rounded-full bg-gradient-to-r from-blue-400 to-purple-500 animate-pulse"></div>
-                                <p className="text-lg font-medium text-white/90 tracking-wide">
+                                <p className="text-lg font-medium text-gray-800 dark:text-white/90 tracking-wide">
                                     {isLoading ? (
                                         <span className="flex items-center gap-2">
                                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -569,78 +602,107 @@ const AgentAction = memo(function AgentAction() {
                             </div>
 
                             <div className="flex items-center gap-2">
+                                {/* Copy button in header - always visible when there's response content */}
+                                {response && (
+                                    <button
+                                        onClick={copyResponseToClipboard}
+                                        className="p-2 hover:bg-gray-200/50 dark:hover:bg-white/10 rounded-lg transition-all duration-200 group"
+                                        title={copySuccess ? "Copied!" : "Copy response"}
+                                    >
+                                        {copySuccess ? (
+                                            <div className="w-4 h-4 text-green-500 flex items-center justify-center">
+                                                <span className="text-xs font-semibold">✓</span>
+                                            </div>
+                                        ) : (
+                                            <Copy className="w-4 h-4 text-gray-600 dark:text-white/70 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors" />
+                                        )}
+                                    </button>
+                                )}
+                                {/* Show collapse/expand button only when there's content */}
+                                {(userQuery || response) && (
+                                    <button
+                                        onClick={handleToggleCollapse}
+                                        className="p-2 hover:bg-gray-200/50 dark:hover:bg-white/10 rounded-lg transition-all duration-200 group"
+                                        title={isResponseCollapsed ? "Expand response" : "Collapse response"}
+                                    >
+                                        {isResponseCollapsed ? (
+                                            <ChevronDown className="w-4 h-4 text-gray-600 dark:text-white/70 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors" />
+                                        ) : (
+                                            <ChevronUp className="w-4 h-4 text-gray-600 dark:text-white/70 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors" />
+                                        )}
+                                    </button>
+                                )}
                                 <button
                                     onClick={handleClose}
-                                    className="p-2 hover:bg-white/10 rounded-lg transition-all duration-200 group"
+                                    className="p-2 hover:bg-gray-200/50 dark:hover:bg-white/10 rounded-lg transition-all duration-200 group"
                                 >
-                                    <X className="w-4 h-4 text-white/70 group-hover:text-red-400 transition-colors" />
+                                    <X className="w-4 h-4 text-gray-600 dark:text-white/70 group-hover:text-red-500 dark:group-hover:text-red-400 transition-colors" />
                                 </button>
                             </div>
                         </div>
-                        <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+                        <div className="mx-4 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-white/20 to-transparent"></div>
                     </div>
                     
                     {/* Content - Flexible height with scrolling */}
-                    <div className="flex-1 flex flex-col min-h-0 relative px-4 py-3">
-                        <div 
-                            className="flex-1 overflow-y-auto pr-2 scrollbar-hide"
-                            ref={messagesRef}
-                            style={{
-                                minHeight: `${MIN_HEIGHT - 100}px`,
-                                maxHeight: `${MAX_HEIGHT - 100}px`,
-                            }}
-                        >
-                            {userQuery && (
-                                <div className="flex justify-end pl-1 pr-3 my-2">
-                                    <div className="bg-blue-500/20 rounded-lg px-3 py-2 border border-blue-500/30">
-                                        <p className="text-sm text-blue-200/80">{userQuery}</p>
+                    {!isResponseCollapsed && (
+                        <div className="flex-1 flex flex-col min-h-0 relative px-4 py-3">
+                            <div 
+                                className="flex-1 overflow-y-auto pr-2 scrollbar-hide relative"
+                                ref={messagesRef}
+                                style={{
+                                    minHeight: `${MIN_HEIGHT - 100}px`,
+                                    maxHeight: `${MAX_HEIGHT - 100}px`,
+                                }}
+                                onMouseEnter={() => {
+                                    setIsMouseInResponseBox(true);
+                                    setShowCopyButton(true);
+                                }}
+                                onMouseLeave={() => {
+                                    setIsMouseInResponseBox(false);
+                                    setShowCopyButton(false);
+                                }}
+                            >
+                                {userQuery && (
+                                    <div className="flex justify-end pl-1 pr-3 my-2">
+                                        <div className="bg-blue-500/20 dark:bg-blue-500/20 rounded-lg px-3 py-2 border border-blue-400/40 dark:border-blue-500/30 max-w-[80%]">
+                                            <p className="text-sm text-blue-700 dark:text-blue-200/80 whitespace-pre-wrap break-words">{userQuery}</p>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                <div className="pb-2">
+                                    <div className="space-y-4">
+                                        {parsed.map((part, index) =>
+                                        part.type === "tool" ? (
+                                            <ToolResult key={index} content={part.content} />
+                                        ) : (
+                                            <div key={index} className="animate-in fade-in-0 slide-in-from-left-2 duration-300">
+                                                <p className="text-sm leading-relaxed whitespace-pre-wrap text-gray-800 dark:text-white/90 selection:bg-blue-200/40 dark:selection:bg-white/20">
+                                                    {part.content}
+                                                </p>
+                                            </div>
+                                        )
+                                        )}
+                                        {isLoading && (
+                                            <div className="flex items-center gap-2 text-gray-600 dark:text-white/60">
+                                                <div className="w-1 h-4 bg-gray-600 dark:bg-white/60 animate-pulse rounded"></div>
+                                                <span className="text-xs">Thinking...</span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                            )}
-                            
-                            <div className="pb-2">
-                                <div className="space-y-4">
-                                    {parsed.map((part, index) =>
-                                    part.type === "tool" ? (
-                                        <ToolResult key={index} content={part.content} />
-                                    ) : (
-                                        <div key={index} className="animate-in fade-in-0 slide-in-from-left-2 duration-300">
-                                            <p className="text-sm leading-relaxed whitespace-pre-wrap text-white/90 selection:bg-white/20">
-                                                {part.content}
-                                            </p>
-                                        </div>
-                                    )
-                                    )}
-                                    {isLoading && (
-                                        <div className="flex items-center gap-2 text-white/60">
-                                            <div className="w-1 h-4 bg-white/60 animate-pulse rounded"></div>
-                                            <span className="text-xs">Thinking...</span>
-                                        </div>
-                                    )}
-                                </div>
                             </div>
-                        </div>
 
-                        {isLoading && (
-                            <div className="absolute bottom-2 right-2 p-2">
-                                <Loader2 className="animate-spin w-4 h-4 text-white/80" />
-                            </div>
-                        )}
-                    </div>
-                    {/* Resize handle */}
-                    {/* <div
-                        onMouseDown={handleMouseDown}
-                        className="absolute bottom-0 w-full h-4 cursor-s-resize bg-transparent z-10 transition-colors duration-200 flex items-center justify-center rounded-b-[32px] flex-shrink-0"
-                        style={{
-                            touchAction: 'none',
-                            userSelect: 'none',
-                        }}
-                    >
-                        <div className="w-8 h-1 bg-white/30 rounded-full" />
-                    </div> */}
+                            {isLoading && (
+                                <div className="absolute bottom-2 right-2 p-2">
+                                    <Loader2 className="animate-spin w-4 h-4 text-gray-600 dark:text-white/80" />
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
-            <div className="absolute pointer-events-auto bottom-12 left-1/2 transform -translate-x-1/2 w-[75%] max-w-[800px]">
+            <div className="absolute pointer-events-auto bottom-2 left-1/2 transform -translate-x-1/2 w-[75%] max-w-[800px] select-none">
                 <span ref={questionRef}
                     className={`text-center text-xs text-gray-500 mb-4`}
                 >
@@ -648,17 +710,27 @@ const AgentAction = memo(function AgentAction() {
                 </span>
                 <div className="bg-white/80 dark:bg-stone-950/30 rounded-xl border border-gray-200/50 dark:border-gray-700/50 backdrop-blur-xl shadow-lg p-2 transition-all duration-300 hover:shadow-xl">
                     <form onSubmit={handleSubmit} className="relative">
-                        <div className="flex items-center gap-3 p-1 bg-gray-50/50 dark:bg-gray-800/50 rounded-xl border border-gray-200/50 dark:border-gray-700/50 focus-within:border-blue-500/50 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all duration-200">
+                        <div className="flex items-start gap-3 p-1 bg-gray-50/50 dark:bg-gray-800/50 rounded-xl border border-gray-200/50 dark:border-gray-700/50 focus-within:border-blue-500/50 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all duration-200">
 
                             {/* Input Field */}
                             <div className="flex-1 relative">
-                                <input
+                                <textarea
                                     value={query}
                                     onChange={(e) => setQuery(e.target.value)}
                                     placeholder="Talk to your helpful agent!"
-                                    className="w-full bg-transparent border-0 placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-gray-100 px-4 py-3 text-sm focus:outline-none focus:ring-0"
+                                    className="w-full bg-transparent border-0 placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-gray-100 px-4 py-3 text-sm focus:outline-none focus:ring-0 resize-none min-h-[48px] max-h-[120px] overflow-y-auto"
                                     disabled={isLoading || !session}
                                     autoComplete="off"
+                                    rows={1}
+                                    style={{
+                                        height: 'auto',
+                                        minHeight: '48px'
+                                    }}
+                                    onInput={(e) => {
+                                        const target = e.target as HTMLTextAreaElement;
+                                        target.style.height = 'auto';
+                                        target.style.height = Math.min(target.scrollHeight, 120) + 'px';
+                                    }}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
                                             e.preventDefault();
@@ -667,20 +739,26 @@ const AgentAction = memo(function AgentAction() {
                                     }}
                                 />
 
-                                {/* Character count or status indicator */}
+                                {/* Remaining character count positioned at bottom right */}
                                 {query.length > 0 && (
-                                    <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-xs text-gray-400 dark:text-gray-500">
-                                        {query.length}
+                                    <div className={`absolute right-2 bottom-1 text-xs px-1 rounded ${
+                                        query.length > MAX_QUERY_LENGTH 
+                                            ? 'text-red-500 bg-red-50/80 dark:bg-red-900/30' 
+                                            : query.length > MAX_QUERY_LENGTH * 0.8
+                                            ? 'text-orange-500 bg-orange-50/80 dark:bg-orange-900/30'
+                                            : 'text-gray-400 dark:text-gray-500 bg-gray-50/80 dark:bg-gray-800/80'
+                                    }`}>
+                                        {MAX_QUERY_LENGTH - query.length}
                                     </div>
                                 )}
                             </div>
 
-                            {/* Submit Button */}
+                            {/* Submit Button - aligned to bottom */}
                             <Button
                                 type="submit"
-                                disabled={isLoading || !query.trim()}
+                                disabled={isLoading || !query.trim() || query.length > MAX_QUERY_LENGTH}
                                 size="sm"
-                                className="enhanced-button relative overflow-hidden bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-500 text-white font-medium p-3 rounded-lg transition-all duration-200 transform active:scale-95 disabled:scale-100 disabled:opacity-50 group"
+                                className="enhanced-button relative overflow-hidden bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-500 text-white font-medium p-3 rounded-lg transition-all duration-200 transform active:scale-95 disabled:scale-100 disabled:opacity-50 group self-end"
                             >
                                 {isLoading ? (
                                     <Loader2 className="animate-spin w-5 h-5" />
@@ -712,7 +790,7 @@ const AgentAction = memo(function AgentAction() {
                                         <span>Sign in to continue</span>
                                         <button
                                             onClick={signUp}
-                                            className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs px-1 py-0.5 rounded flex items-center gap-1 border border-gray-300"
+                                            className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-xs px-1 py-0.5 rounded flex items-center gap-1 border border-gray-300 dark:border-gray-600"
                                         >
                                             <FcGoogle size={16} />
                                             Sign in with Google
@@ -735,6 +813,24 @@ const AgentAction = memo(function AgentAction() {
                                     </div>
                                     <div className="flex items-center p-1 bg-gray-100 dark:bg-gray-600 rounded">
                                         <CornerDownLeft className="w-3 h-3"/>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <span>Collapse</span>
+                                    <div className="flex items-center p-1 bg-gray-100 dark:bg-gray-600 rounded">
+                                        <Command className="w-3 h-3"/>
+                                    </div>
+                                    <div className="flex items-center p-1 bg-gray-100 dark:bg-gray-600 rounded">
+                                        <span className="text-xs">↑/↓</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <span>Select All</span>
+                                    <div className="flex items-center p-1 bg-gray-100 dark:bg-gray-600 rounded">
+                                        <Command className="w-3 h-3"/>
+                                    </div>
+                                    <div className="flex items-center p-1 bg-gray-100 dark:bg-gray-600 rounded">
+                                        <span className="text-xs">A</span>
                                     </div>
                                 </div>
                             </div>

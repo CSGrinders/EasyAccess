@@ -191,10 +191,8 @@ body {
 
 @layer utilities {
     .agentResponse {
-        background: hsla(0, 0%, 0%, 0.5) !important;
         width: 600px !important;
         border-radius: 8px !important;
-        border: 1px solid rgba(255, 255, 255, 0.1);
         transition: all 0.26s ease-out;
         backdrop-filter: brightness(1.1) blur(2px);
         font-family: var(--font-helvetica);
@@ -202,18 +200,17 @@ body {
         white-space: pre !important;
         word-wrap: normal !important;
         word-break: normal !important;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
     }
 
     .tool-part {
-        background: hsla(0, 0%, 15%, 0.4) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: hsla(0, 0%, 95%, 0.8) !important;
+        border: 1px solid rgba(0, 0, 0, 0.1);
         padding: 8px !important;
     }
 
-    .agentResponse:hover {
-        border-color: rgba(255, 255, 255, 0.15);
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+    .dark .tool-part {
+        background: hsla(0, 0%, 15%, 0.4) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     .userQuery {
@@ -515,6 +512,10 @@ body {
 
 .agentResponse .flex-1.overflow-y-auto {
     scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.dark .agentResponse .flex-1.overflow-y-auto {
     scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
@@ -527,12 +528,20 @@ body {
 }
 
 .agentResponse .flex-1.overflow-y-auto::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.2);
     border-radius: 3px;
     transition: background 0.2s ease;
 }
 
+.dark .agentResponse .flex-1.overflow-y-auto::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+}
+
 .agentResponse .flex-1.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.dark .agentResponse .flex-1.overflow-y-auto::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.3);
 }
 
@@ -545,6 +554,10 @@ body {
 .typing-cursor::after {
     content: '|';
     animation: blink 1s infinite;
+    color: rgba(0, 0, 0, 0.7);
+}
+
+.dark .typing-cursor::after {
     color: rgba(255, 255, 255, 0.7);
 }
 

@@ -37,7 +37,7 @@ export const SettingsPanel = ({ className, onAccountsCleared }: SettingsPanelPro
         }
     };
     return (
-        <div className={`p-6 space-y-6 ${className}`}>
+        <div className={`p-6 space-y-6 ${className} select-none`}>
             <div className="space-y-2">
                 <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Settings</h1>
                 <p className="text-slate-600 dark:text-slate-400">

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, ipcRenderer, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, ipcRenderer, dialog, Menu } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import Store from 'electron-store';
@@ -37,6 +37,9 @@ export const AppConfig = {
 }
 
 const store = new Store();
+
+// Set app name as early as possible
+app.setName('Easy Access');
 
 // let mcpClient: MCPClient | null = null;
 let mcpClient: MCPClient | null = null;
@@ -350,6 +353,38 @@ const createWindow = async () => {
 };
 
 app.whenReady().then(() => {
+    // Set the application name in the menu bar
+    app.setName('Easy Access');
+    
+    // Create custom menu with only Help
+    const template = [
+        {
+            role: 'help',
+            submenu: [
+                {
+                    label: 'About Easy Access',
+                    click: () => {
+                        dialog.showMessageBox({
+                            type: 'info',
+                            title: 'About Easy Access',
+                            message: 'Easy Access',
+                            detail: 'A modern file management application\nVersion 0.1'
+                        });
+                    }
+                },
+                {
+                    label: 'Learn More',
+                    click: () => {
+                        shell.openExternal('https://github.com/');
+                    }
+                }
+            ]
+        }
+    ];
+    
+    const menu = Menu.buildFromTemplate(template as any);
+    Menu.setApplicationMenu(menu);
+    
     createWindow();
 });
 

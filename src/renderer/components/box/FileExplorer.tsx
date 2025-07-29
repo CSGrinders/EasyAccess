@@ -1222,6 +1222,9 @@ function FileExplorerInner({
         }
     }, [])
 
+    /** Track whether mouse is within the container */
+    const [isMouseWithinContainer, setIsMouseWithinContainer] = useState(false);
+
     /** Keyboard shortcuts handler */
     useEffect(() => {
         const handleKeyDown = async (e: KeyboardEvent) => {
@@ -1271,10 +1274,12 @@ function FileExplorerInner({
             }
         }
 
-        // Add keyboard event listener
-        window.addEventListener("keydown", handleKeyDown)
-        return () => window.removeEventListener("keydown", handleKeyDown)
-    }, [BoxDrag.isDragging, sortedItems])
+        // Only add keyboard event listener when mouse is within the container
+        if (isMouseWithinContainer) {
+            window.addEventListener("keydown", handleKeyDown)
+            return () => window.removeEventListener("keydown", handleKeyDown)
+        }
+    }, [BoxDrag.isDragging, sortedItems, isMouseWithinContainer])
 
 
     /**
@@ -1531,7 +1536,7 @@ function FileExplorerInner({
                 </DropdownMenuContent>
             </DropdownMenu>
             { /* Breadcrumbs */}
-            <div className="grid grid-flow-col place-content-between pl-4 pt-2 bg-white dark:bg-slate-800">
+            <div className="grid grid-flow-col place-content-between pl-4 pt-2 bg-white dark:bg-slate-800 select-none">
                 <div className="flex items-center space-x-1 text-sm text-gray-400">
                     {currentPath.map((segment, index) => (
                         <React.Fragment key={index}>
@@ -1556,7 +1561,7 @@ function FileExplorerInner({
             </div>
 
             {/* Toolbar that contains navigation buttons and search bar */}
-            <div className="flex items-center gap-1 p-1 bg-white dark:bg-slate-800">
+            <div className="flex items-center gap-1 p-1 bg-white dark:bg-slate-800 select-none">
 
                 {/* Home button - goes to user's home directory */}
                 <Button
@@ -1626,7 +1631,7 @@ function FileExplorerInner({
                         placeholder="Search files..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-9 text-slate-800 dark:text-slate-200 h-8 placeholder:text-gray-500 focus-visible:ring-blue-500 focus-visible:ring-offset-0 focus-visible:border-blue-500"
+                        className="pl-9 text-slate-800 dark:text-slate-200 h-8 placeholder:text-gray-500 focus-visible:ring-blue-500 focus-visible:ring-offset-0 focus-visible:border-blue-500 select-none"
                     />
                 </div>
             </div>
@@ -1634,8 +1639,10 @@ function FileExplorerInner({
             {/* This is where files and folders are displayed in a grid */}
             <div
                 ref={containerRef}
-                className="relative flex-1 bg-white dark:bg-slate-900 pt-2 px-4 pb-4 overflow-y-auto"
+                className="relative flex-1 bg-white dark:bg-slate-900 pt-2 px-4 pb-4 overflow-y-auto select-none"
                 onMouseDown={handleMouseDown}
+                onMouseEnter={() => setIsMouseWithinContainer(true)}
+                onMouseLeave={() => setIsMouseWithinContainer(false)}
             >
                 {/* Selection box for multi-select */}
                 <div
