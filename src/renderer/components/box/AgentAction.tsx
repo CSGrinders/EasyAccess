@@ -25,12 +25,8 @@ const AgentAction = memo(function AgentAction() {
     const [showToolCalls, setShowToolCalls] = useState(false);
     const [agentWorkingMessages, setAgentWorkingMessages] = useState<string[]>([]);
     const [isResponseCollapsed, setIsResponseCollapsed] = useState(false);
-    const [response, setResponse] = useState(
-    "This is an example response from the agent. You can use this for testing purposes."
-    );
-    const [userQuery, setUserQuery] = useState(
-    "Example: 'Find all files containing the word 'report' in my cloud storage.'"
-    );
+    const [response, setResponse] = useState("");
+    const [userQuery, setUserQuery] = useState("");
 
     const [showClarificationDialog, setShowClarificationDialog] = useState(false);
     const [question, setQuestion] = useState("");
@@ -579,7 +575,7 @@ const AgentAction = memo(function AgentAction() {
     }
 
     useEffect(() => {
-        setAgentWorkVisibility(true);
+        setAgentWorkVisibility(false);
         setIsAgentInterfaceVisible(true);
     }, []);
 
