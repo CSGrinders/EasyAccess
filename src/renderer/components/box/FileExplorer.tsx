@@ -50,7 +50,9 @@ import {
     Clock,
     File,
     MoreHorizontal,
-    FolderPlus
+    FolderPlus,
+    HelpCircle,
+    Keyboard
 } from "lucide-react"
 import type { FileContent, FileSystemItem } from "@Types/fileSystem"
 import { Input } from "@/components/ui/input"
@@ -76,6 +78,7 @@ import { toast } from "sonner"
 import { FileItem, getFileIcon, getIconColor } from "@/components/ui/FileItem"
 import { RendererIpcCommandDispatcher } from "@/services/AgentControlService"
 import { FileStatsDialog } from "@/components/ui/FileStatsDialog"
+import { MoveDestinationDialog } from "./MoveDestinationDialog"
 import { randomInt } from "crypto"
 
 /**
@@ -92,8 +95,8 @@ interface FileExplorerProps {
     silentRefresh?: boolean                                                                 // Whether to refresh silently without loading indicator
     onCurrentPathChange?: (currentPath: string) => void                                     // Callback when the current path changes
     /** Optional drag and drop transfer handler box */
-    handleItemTransfer?: (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => void;
-    
+    handleItemTransfer?: (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => void
+    deleteFileFromSource?: (fileInfo: any, keepOriginal?: boolean) => Promise<void>; 
 }
 
 
@@ -111,7 +114,8 @@ function FileExplorerInner({
     refreshToggle,              // Toggle to refresh the file explorer
     silentRefresh = false,      // Whether to refresh silently without loading indicator
     onCurrentPathChange,         // Callback when the current path changes
-    handleItemTransfer,     
+    handleItemTransfer,  
+    deleteFileFromSource, 
 }: FileExplorerProps, 
     ref: React.Ref<{}>) {
    
@@ -195,6 +199,10 @@ function FileExplorerInner({
     const [isCalculatingSize, setIsCalculatingSize] = useState(false); // Whether we're currently calculating the size of a folder
     const [selectedCount, setSelectedCount] = useState(0); // Number of currently selected files
 
+    /** Move destination dialog state */
+    const [showMoveDialog, setShowMoveDialog] = useState(false); // Whether to show the move destination dialog
+    const [itemsToMove, setItemsToMove] = useState<FileSystemItem[]>([]); // Items selected for moving
+
     /** Current zom level */
     const zoomLevelRef = useRef(zoomLevel);
 
@@ -203,6 +211,15 @@ function FileExplorerInner({
 
     const [showDropdown, setShowDropdown] = React.useState(false);
     const [dropdownPosition, setDropdownPosition] = React.useState<{ x: number; y: number } | null>(null);
+
+    /** Address bar state for direct path navigation */
+    const [showAddressBar, setShowAddressBar] = useState(false);
+    const [addressBarValue, setAddressBarValue] = useState("");
+    const [addressBarSuggestions, setAddressBarSuggestions] = useState<string[]>([]);
+    const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
+
+    /** Keyboard shortcuts help dialog state */
+    const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
 
     // used by agent to update the current path in file explorer
     useImperativeHandle(ref, () => ({
@@ -213,6 +230,136 @@ function FileExplorerInner({
         }
     }));
 
+    /**
+     * Handles address bar navigation
+     */
+    const handleAddressBarNavigate = () => {
+        if (addressBarValue.trim()) {
+            navigateTo(addressBarValue.trim());
+            setShowAddressBar(false);
+            setAddressBarValue("");
+            setAddressBarSuggestions([]);
+            setSelectedSuggestionIndex(-1);
+        }
+    };
+
+    /**
+     * Gets path suggestions based on current input
+     */
+    const getPathSuggestions = async (inputPath: string): Promise<string[]> => {
+        if (!inputPath.trim()) {
+            // Return common paths when no input
+            const commonPaths = cloudType && accountId ? 
+                [CLOUD_HOME] : 
+                [
+                    await (window as any).fsApi.getHomePath(),
+                    await (window as any).fsApi.getHomePath() + "/Documents",
+                    await (window as any).fsApi.getHomePath() + "/Downloads", 
+                    await (window as any).fsApi.getHomePath() + "/Desktop",
+                    await (window as any).fsApi.getHomePath() + "/Pictures"
+                ];
+            return commonPaths;
+        }
+
+        try {
+            // Get the directory part of the input path
+            const lastSlashIndex = inputPath.lastIndexOf('/');
+            const dirPath = lastSlashIndex > 0 ? inputPath.substring(0, lastSlashIndex) : '/';
+            const prefix = lastSlashIndex >= 0 ? inputPath.substring(lastSlashIndex + 1) : inputPath;
+
+            let directories: FileSystemItem[] = [];
+
+            // Get directories from current input path
+            if (cloudType && accountId) {
+                directories = await (window as any).cloudFsApi.readDirectory(cloudType, accountId, dirPath);
+            } else {
+                directories = await window.fsApi.readDirectory(dirPath);
+            }
+
+            // Filter to only directories, match prefix, and respect hidden file setting
+            const suggestions = directories
+                .filter(item => 
+                    item.isDirectory && 
+                    item.name.toLowerCase().startsWith(prefix.toLowerCase()) &&
+                    (showHidden || !item.name.startsWith(".")) // Respect the hidden files setting
+                )
+                .map(item => dirPath === '/' ? `/${item.name}` : `${dirPath}/${item.name}`)
+                .slice(0, 8); // Limit to 8 suggestions
+
+            return suggestions;
+        } catch (error) {
+            console.error('Error getting path suggestions:', error);
+            return [];
+        }
+    };
+
+    /**
+     * Handles address bar input changes and updates suggestions
+     */
+    const handleAddressBarChange = async (value: string) => {
+        setAddressBarValue(value);
+        setSelectedSuggestionIndex(-1);
+        
+        // Get suggestions
+        const suggestions = await getPathSuggestions(value);
+        setAddressBarSuggestions(suggestions);
+    };
+
+    /**
+     * Handles keyboard navigation in address bar
+     */
+    const handleAddressBarKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            if (selectedSuggestionIndex >= 0 && addressBarSuggestions[selectedSuggestionIndex]) {
+                setAddressBarValue(addressBarSuggestions[selectedSuggestionIndex]);
+                navigateTo(addressBarSuggestions[selectedSuggestionIndex]);
+                setShowAddressBar(false);
+                setAddressBarValue("");
+                setAddressBarSuggestions([]);
+                setSelectedSuggestionIndex(-1);
+            } else {
+                handleAddressBarNavigate();
+            }
+        } else if (e.key === 'Escape') {
+            setShowAddressBar(false);
+            setAddressBarValue("");
+            setAddressBarSuggestions([]);
+            setSelectedSuggestionIndex(-1);
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setSelectedSuggestionIndex(prev => 
+                prev < addressBarSuggestions.length - 1 ? prev + 1 : prev
+            );
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setSelectedSuggestionIndex(prev => prev > -1 ? prev - 1 : -1);
+        } else if (e.key === 'Tab' && addressBarSuggestions.length > 0) {
+            e.preventDefault();
+            const selectedSuggestion = selectedSuggestionIndex >= 0 ? 
+                addressBarSuggestions[selectedSuggestionIndex] : 
+                addressBarSuggestions[0];
+            setAddressBarValue(selectedSuggestion);
+            setAddressBarSuggestions([]);
+            setSelectedSuggestionIndex(-1);
+        }
+    };
+
+    /**
+     * Toggles the address bar visibility and sets initial value
+     */
+    const toggleAddressBar = async () => {
+        if (!showAddressBar) {
+            setAddressBarValue(cwd);
+            // Show initial suggestions
+            const suggestions = await getPathSuggestions(cwd);
+            setAddressBarSuggestions(suggestions);
+        } else {
+            setAddressBarSuggestions([]);
+            setSelectedSuggestionIndex(-1);
+        }
+        setShowAddressBar(!showAddressBar);
+    };
+
     /** 
      * Files filtered by search query and hidden file setting 
      * This creates a new list every time searchQuery, items, or showHidden changes
@@ -222,10 +369,10 @@ function FileExplorerInner({
             return items.filter(
                 (item) =>
                     item.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-                    (showHidden || !item.name.startsWith(".")) // Show hidden files if enabled, or if file is not hidden
+                    (showHidden || !item.name.startsWith(".")) // Show hidden files/directories if enabled, or if item is not hidden
             );
         }
-        return items.filter((item) => showHidden || !item.name.startsWith(".")); // Just filter hidden files if no search
+        return items.filter((item) => showHidden || !item.name.startsWith(".")); // Filter out hidden files and directories if showHidden is false
     }, [items, searchQuery, showHidden]);
 
     /** 
@@ -940,7 +1087,7 @@ function FileExplorerInner({
             const dy = moveEvent.clientY - dragStartPosRef.current.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
-            // Only start drag if mouse moved more than 5 pixels
+            // Only start the drag if the mouse moved more than 5 pixels
             if (distance > 5) {
                 document.removeEventListener("mousemove", handlePotentialDrag);
                 document.removeEventListener("mouseup", handlePotentialMouseUp);
@@ -1225,12 +1372,37 @@ function FileExplorerInner({
     /** Track whether mouse is within the container */
     const [isMouseWithinContainer, setIsMouseWithinContainer] = useState(false);
 
+    /** Reference to address bar container for click outside detection */
+    const addressBarRef = useRef<HTMLDivElement>(null);
+
+    /** Handle clicking outside address bar to close suggestions */
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (addressBarRef.current && !addressBarRef.current.contains(event.target as Node)) {
+                if (showAddressBar && addressBarSuggestions.length > 0) {
+                    setAddressBarSuggestions([]);
+                    setSelectedSuggestionIndex(-1);
+                }
+            }
+        };
+
+        if (showAddressBar) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [showAddressBar, addressBarSuggestions.length]);
+
     /** Keyboard shortcuts handler */
     useEffect(() => {
         const handleKeyDown = async (e: KeyboardEvent) => {
 
             // Select all files (Ctrl+A or Cmd+A)
             if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+                // If user is typing in the address bar, let the browser handle text selection
+                if (showAddressBar && document.activeElement?.tagName === 'INPUT') {
+                    return; // Don't prevent default, let the browser select text in the input
+                }
+                
                 e.preventDefault()
                 // Only select items that are not currently being transferred
                 const allSelectableItems = new Set(
@@ -1243,12 +1415,60 @@ function FileExplorerInner({
                 updateSelectedItemsColor();
             }
 
+            // Toggle address bar (Ctrl+L or Cmd+L)
+            if ((e.ctrlKey || e.metaKey) && e.key === "l") {
+                e.preventDefault();
+                toggleAddressBar();
+            }
+
+            // Go to home directory (Ctrl+H or Cmd+H)  
+            if ((e.ctrlKey || e.metaKey) && e.key === "h") {
+                e.preventDefault();
+                goToHome();
+            }
+
+            // Go up one directory (Alt+Up)
+            if (e.altKey && e.key === "ArrowUp") {
+                e.preventDefault();
+                navigateUp();
+            }
+
+            // Navigate back (Alt+Left)
+            if (e.altKey && e.key === "ArrowLeft") {
+                e.preventDefault();
+                navigateBack();
+            }
+
+            // Navigate forward (Alt+Right)
+            if (e.altKey && e.key === "ArrowRight") {
+                e.preventDefault();
+                navigateForward();
+            }
+
+            // Refresh directory (F5 or Ctrl+R or Cmd+R)
+            if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key === "r")) {
+                e.preventDefault();
+                refreshDirectory();
+            }
+
+            // Show keyboard shortcuts help (F1 or Ctrl+? or Cmd+?)
+            if (e.key === "F1" || ((e.ctrlKey || e.metaKey) && e.key === "/")) {
+                e.preventDefault();
+                setShowKeyboardHelp(true);
+            }
+
             // Clear selection and cancel operations (Escape)
             if (e.key === "Escape") {
                 selectedItemsRef.current = new Set();
                 lastSelectedItemRef.current = null;
                 setSelectedCount(0);
                 updateSelectedItemsColor();
+
+                // Close address bar if open
+                if (showAddressBar) {
+                    setShowAddressBar(false);
+                    setAddressBarValue("");
+                }
 
                 // Cancel any active drag operations
                 if (BoxDrag.isDragging) {
@@ -1279,7 +1499,7 @@ function FileExplorerInner({
             window.addEventListener("keydown", handleKeyDown)
             return () => window.removeEventListener("keydown", handleKeyDown)
         }
-    }, [BoxDrag.isDragging, sortedItems, isMouseWithinContainer])
+    }, [BoxDrag.isDragging, sortedItems, isMouseWithinContainer, showAddressBar, showKeyboardHelp])
 
 
     /**
@@ -1296,15 +1516,15 @@ function FileExplorerInner({
                     const item = sortedItems.find((i) => i.id === itemId);
                     if (!item) return;
 
-                    if (!cloudType || !accountId) {
-                        // Local file system deletion
-                        await (window as any).fsApi.deleteFile(item.path);
-                    } else {
-                        // Cloud file system deletion
-                        await (window as any).cloudFsApi.deleteFile(
-                            cloudType,
-                            accountId,
-                            item.path
+
+                    if (deleteFileFromSource) {
+                        await deleteFileFromSource(
+                            {
+                                sourceCloudType: cloudType,
+                                sourceAccountId: accountId,
+                                sourcePath: item.path
+                            },
+                            false // keepOriginal = false for delete operation
                         );
                     }
                 })
@@ -1498,19 +1718,15 @@ function FileExplorerInner({
                         </div>
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                        onClick={() => {/* Copy Function */ }}
-                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-sky-600 transition-colors"
-                    >
-                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50">
-                            <Copy className="h-3 w-3 text-blue-600 dark:text-blue-400" />
-                        </div>
-                        <div className="flex-1">
-                            <div className="text-[12px] font-medium">Copy</div>
-                            <div className="text-[8px] text-muted-foreground">Copy to clipboard</div>
-                        </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                        onClick={() => {/* Move Function */ }}
+                        onClick={() => {
+                            const selectedItems = items.filter(item => selectedItemsRef.current.has(item.id));
+                            if (selectedItems.length > 0) {
+                                setItemsToMove(selectedItems);
+                                setShowMoveDialog(true);
+                            } else {
+                                toast.error("No items selected for move");
+                            }
+                        }}
                         className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-sky-600 transition-colors"
                     >
                         <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50">
@@ -1623,16 +1839,90 @@ function FileExplorerInner({
                     {showHidden ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </Button>
 
+                {/* Address bar for direct path navigation */}
+                <Button
+                    onClick={toggleAddressBar}
+                    className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200"
+                    title="Enter path directly"
+                >
+                    <Terminal className="h-5 w-5" />
+                </Button>
+
+                {/* Keyboard shortcuts help button */}
+                <Button
+                    onClick={() => setShowKeyboardHelp(true)}
+                    className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200"
+                    title="Show keyboard shortcuts (F1)"
+                >
+                    <HelpCircle className="h-5 w-5" />
+                </Button>
+
                 {/* Search bar for filtering files */}
                 <div className="relative ml-auto flex-1 max-w-md">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
-                    <Input
-                        type="text"
-                        placeholder="Search files..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-9 text-slate-800 dark:text-slate-200 h-8 placeholder:text-gray-500 focus-visible:ring-blue-500 focus-visible:ring-offset-0 focus-visible:border-blue-500 select-none"
-                    />
+                    {showAddressBar ? (
+                        <div className="flex items-center gap-1">
+                            <div ref={addressBarRef} className="relative flex-1">
+                                <Terminal className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
+                                <Input
+                                    type="text"
+                                    placeholder="Enter path (e.g., /home/user/documents)..."
+                                    value={addressBarValue}
+                                    onChange={(e) => handleAddressBarChange(e.target.value)}
+                                    onKeyDown={handleAddressBarKeyDown}
+                                    className="pl-9 text-slate-800 dark:text-slate-200 h-8 placeholder:text-gray-500 focus-visible:ring-blue-500 focus-visible:ring-offset-0 focus-visible:border-blue-500 select-none"
+                                    autoFocus
+                                />
+                                
+                                {/* Autocomplete suggestions dropdown */}
+                                {addressBarSuggestions.length > 0 && (
+                                    <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                                        {addressBarSuggestions.map((suggestion, index) => (
+                                            <div
+                                                key={suggestion}
+                                                className={cn(
+                                                    "px-3 py-2 text-sm cursor-pointer transition-colors",
+                                                    index === selectedSuggestionIndex
+                                                        ? "bg-blue-100 dark:bg-blue-900/50 text-blue-900 dark:text-blue-100"
+                                                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                                )}
+                                                onClick={() => {
+                                                    setAddressBarValue(suggestion);
+                                                    navigateTo(suggestion);
+                                                    setShowAddressBar(false);
+                                                    setAddressBarValue("");
+                                                    setAddressBarSuggestions([]);
+                                                    setSelectedSuggestionIndex(-1);
+                                                }}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <FolderIcon className="h-4 w-4 text-amber-500" />
+                                                    <span className="truncate">{suggestion}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <Button
+                                onClick={handleAddressBarNavigate}
+                                className="p-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                                title="Navigate to path"
+                            >
+                                <ChevronRight className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    ) : (
+                        <div>
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
+                            <Input
+                                type="text"
+                                placeholder="Search files..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-9 text-slate-800 dark:text-slate-200 h-8 placeholder:text-gray-500 focus-visible:ring-blue-500 focus-visible:ring-offset-0 focus-visible:border-blue-500 select-none"
+                            />
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -1716,7 +2006,47 @@ function FileExplorerInner({
                 }}
             />
 
-            {/* folder dialog - prompts user for folder name */}
+            {/* Move destination dialog - allows user to select destination for moving files */}
+            <MoveDestinationDialog
+                open={showMoveDialog}
+                setOpen={setShowMoveDialog}
+                selectedFiles={itemsToMove.map(item => item.path)}
+                sourceCloudType={cloudType}
+                sourceAccountId={accountId}
+                onConfirm={(destinationCloudType, destinationAccountId, destinationPath, keepOriginal) => {
+                    if (handleItemTransfer && itemsToMove.length > 0) {
+                        const filePaths = itemsToMove.map(item => item.path);
+                        handleItemTransfer(
+                            filePaths,
+                            cloudType,
+                            accountId,
+                            destinationPath,
+                            destinationCloudType,
+                            destinationAccountId
+                        );
+                        
+                        
+                        // Reset state
+                        setShowMoveDialog(false);
+                        setItemsToMove([]);
+                        
+                        // Clear selection
+                        selectedItemsRef.current.clear();
+                        setSelectedCount(0);
+                        
+                        // Refresh if it was a move operation (not copy)
+                        if (!keepOriginal) {
+                            refreshDirectory();
+                        }
+                    }
+                }}
+                onCancel={() => {
+                    setShowMoveDialog(false);
+                    setItemsToMove([]);
+                }}
+            />
+
+            {/* New folder dialog - prompts user for folder name */}
             <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
                 <DialogContent className="max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl">
                     <DialogHeader>
@@ -1772,6 +2102,135 @@ function FileExplorerInner({
                                         Create Folder
                                     </>
                                 )}
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Keyboard shortcuts help dialog */}
+            <Dialog open={showKeyboardHelp} onOpenChange={setShowKeyboardHelp}>
+                <DialogContent className="max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                            <Keyboard className="h-5 w-5" />
+                            Keyboard Shortcuts
+                        </DialogTitle>
+                        <DialogDescription className="text-slate-600 dark:text-slate-400">
+                            Speed up your file management with these handy shortcuts.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 pt-4">
+                        <div className="grid gap-3">
+                            {/* Navigation shortcuts */}
+                            <div className="space-y-2">
+                                <h3 className="text-sm font-medium text-slate-900 dark:text-slate-100">Navigation</h3>
+                                <div className="space-y-2 text-sm">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600 dark:text-slate-400">Go to home directory</span>
+                                        <div className="flex gap-1">
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">Ctrl</kbd>
+                                            <span className="text-slate-500">+</span>
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">H</kbd>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600 dark:text-slate-400">Navigate up one directory</span>
+                                        <div className="flex gap-1">
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">Alt</kbd>
+                                            <span className="text-slate-500">+</span>
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">↑</kbd>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600 dark:text-slate-400">Navigate back in history</span>
+                                        <div className="flex gap-1">
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">Alt</kbd>
+                                            <span className="text-slate-500">+</span>
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">←</kbd>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600 dark:text-slate-400">Navigate forward in history</span>
+                                        <div className="flex gap-1">
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">Alt</kbd>
+                                            <span className="text-slate-500">+</span>
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">→</kbd>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600 dark:text-slate-400">Toggle address bar</span>
+                                        <div className="flex gap-1">
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">Ctrl</kbd>
+                                            <span className="text-slate-500">+</span>
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">L</kbd>
+                                        </div>
+                                    </div>
+                                    <div className="ml-4 text-xs text-slate-500 dark:text-slate-400">
+                                        📝 Type a path for autocomplete suggestions. Use ↑/↓ to navigate, Tab to complete, or click suggestions.
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* File operations shortcuts */}
+                            <div className="space-y-2">
+                                <h3 className="text-sm font-medium text-slate-900 dark:text-slate-100">File Operations</h3>
+                                <div className="space-y-2 text-sm">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600 dark:text-slate-400">Select all files</span>
+                                        <div className="flex gap-1">
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">Ctrl</kbd>
+                                            <span className="text-slate-500">+</span>
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">A</kbd>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600 dark:text-slate-400">Delete selected items</span>
+                                        <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">Delete</kbd>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600 dark:text-slate-400">Clear selection / Cancel</span>
+                                        <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">Escape</kbd>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* View shortcuts */}
+                            <div className="space-y-2">
+                                <h3 className="text-sm font-medium text-slate-900 dark:text-slate-100">View</h3>
+                                <div className="space-y-2 text-sm">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600 dark:text-slate-400">Refresh directory</span>
+                                        <div className="flex gap-1">
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">F5</kbd>
+                                            <span className="text-slate-500">or</span>
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">Ctrl</kbd>
+                                            <span className="text-slate-500">+</span>
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">R</kbd>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600 dark:text-slate-400">Show keyboard shortcuts</span>
+                                        <div className="flex gap-1">
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">F1</kbd>
+                                            <span className="text-slate-500">or</span>
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">Ctrl</kbd>
+                                            <span className="text-slate-500">+</span>
+                                            <kbd className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded">/</kbd>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+
+                        <div className="flex justify-end">
+                            <Button
+                                onClick={() => setShowKeyboardHelp(false)}
+                                className="bg-blue-600 hover:bg-blue-700 text-white"
+                            >
+                                Got it!
                             </Button>
                         </div>
                     </div>

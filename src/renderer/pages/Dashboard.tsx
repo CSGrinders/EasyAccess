@@ -70,6 +70,7 @@ const Dashboard = () => {
         handleItemTransfer,
         handleUploadDialogConfirm,
         handleUploadDialogCancel,
+        deleteFileFromSource
     } = useTransferService({ boxRefs, storageBoxesRef });
 
 
@@ -517,6 +518,7 @@ const Dashboard = () => {
                                             isMaximized={maximizedBoxes.has(box.id)}
                                             setIsMaximized={(isMaximized: boolean) => setBoxMaximized(box.id, isMaximized)}
                                             handleItemTransfer={handleItemTransfer}
+                                            deleteFileFromSource={deleteFileFromSource}
                                         />
                                     ))}
                                 </CanvasContainer>

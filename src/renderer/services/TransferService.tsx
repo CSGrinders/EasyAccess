@@ -37,6 +37,7 @@ interface TransferServiceReturn {
     showUploadConfirmation: () => Promise<{ confirmed: boolean; keepOriginal: boolean }>;
     handleUploadDialogConfirm: (keepOriginal: boolean) => void;
     handleUploadDialogCancel: () => void;
+    deleteFileFromSource: (fileInfo: any, keepOriginal?: boolean) => Promise<void>;
 }
 
 export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferServiceProps): TransferServiceReturn => {
@@ -1117,5 +1118,7 @@ export const useTransferService = ({ boxRefs, storageBoxesRef }: TransferService
         showUploadConfirmation,
         handleUploadDialogConfirm,
         handleUploadDialogCancel,
+
+        deleteFileFromSource
     };
 };

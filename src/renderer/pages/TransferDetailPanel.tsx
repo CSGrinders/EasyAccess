@@ -5,7 +5,7 @@
  * Similar to SettingsPanel but for file transfers
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, 
   AlertCircle, 
@@ -45,6 +45,8 @@ export function TransferDetailPanel({
   onRetryTransfer,
 }: TransferDetailPanelProps) {
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'active' | 'completed' | 'failed'>('all');
+  const [cancelledTimestamps, setCancelledTimestamps] = useState<{ [key: string]: number }>({});
+  const [retryCountdowns, setRetryCountdowns] = useState<{ [key: string]: number }>({});
 
   // Categorize transfers
   const categorizedTransfers = useMemo(() => {
@@ -64,6 +66,64 @@ export function TransferDetailPanel({
 
     return { active, completed, failed, all: transfers };
   }, [transfers]);
+
+  // Track cancelled transfer timestamps for retry
+  useEffect(() => {
+    const newCancelledTimestamps = { ...cancelledTimestamps };
+    const newRetryCountdowns = { ...retryCountdowns };
+    let hasChanges = false;
+
+    transfers.forEach(transfer => {
+      if (transfer.status === "cancelled" && !cancelledTimestamps[transfer.id]) {
+        const now = Date.now();
+        newCancelledTimestamps[transfer.id] = now;
+        newRetryCountdowns[transfer.id] = 10; // Start countdown immediately
+        hasChanges = true;
+      } else if (transfer.status !== "cancelled" && cancelledTimestamps[transfer.id]) {
+        delete newCancelledTimestamps[transfer.id];
+        delete newRetryCountdowns[transfer.id];
+        hasChanges = true;
+      }
+    });
+
+    Object.keys(cancelledTimestamps).forEach(transferId => {
+      if (!transfers.find(t => t.id === transferId)) {
+        delete newCancelledTimestamps[transferId];
+        delete newRetryCountdowns[transferId];
+        hasChanges = true;
+      }
+    });
+
+    if (hasChanges) {
+      setCancelledTimestamps(newCancelledTimestamps);
+      setRetryCountdowns(newRetryCountdowns);
+    }
+  }, [transfers]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const newRetryCountdowns: { [key: string]: number } = {};
+      let hasActiveCountdowns = false;
+
+      Object.entries(cancelledTimestamps).forEach(([transferId, timestamp]) => {
+        const elapsed = Date.now() - timestamp;
+        const remaining = Math.max(0, 10 - Math.floor(elapsed / 1000));
+        
+        if (remaining > 0) {
+          newRetryCountdowns[transferId] = remaining;
+          hasActiveCountdowns = true;
+        }
+      });
+
+      setRetryCountdowns(newRetryCountdowns);
+
+      if (!hasActiveCountdowns && Object.keys(cancelledTimestamps).length === 0) {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [cancelledTimestamps]);
 
   const getCurrentTransfers = () => {
     return categorizedTransfers[selectedCategory] || [];
@@ -293,10 +353,15 @@ export function TransferDetailPanel({
                 onClick={() => onRetryTransfer(transfer.id)}
                 variant="ghost"
                 size="sm"
-                className="h-7 w-7 p-0 hover:bg-slate-100 dark:hover:bg-slate-700"
-                title="Retry transfer"
+                className="h-7 w-7 p-0 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={retryCountdowns[transfer.id] > 0 ? `Retry available in ${retryCountdowns[transfer.id]}s` : "Retry transfer"}
+                disabled={retryCountdowns[transfer.id] > 0}
               >
-                <RotateCcw className="h-3 w-3" />
+                {retryCountdowns[transfer.id] > 0 ? (
+                  <span className="text-xs font-mono">{retryCountdowns[transfer.id]}</span>
+                ) : (
+                  <RotateCcw className="h-3 w-3" />
+                )}
               </Button>
             )}
             
@@ -421,6 +486,16 @@ export function TransferDetailPanel({
         {transfer.status == "cancelled" && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3">
             <p className="text-sm text-red-700 dark:text-red-300">{transfer.cancelledMessage}</p>
+          </div>
+        )}
+
+        {/* Retry Cooldown Message */}
+        {transfer.status === "cancelled" && retryCountdowns[transfer.id] > 0 && (
+          <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg p-3">
+            <p className="text-sm text-orange-700 dark:text-orange-300 flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              Retry available in {retryCountdowns[transfer.id]} seconds
+            </p>
           </div>
         )}
 

@@ -66,6 +66,9 @@ export interface StorageBoxProps {
     
     /** Handler for transferring items between storage boxes */
     onBoxTransfer?: (sourceItems: any[], targetBoxId: number, targetPath?: string) => void;
+    
+    /** Function to delete a file from the source */
+    deleteFileFromSource?: (fileInfo: any, keepOriginal?: boolean) => Promise<void>;
 }
 
 /**

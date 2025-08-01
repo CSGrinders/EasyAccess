@@ -84,6 +84,7 @@ function StorageBoxInner({
                              isMaximized,       // Is this box full screen?
                              setIsMaximized,    // Function to make box full screen or no
                              handleItemTransfer, // Function to handle box file transfer with confirmation first
+                             deleteFileFromSource
                          }: StorageBoxProps, 
                          ref: React.Ref<{}>
                         ) {
@@ -877,6 +878,7 @@ function StorageBoxInner({
                         refreshToggle={refreshToggle}
                         silentRefresh={nextRefreshSilentRef.current}
                         handleItemTransfer={handleItemTransfer} // for out box transfers...
+                        deleteFileFromSource={deleteFileFromSource}
                     />
                 ) : (
                     /* Cloud file explorer */
@@ -890,6 +892,7 @@ function StorageBoxInner({
                         refreshToggle={refreshToggle} 
                         silentRefresh={nextRefreshSilentRef.current}
                         handleItemTransfer={handleItemTransfer} // for out box transfers...
+                        deleteFileFromSource={deleteFileFromSource}
                     />
                 )}
             </div>

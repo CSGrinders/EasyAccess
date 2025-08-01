@@ -33,6 +33,8 @@ export function TransferManager({
   const [estimatedTimes, setEstimatedTimes] = useState<{ [key: string]: string }>({});
   const [autoHideTimer, setAutoHideTimer] = useState<NodeJS.Timeout | null>(null);
   const [locallyHiddenTransfers, setLocallyHiddenTransfers] = useState<Set<string>>(new Set());
+  const [cancelledTimestamps, setCancelledTimestamps] = useState<{ [key: string]: number }>({});
+  const [retryCountdowns, setRetryCountdowns] = useState<{ [key: string]: number }>({});
 
   // Memoize the categorized transfers to prevent infinite re-renders
   const categorizedTransfers = useMemo(() => {
@@ -58,10 +60,70 @@ export function TransferManager({
 
   const { active: activeTransfers, completed: completedTransfers, errored: errorTransfers } = categorizedTransfers;
 
-  // Local handler for closing transfers in the manager (doesn't affect main transfer queue)
+  // Local handler for closing transfers in the manager 
   const handleLocalCloseTransfer = (transferId: string) => {
     setLocallyHiddenTransfers(prev => new Set([...prev, transferId]));
   };
+
+  // Track cancelled transfer timestamps for retry 
+  useEffect(() => {
+    const newCancelledTimestamps = { ...cancelledTimestamps };
+    const newRetryCountdowns = { ...retryCountdowns };
+    let hasChanges = false;
+
+    transfers.forEach(transfer => {
+      if (transfer.status === "cancelled" && !cancelledTimestamps[transfer.id]) {
+        const now = Date.now();
+        newCancelledTimestamps[transfer.id] = now;
+        newRetryCountdowns[transfer.id] = 10; // Start countdown immediately
+        hasChanges = true;
+      } else if (transfer.status !== "cancelled" && cancelledTimestamps[transfer.id]) {
+        delete newCancelledTimestamps[transfer.id];
+        delete newRetryCountdowns[transfer.id];
+        hasChanges = true;
+      }
+    });
+
+    // Clean up timestamps for transfers that no longer exist
+    Object.keys(cancelledTimestamps).forEach(transferId => {
+      if (!transfers.find(t => t.id === transferId)) {
+        delete newCancelledTimestamps[transferId];
+        delete newRetryCountdowns[transferId];
+        hasChanges = true;
+      }
+    });
+
+    if (hasChanges) {
+      setCancelledTimestamps(newCancelledTimestamps);
+      setRetryCountdowns(newRetryCountdowns);
+    }
+  }, [transfers]);
+
+  // Update retry countdowns every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const newRetryCountdowns: { [key: string]: number } = {};
+      let hasActiveCountdowns = false;
+
+      Object.entries(cancelledTimestamps).forEach(([transferId, timestamp]) => {
+        const elapsed = Date.now() - timestamp;
+        const remaining = Math.max(0, 10 - Math.floor(elapsed / 1000));
+        
+        if (remaining > 0) {
+          newRetryCountdowns[transferId] = remaining;
+          hasActiveCountdowns = true;
+        }
+      });
+
+      setRetryCountdowns(newRetryCountdowns);
+
+      if (!hasActiveCountdowns && Object.keys(cancelledTimestamps).length === 0) {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [cancelledTimestamps]);
 
   // Clear locally hidden transfers when transfers are actually removed from the main queue
   useEffect(() => {
@@ -189,6 +251,10 @@ export function TransferManager({
       return truncatedName;
     };
 
+    // Check if retry is available (either no cooldown or cooldown has expired)
+    const isRetryDisabled = transfer.status === "cancelled" && 
+      (retryCountdowns[transfer.id] > 0 || (!retryCountdowns[transfer.id] && cancelledTimestamps[transfer.id] && Date.now() - cancelledTimestamps[transfer.id] < 10000));
+
     return (
       <div key={transfer.id} className={cn(
         "border-l-4 pl-3 py-2 space-y-1",
@@ -231,15 +297,20 @@ export function TransferManager({
             
             {transfer.status === "cancelled" || transfer.status === "completed" ? (
               <div className="flex items-center gap-1">
-                {transfer.status === "cancelled"&& onRetryTransfer && (
+                {transfer.status === "cancelled" && onRetryTransfer && (
                   <Button
                     onClick={() => onRetryTransfer(transfer.id)}
                     variant="ghost"
                     size="sm"
-                    className="h-6 w-6 p-0 hover:bg-slate-100 dark:hover:bg-slate-700"
-                    title="Retry transfer"
+                    className="h-6 w-6 p-0 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={isRetryDisabled ? `Retry available in ${retryCountdowns[transfer.id] || 10}s` : "Retry transfer"}
+                    disabled={!!isRetryDisabled}
                   >
-                    <RefreshCw className="h-3 w-3" />
+                    {isRetryDisabled ? (
+                      <span className="text-xs font-mono">{retryCountdowns[transfer.id] || 10}</span>
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
                   </Button>
                 )}
                 <Button
@@ -289,6 +360,11 @@ export function TransferManager({
             {transfer.cancelledMessage && (
                 <p className="text-xs text-red-600 dark:text-red-400 mt-1">
                   {transfer.cancelledMessage}
+                </p>)}
+            {transfer.status === "cancelled" && isRetryDisabled && (
+                <p className="text-xs text-orange-600 dark:text-orange-400 mt-1 flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  Retry available in {retryCountdowns[transfer.id] || 10} seconds
                 </p>)}
             <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400">
               <div className={cn("flex", transfer.isCurrentDirectory ? "flex-col" : "items-center gap-2")}>
