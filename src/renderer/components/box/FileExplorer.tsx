@@ -508,7 +508,7 @@ function FileExplorerInner({
 
     /**
      * Opens a file using the system's default application
-     * Handles both local and cloud files
+     * Handles both local and cloud files (small and large)
      */
     const openFile = async (e: React.MouseEvent, item: FileSystemItem) => {
         e.preventDefault();
@@ -537,14 +537,16 @@ function FileExplorerInner({
                 // File has a URL (common for cloud files) - open in browser/default app
                 const response = await (window as any).electronAPI.openExternalUrl(fileContent.url);
                 if (!response?.success) {
+                    const parts = response.error instanceof Error ? response?.error.split(':') : ["Open failed"];
+                    const errorMessage = parts[parts.length - 1].trim() + ".";
                     toast.error("File Open Failed", {
-                        description: `Failed to open file: ${response?.error || 'Unknown error'}`,
+                        description: `${errorMessage || 'Unknown error'}`,
                         duration: 2000,
                     });
                 }
             } else {
-                // File has content data - check if empty
-                if (!fileContent.content) {
+                // File has either content data or a temp file path
+                if (!fileContent.content && !fileContent.path) {
                     toast.error("File Open Failed", {
                         description: "File content is empty or corrupted.",
                         duration: 4000,
@@ -552,21 +554,25 @@ function FileExplorerInner({
                     return;
                 }
 
-                // Determine if it's a text file for proper handling
-                const isTextFile = ['.txt', '.csv', '.py', '.json', '.log'].some(ext => item.path.endsWith(ext));
-                const blob = new Blob(
-                    [fileContent.content],
-                    { type: isTextFile ? 'text/plain' : fileContent.type }
-                );
+                // For cloud files with content, create blob for better handling
+                if (fileContent.sourceCloudType && fileContent.content) {
+                    // Determine if it's a text file for proper handling
+                    const isTextFile = ['.txt', '.csv', '.py', '.json', '.log'].some(ext => item.path.endsWith(ext));
+                    const blob = new Blob(
+                        [fileContent.content],
+                        { type: isTextFile ? 'text/plain' : fileContent.type }
+                    );
+                }
 
-                // Open the file
+                // Open the file (backend will handle temp files vs content appropriately)
                 await (window as any).electronAPI.openFile(fileContent);
             }
         } catch (error) {
             console.error("Error opening file:", error);
-
+            const parts = error instanceof Error ? error.message.split(':') : ["Open failed"];
+            const errorMessage = parts[parts.length - 1].trim() + ".";
             if (error && typeof error === 'object' && 'message' in error) {
-                const errorMessage = (error as Error).message;
+                
                 if (errorMessage.includes('permission') || errorMessage.includes('EACCES') || errorMessage.includes('access')) {
                     toast.error("Permission Error", {
                         description: "Unable to open file.",
@@ -574,7 +580,7 @@ function FileExplorerInner({
                     });
                 } else {
                     toast.error("File Open Failed", {
-                        description: `Failed to open file: ${errorMessage}`,
+                        description: `${errorMessage}`,
                         duration: 2000,
                     });
                 }

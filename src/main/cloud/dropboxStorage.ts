@@ -2,7 +2,7 @@ import { CloudStorage,AuthTokens, isValidToken, generateCodes } from './cloudSto
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { CLOUD_HOME, CloudType, StorageError } from '../../types/cloudType';
-import { BrowserWindow, shell } from 'electron';
+import { BrowserWindow, shell, app } from 'electron';
 import { Dropbox } from 'dropbox';
 import { v4 as uuidv4 } from 'uuid';
 import * as http from 'http';
@@ -296,61 +296,68 @@ export class DropboxStorage implements CloudStorage {
         }
         console.log('filePath', filePath);
         
-        const response = await fetch('https://content.dropboxapi.com/2/files/download', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${this.AuthToken?.access_token}`,
-                'Dropbox-API-Arg': JSON.stringify({ path: filePath })
-            },
-            signal: abortSignal
-        });
-
+        // Get file metadata first
         const metadataResponse = await fetch('https://api.dropboxapi.com/2/files/get_metadata', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${this.AuthToken?.access_token}`,
               'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ path: filePath })
+            body: JSON.stringify({ path: filePath }),
+            signal: abortSignal
         });
     
         const metadata = await metadataResponse.json();
-    
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
-    
-        // Use arrayBuffer() instead of buffer()
-        const arrayBuffer = await response.arrayBuffer();
+        const fileName = filePath.split('/').pop() || 'file';
+        const fileSize = metadata.size || 0;
+        const mimeType = mime.lookup(fileName) || 'application/octet-stream';
 
-        console.log('metadata', metadata);
+        // For small files (< 10MB), download directly
+        if (fileSize < 10 * 1024 * 1024) {
+            const response = await fetch('https://content.dropboxapi.com/2/files/download', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.AuthToken?.access_token}`,
+                    'Dropbox-API-Arg': JSON.stringify({ path: filePath })
+                },
+                signal: abortSignal
+            });
         
-        const buffer = Buffer.from(arrayBuffer as ArrayBuffer);
-        const name = filePath.split('/').pop() || 'file';
-        const type = mime.lookup(name) || 'application/octet-stream';
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
         
-        console.log('Buffer:', buffer, name, type);
+            // Use arrayBuffer() instead of buffer()
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer as ArrayBuffer);
+            
+            console.log('Buffer:', buffer, fileName, mimeType);
 
-        if (!buffer) {
-            console.error('Buffer is empty');
-            return Promise.reject('Buffer is empty');
+            if (!buffer) {
+                console.error('Buffer is empty');
+                return Promise.reject('Buffer is empty');
+            }
+
+            // Update progress after completion
+            if (progressCallback) {
+                progressCallback(buffer.length, buffer.length);
+            }
+
+            const fileContent: FileContent = {
+                name: fileName,
+                type: mimeType,
+                content: buffer,
+                path: CLOUD_HOME + filePath, // prepend the cloud home path
+                sourceCloudType: CloudType.Dropbox, // specify the cloud type
+                sourceAccountId: this.accountId || null // specify the account ID
+            };
+            return fileContent;
         }
 
-        // Update progress after completion
-        if (progressCallback) {
-            progressCallback(buffer.length, buffer.length);
-        }
-
-        const fileContent: FileContent = {
-            name: name,
-            type: type,
-            content: buffer,
-            path: CLOUD_HOME + filePath, // prepend the cloud home path
-            sourceCloudType: CloudType.Dropbox, // specify the cloud type
-            sourceAccountId: this.accountId || null // specify the account ID
-        };
-        return fileContent;
+        // For large files (>= 10MB), notify user to use download instead of opening
+        const fileSizeMB = Math.round(fileSize / (1024 * 1024));
+        throw new Error(`This file is ${fileSizeMB}MB and too large to open directly. Please download it to your computer first using the download button.`);
     }
 
     async postFile(fileName: string, folderPath: string, type: string, data: Buffer, progressCallback?: (uploaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<void> {

@@ -21,7 +21,7 @@ const {
 } = require("@azure/msal-node-extensions");
 const path = require('path');
 const { PublicClientApplication, InteractionRequiredAuthError, LogLevel } = require('@azure/msal-node');
-const { shell } = require('electron');
+const { shell, app } = require('electron');
 
 
 const MSAL_CONFIG = {
@@ -432,33 +432,41 @@ export class OneDriveStorage implements CloudStorage {
 
       const fileType = metadataResponse.file.mimeType;
       const fileName = metadataResponse.name;
+      const fileSize = parseInt(metadataResponse.size || '0');
 
-      const dataResponse = await this.graphClient.api(apiPath + ":/content").responseType(ResponseType.ARRAYBUFFER).get();
-      console.log('Response from OneDrive API (data):', dataResponse);
+      // For small files (< 10MB), download directly
+      if (fileSize < 10 * 1024 * 1024) {
+        const dataResponse = await this.graphClient.api(apiPath + ":/content").responseType(ResponseType.ARRAYBUFFER).get();
+        console.log('Response from OneDrive API (data):', dataResponse);
 
-      if (!dataResponse) {
-        throw new Error('File not found');
+        if (!dataResponse) {
+          throw new Error('File not found');
+        }
+
+        const fileData = Buffer.from(dataResponse as ArrayBuffer);
+
+        console.log("Base64 file data:", fileData.toString('base64'));
+
+        // Update progress after completion
+        if (progressCallback) {
+          progressCallback(fileData.length, fileData.length);
+        }
+
+        const fileContent: FileContent = {
+          name: fileName,
+          content: fileData,
+          type: fileType,
+          path: CLOUD_HOME + filePath, // prepend the cloud home path
+          sourceCloudType: CloudType.OneDrive, // specify the cloud type
+          sourceAccountId: this.accountId || '', // include the account ID
+        };
+
+        return fileContent;
       }
 
-      const fileData = Buffer.from(dataResponse as ArrayBuffer);
-
-      console.log("Base64 file data:", fileData.toString('base64'));
-
-      // Update progress after completion
-      if (progressCallback) {
-        progressCallback(fileData.length, fileData.length);
-      }
-
-      const fileContent: FileContent = {
-        name: fileName,
-        content: fileData,
-        type: fileType,
-        path: CLOUD_HOME + filePath, // prepend the cloud home path
-        sourceCloudType: CloudType.OneDrive, // specify the cloud type
-        sourceAccountId: this.accountId || '', // include the account ID
-      };
-
-      return fileContent;
+      // For large files (>= 10MB), notify user to use download instead of opening
+      const fileSizeMB = Math.round(fileSize / (1024 * 1024));
+      throw new Error(`This file is ${fileSizeMB}MB and too large to open directly. Please download it to your computer first using the download button.`);
     } catch (error) {
       console.error('Error getting file from OneDrive:', error);
       throw error;

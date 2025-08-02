@@ -170,20 +170,24 @@ export const openExternalUrl = async (url: string) => {
 export const openFileLocal = async (fileContent: FileContent) => {
     try {
       if (fileContent.sourceCloudType) {
-        // If the file is from a cloud source, we need to download it first
-        const tempFilePath = path.join(app.getPath('temp'), fileContent.name);
+        // If the file is from a cloud source
         if (fileContent.content) {
-            fs.writeFileSync(tempFilePath, fileContent.content);
+          // Small file with content in memory - write to temp file
+          const tempFilePath = path.join(app.getPath('temp'), fileContent.name);
+          fs.writeFileSync(tempFilePath, fileContent.content);
+          await shell.openPath(tempFilePath);
         } else {
-            throw new Error("File content is undefined");
+          // Large file already saved to temp path during download
+          await shell.openPath(fileContent.path);
         }
-        await shell.openPath(tempFilePath);
         return { success: true };
       }
+      
+      // Local file - open directly
       await shell.openPath(fileContent.path);
       return { success: true };
     } catch (err) {
-      console.error("Error opening Python file:", err);
+      console.error("Error opening file:", err);
       return { success: false };
     }
   };

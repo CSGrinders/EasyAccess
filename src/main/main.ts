@@ -24,6 +24,7 @@ import { DashboardState } from '@Types/canvas';
 import http from 'http';
 import { transferManager } from './transfer/transferManager';
 import {progressCallbackData} from '../types/transfer';
+import { TempFileManager } from './utils/tempFileManager';
 
 
 export const AppConfig = {
@@ -356,6 +357,9 @@ app.whenReady().then(() => {
     // Set the application name in the menu bar
     app.setName('Easy Access');
     
+    // Initialize temp file manager with cleanup service
+    TempFileManager.startPeriodicCleanup();
+    
     // Create custom menu with only Help
     const template = [
         {
@@ -461,6 +465,16 @@ ipcMain.handle('cloud-get-directory-tree', async (_e, cloudType: CloudType, acco
 ipcMain.handle('cloud-read-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return readFile(cloudType, accountId, filePath);
 });
+
+// Add missing IPC handlers for getFile operations
+ipcMain.handle('get-file', async (_e, filePath: string) => {
+    return await getFileLocal(filePath);
+});
+
+ipcMain.handle('cloud-get-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
+    return await getFile(cloudType, accountId, filePath);
+});
+
 ipcMain.handle('remove-cloud-account', async (_e, cloudType: CloudType, accountId: string) => {
     return removeCloudAccount(cloudType, accountId);
 });

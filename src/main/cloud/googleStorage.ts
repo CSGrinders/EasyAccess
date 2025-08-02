@@ -4,7 +4,7 @@ import { OAuth2Client } from 'google-auth-library';
 import { drive_v3, google } from 'googleapis';
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { CLOUD_HOME, CloudType, StorageError } from '../../types/cloudType';
-import { shell } from 'electron';
+import { shell, app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 const { Readable } = require('stream');
 import * as http from 'http';
@@ -15,7 +15,6 @@ import path from 'path';
 import mime from "mime-types";
 import { progressCallbackData } from '../../types/transfer';
 import { Semaphore } from '../transfer/transferManager';
-import { Item } from '@radix-ui/react-dropdown-menu';
 import { AppConfig, focusMainWindow } from '../main';
 
 
@@ -528,7 +527,46 @@ export class GoogleDriveStorage implements CloudStorage {
   }
 
   async getFile(filePath: string, progressCallback?: (downloaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<FileContent> {
-    throw new Error('getFile method not implemented.');
+    await this.refreshOAuthClientIfNeeded();
+    if (!this.oauth2Client) {
+      throw new Error('OAuth2 client is not initialized');
+    }
+
+    // Get file metadata first
+    const fileId = await this.getFileId(filePath);
+    if (!fileId) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    const drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+    const metadata = await drive.files.get({ fileId: fileId, fields: 'name,size,mimeType' });
+    
+    const fileName = metadata.data.name || path.basename(filePath);
+    const fileSize = parseInt(metadata.data.size || '0');
+    const mimeType = metadata.data.mimeType || 'application/octet-stream';
+
+    // For small files (< 10MB), download directly
+    if (fileSize < 10 * 1024 * 1024) {
+      const response = await drive.files.get({ fileId: fileId, alt: 'media' }, { responseType: 'arraybuffer' });
+      const content = Buffer.from(response.data as ArrayBuffer);
+      
+      if (progressCallback) {
+        progressCallback(content.length, content.length);
+      }
+
+      return {
+        name: fileName,
+        content: content,
+        type: mimeType,
+        path: CLOUD_HOME + filePath,
+        sourceCloudType: CloudType.GoogleDrive,
+        sourceAccountId: this.accountId || '',
+      };
+    }
+
+    // For large files (>= 10MB), notify user to use download instead of opening
+    const fileSizeMB = Math.round(fileSize / (1024 * 1024));
+    throw new Error(`This file is ${fileSizeMB}MB and too large to open directly. Please download it to your computer first using the download button.`);
   }
 
   async postFile(fileName: string, folderPath: string, type: string, data: Buffer, progressCallback?: (uploaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<void> {
