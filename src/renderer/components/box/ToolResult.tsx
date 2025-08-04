@@ -48,7 +48,7 @@ const ToolResult = ({ content }: { content: string }) => {
     }, [provider, accountId]);
 
     return (
-    <div className="tool-part relative p-2 text-sm">
+    <div className="bg-[hsla(0,0%,95%,0.8)] dark:bg-[hsla(0,0%,5%,0.4)] border border-[rgba(0,0,0,0.1)] dark:border-[rgba(255,255,255,0.1)] p-2 relative p-2 text-sm">
         {(provider && accountId) && (
             <div className="absolute top-2 right-2 flex gap-2 flex-wrap z-10 opacity-30 hover:opacity-100 hover:cursor-pointer transition-opacity group"
                 onClick={handleAccountClick}>

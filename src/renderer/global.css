@@ -201,18 +201,7 @@ body {
         word-wrap: normal !important;
         word-break: normal !important;
     }
-
-    .tool-part {
-        background: hsla(0, 0%, 95%, 0.8) !important;
-        border: 1px solid rgba(0, 0, 0, 0.1);
-        padding: 8px !important;
-    }
-
-    .dark .tool-part {
-        background: hsla(0, 0%, 15%, 0.4) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
+    
     .userQuery {
         font-style: italic;
         text-decoration-color: rgba(156, 163, 175, 0.5);

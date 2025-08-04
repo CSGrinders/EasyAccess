@@ -24,7 +24,6 @@ import { DashboardState } from '@Types/canvas';
 import http from 'http';
 import { transferManager } from './transfer/transferManager';
 import {progressCallbackData} from '../types/transfer';
-import { TempFileManager } from './utils/tempFileManager';
 
 
 export const AppConfig = {
@@ -356,9 +355,6 @@ const createWindow = async () => {
 app.whenReady().then(() => {
     // Set the application name in the menu bar
     app.setName('Easy Access');
-    
-    // Initialize temp file manager with cleanup service
-    TempFileManager.startPeriodicCleanup();
     
     // Create custom menu with only Help
     const template = [
