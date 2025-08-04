@@ -42,12 +42,17 @@ const AgentAction = memo(function AgentAction() {
 
     const [session, setSession] = useState<any | null>(null);
 
+    const [canUseAgent, setCanUseAgent] = useState(false);
+    const [isUsingLocalApiKey, setIsUsingLocalApiKey] = useState(false);
+
     const agentWorkVisibilityRef = useRef<boolean>(false);
 
     const waitForResponseRef = useRef<boolean>(false);
     const questionRef = useRef<HTMLDivElement>(null);
 
-    const MONTHLY_REQUEST_LIMIT = 50; 
+    // there is a monthly request limit for each user
+    // It is checked in server side, but we want to prevent the user from making requests if they are over the limit
+    const MONTHLY_REQUEST_LIMIT = 20; 
 
     // Add state for mouse tracking and copy functionality
     const [isMouseInResponseBox, setIsMouseInResponseBox] = useState(false);
@@ -372,7 +377,14 @@ const AgentAction = memo(function AgentAction() {
 
         // check if the user is under the request limit
         // user limit check is also done in the server side, but we want to prevent the user from making requests if they are over the limit
-        const canProceed = await checkUserLimit(session?.user);
+        let canProceed = isUsingLocalApiKey;
+        if (!isUsingLocalApiKey) {
+            if (session?.user) {
+                canProceed = await checkUserLimit(session.user);
+            } else {
+                canProceed = false;
+            }
+        }
         if (!canProceed) {
             console.warn("User request limit reached");
             // TODO : Show a message to the user
@@ -445,12 +457,14 @@ const AgentAction = memo(function AgentAction() {
         questionRef.current!.style.display = 'none';
         supabase.auth.getSession().then(({ data }: { data: { session: import('@supabase/supabase-js').Session | null } }) => {
             setSession(data.session);
+            setCanUseAgent(true);
         });
 
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((_event: string, session: import('@supabase/supabase-js').Session | null) => {
             setSession(session);
+            setCanUseAgent(true);
         });
 
         const setupAuthListener = async () => {
@@ -509,11 +523,22 @@ const AgentAction = memo(function AgentAction() {
             if (questionRef.current) {
                 questionRef.current.style.display = 'none';
             }
+            setCanUseAgent(false);
+            setIsUsingLocalApiKey(false);
         }
+    }, []);
+
+    const localAPIKey = useCallback(async (e: React.FormEvent) => {
+        e.preventDefault();
+        console.log("Using local API key");
+        setCanUseAgent(true);
+        setIsUsingLocalApiKey(true);
+        setSession(null);
     }, []);
 
     const signUp = async (e: React.FormEvent) => {
         e.preventDefault();
+        setIsUsingLocalApiKey(false);
         console.log("Signing up with Google");
         console.log("window.location.origin:", window.location.origin);
         const { data, error } = await supabase.auth.signInWithOAuth({
@@ -745,7 +770,7 @@ const AgentAction = memo(function AgentAction() {
                                     onChange={(e) => setQuery(e.target.value)}
                                     placeholder="Talk to your helpful agent!"
                                     className="w-full bg-transparent border-0 placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-gray-100 px-4 py-3 text-sm focus:outline-none focus:ring-0 resize-none min-h-[48px] max-h-[120px] overflow-y-auto"
-                                    disabled={isLoading || !session}
+                                    disabled={isLoading || !canUseAgent}
                                     autoComplete="off"
                                     rows={1}
                                     style={{
@@ -798,8 +823,9 @@ const AgentAction = memo(function AgentAction() {
                         {/* Status indicators */}
                         <div className="flex items-center justify-between mt-3 text-xs text-gray-500 dark:text-white">
                             <div className="flex items-center gap-2">
-                                {session ? (
-                                    <>
+                                {canUseAgent ? (
+                                    session ? (
+                                        <>
                                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                                         <span>Connected</span>
                                         <button
@@ -810,6 +836,20 @@ const AgentAction = memo(function AgentAction() {
                                             Sign Out
                                         </button>
                                     </>
+                                    ): (
+                                        <>
+                                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                                        <span>Local API Key</span>
+                                        <button
+                                            onClick={signOut}
+                                            type="button"
+                                            className="ml-1 text-xs text-gray-500 dark:text-gray-400 hover:underline"
+                                        >
+                                            Stop Using Local API Key
+                                        </button>
+                                    </>
+                                    )
+                                    
                                 ) : (
                                     <>
                                         <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
@@ -820,6 +860,12 @@ const AgentAction = memo(function AgentAction() {
                                         >
                                             <FcGoogle size={16} />
                                             Sign in with Google
+                                        </button>
+                                        <button
+                                            onClick={localAPIKey}
+                                            className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-xs px-1 py-0.5 rounded flex items-center gap-1 border border-gray-300 dark:border-gray-600"
+                                        >
+                                            Use your own API Key
                                         </button>
                                     </>
                                 )}

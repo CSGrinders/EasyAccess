@@ -15,21 +15,21 @@ import { CloudType } from "../../types/cloudType";
 import fs from 'fs';
 import { getConnectedCloudAccounts } from "../cloud/cloudManager";
 
-// const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-// if (!ANTHROPIC_API_KEY) {
-//     throw new Error("ANTHROPIC_API_KEY is not set");
-// }
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+if (!ANTHROPIC_API_KEY) {
+    throw new Error("ANTHROPIC_API_KEY is not set");
+}
 
 class MCPClient {
     private mcp: Client;
-    // private llm: Anthropic;
+    private llm: Anthropic;
     private tools: Tool[] = [];
     private prev_messages: MessageParam[] = [];
 
     constructor() {
-        // this.llm = new Anthropic({
-        //     apiKey: ANTHROPIC_API_KEY,
-        // });
+        this.llm = new Anthropic({
+            apiKey: ANTHROPIC_API_KEY,
+        });
         this.mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
     }
 
@@ -75,8 +75,50 @@ class MCPClient {
         return connectedAccountsText;
     }
 
+
+    async streamClaudeResponse(messages: MessageParam[], tools: Tool[], connected_accounts: string, allowed_directories: string) {
+      const anthropic = new Anthropic({
+        apiKey: ANTHROPIC_API_KEY
+      });
+      try {
+        const stream = await anthropic.messages.create({
+          model: "claude-3-5-haiku-latest",
+          max_tokens: 2000,
+          messages: messages,
+          tools: tools,
+          stream: true,
+          tool_choice: {
+            type: 'auto'
+          },
+          system: [
+            {
+              type: "text",
+              text: `<core_identity> You are a built-in assistant for a desktop application called EasyAccess that unifies file management across Google Drive, OneDrive, Dropbox, and the local file system. You serve real users and must respond with speed, clarity, and confidence. Your purpose is to execute file operations and respond to user actions accurately.</core_identity>
+    
+    <guidelines>
+        • NEVER answer irrelevant questions or requests. Focus solely on file operations and user actions.
+        • ALWAYS respond in a simple, short, and direct manner.
+        • ALWAYS validate all inputs before taking action. Confirm paths, file names, and required parameters.
+        • ALWAYS acknowledge uncertainty when present. Use <get_information_from_user/> to clarify.
+        • ALWAYS check allowed_local_directories before working on local files. You do not have access to the entire local file system.
+        • If a file or path is invalid, locate and suggest the nearest valid alternative.</guidelines>
+    
+    <connected_accounts>${connected_accounts}</connected_accounts>
+    <allowed_local_directories>ALWAYS ensure the file is within these directories when accessing it. ${allowed_directories}</allowed_local_directories>`,
+              cache_control: {
+                type: "ephemeral"
+              }
+            }
+          ]
+        });
+        return stream;
+      } catch (error) {
+        throw error;
+      }
+    }
+
     // Process query
-    async processQuery(query: string, access_token: string): Promise<string> {
+    async processQuery(query: string, access_token?: string): Promise<string> {
         // if query is too long, throw an error
         const MAX_QUERY_LENGTH = 400;
         if (query.length > MAX_QUERY_LENGTH) {
@@ -92,54 +134,166 @@ class MCPClient {
         }
 
         console.log("Processing query:", query);
+        
+        if (access_token) {
+            return await this.processQueryWeb(query, access_token);
+        } else {
+            return await this.processQueryLocal(query);
+        }
+    }
 
-//         // temp: just testing rendering messages in renderer process
-//         const characters = `"The House on Thornhill Road"
-// Chapter 1: The Letter
+    async processQueryLocal(query: string): Promise<string> {
+        const connectedAccountsText = await this.getConnectedAccountsText();
+        // get allowed directories from mcp server
+        const allowedDirectories = await this.mcp.callTool({
+            name: "list_allowed_directories",
+        });
+        const directoryContent = allowedDirectories.content as { type: string, text?: string }[];
+        const allowedDirectoriesText = directoryContent.map(item => item.text).join("\n");
+        console.log("Allowed directories:", allowedDirectoriesText);
 
-// When Eleanor Grange received the letter, she thought it was a joke.
+        const messages: MessageParam[] = [
+            {
+                role: "user",
+                content: query,
+            },
+        ];
 
-// The envelope was thick, the paper creamy and smooth. Her name, written in an elegant, almost calligraphic hand, danced across the front: Miss Eleanor L. Grange, 52 Roseland Lane, Apt. 3C. No return address. Just a red wax seal stamped with a rose and thorn.
+        let currentResponse: string = "";
 
-// She opened it out of curiosity. Inside, a letter:
+        this.prev_messages.push({
+            role: "user",
+            content: query,
+        });
 
-// Dearest Eleanor,
+        const texts: any[] = [];
+        const toolCalls: { name: string; arguments: { [x: string]: unknown } }[] = [];
 
-// I trust this reaches you in good health. You are the last surviving heir to the Grange estate in Windmere. The house on Thornhill Road now belongs to you.
+        let stop: boolean = false;
 
-// Your grandfather, Alaric Grange, left strict instructions in the event of his passing. You must come alone. Do not delay. The house is waiting.
+        while (!stop) {
+            try {
+                console.log("Messages prepared:", messages);
+                let fullResponse = "";
+                let toolCalls = [];
+                // Process streaming response
+                // Create Claude stream
+                const claudeStream = await this.streamClaudeResponse(messages, this.tools, connectedAccountsText, allowedDirectoriesText);
+                let currentToolCall = null;
+                let inputJsonBuffer = null;
+                for await (const chunk of claudeStream){
+                    switch(chunk.type){
+                        case 'message_start':
+                            console.log("Message start detected");
+                            break;
+                        case 'content_block_start':
+                            if (chunk.content_block.type === 'text') {
+                                console.log("Text content block start detected");
+                            } else if (chunk.content_block.type === 'tool_use') {
+                                currentToolCall = chunk.content_block;
+                                inputJsonBuffer = "";
+                            }
+                            break;
+                        case 'content_block_delta':
+                            if (chunk.delta.type === 'text_delta') {
+                                fullResponse += chunk.delta.text;
+                                texts.push(chunk.delta.text);
+                                console.log("Response Text content:", chunk.delta.text);
+                                triggerSendTextDelta(chunk.delta.text);
+                                currentResponse += chunk.delta.text;
+                            } else if (chunk.delta.type === 'input_json_delta') {
+                                inputJsonBuffer += chunk.delta.partial_json;
+                            }
+                            break;
+                        case 'content_block_stop':
+                            console.log("Content block stop detected");
+                            break;
+                        case 'message_delta':
+                            if (chunk.delta.stop_reason === 'tool_use') {
+                                if (currentToolCall) {
+                                    const currentToolInput = inputJsonBuffer ? JSON.parse(inputJsonBuffer) : {};
+                                    currentToolCall.input = currentToolInput;
+                                    toolCalls.push(currentToolCall);
+                                    currentToolCall = null; // Reset for next tool call
+                                    inputJsonBuffer = "";
+                                }
+                            } else if (chunk.delta.stop_reason === 'end_turn') {
+                                console.log("End of turn detected");
+                            }
+                            break;
+                        case 'message_stop':
+                            // Save the full response from Claude to messages
+                            if (fullResponse) {
+                            messages.push({
+                                role: "assistant",
+                                content: [
+                                {
+                                    type: "text",
+                                    text: fullResponse
+                                }
+                                ]
+                            });
+                            }
+                            // Handle tool calls if any
+                            if (toolCalls.length > 0) {
+                                // this will call the tool and insert the result into messages
+                                await this.processToolCallsStreaming(toolCalls, "conversationId", messages);
+                            } else {
+                                console.log("No tool calls to process");
+                                stop = true;
+                            }
+                            // here now messages contains the response from Claude and any tool results
+                            console.log("Final messages prepared:", messages);
+                            break;
+                        default:
+                            console.log("Unknown chunk type");
+                    }
+                }
+            } catch (error) {
+                console.error("Error in stream processing:", error);
+                stop = true; // Stop the stream on error
+            } finally {
+                console.log("Closing SSE stream");
+                // controller.close();
+            }
+        }
+        
+        return "";
+    }
 
-// Yours in utmost sincerity,
-// Samuel Thorne, Executor
+    async uiTesting() {
+                // temp: just testing rendering messages in renderer process
+        const characters = `"The House on Thornhill Road"
+Chapter 1: The Letter
 
-// Eleanor blinked. Her grandfather had died twenty-five years ago. She’d been ten years old, and remembered only fragments—his peculiar voice, the scent of pipe smoke, the locked study that no one was ever allowed to enter.
+When Eleanor Grange received the letter, she thought it was a joke.
 
-// “Windmere,” she whispered. “I haven’t heard that name in years.”
+The envelope was thick, the paper creamy and smooth. Her name, written in an elegant, almost calligraphic hand, danced across the front: Miss Eleanor L. Grange, 52 Roseland Lane, Apt. 3C. No return address. Just a red wax seal stamped with a rose and thorn.
 
-// The town had vanished from her memory, like a dream forgotten upon waking. But now, something stirred—an image of a gray house, choked in ivy, windows like dark eyes.
+She opened it out of curiosity. Inside, a letter:`;
+        for (let i = 0; i < Math.floor(characters.length / 3); i++) {
+            await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 50)));
+            await triggerSendTextDelta(characters.substring(i * 3, i * 3 + 3));
+            if (i % 50 == 0) {
+                const response = await this.mcp.callTool({
+                    name: "get_information_from_user",
+                    arguments: {
+                        question: "Testing user input",
+                    },
+                });
+                console.log("Response from get_information_from_user:", response);
+                let isError = false;
+                if (response.isError) {
+                    isError = true;
+                    console.error("Tool error:", response.isError);
+                }
+                await triggerToolResultMessage("search_files", { provider: "GoogleDrive", accountId: "sohn5312@gmail.com", path: "/", patterns: ["yee"] }, response.content, isError);
+            }
+        }
+        return "s";
+    }
 
-// And so, without truly knowing why, she packed a bag and boarded a train.`;
-//         for (let i = 0; i < Math.floor(characters.length / 3); i++) {
-//             await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 50)));
-//             await triggerSendTextDelta(characters.substring(i * 3, i * 3 + 3));
-//             if (i % 50 == 0) {
-//                 const response = await this.mcp.callTool({
-//                     name: "get_information_from_user",
-//                     arguments: {
-//                         question: "Testing user input",
-//                     },
-//                 });
-//                 console.log("Response from get_information_from_user:", response);
-//                 let isError = false;
-//                 if (response.isError) {
-//                     isError = true;
-//                     console.error("Tool error:", response.isError);
-//                 }
-//                 await triggerToolResultMessage("search_files", { provider: "GoogleDrive", accountId: "sohn5312@gmail.com", path: "/", patterns: ["yee"] }, response.content, isError);
-//             }
-//         }
-//         return "s";
-
+    async processQueryWeb(query: string, access_token: string): Promise<string> {
         const connectedAccountsText = await this.getConnectedAccountsText();
         // get allowed directories from mcp server
         const allowedDirectories = await this.mcp.callTool({
@@ -319,94 +473,84 @@ class MCPClient {
 
         // seems not synchronized well here... but keep it for now
         return texts.join("") + "\n";
-
-        /*
-
-        // call the llm
-        const messages: MessageParam[] = [
-            {
-                role: "user",
-                content: query,
-            },
-        ];
-
-
-
-        const texts: any[] = [];
-        const toolCalls: { name: string; arguments: { [x: string]: unknown } }[] = [];
-
-        while (true) {
-            console.log("Sending messages to LLM:", messages);
-            const response = await this.llm.messages.create({
-                model: "claude-3-5-haiku-20241022",
-                max_tokens: 1000,
-                messages,
-                tools: this.tools,
-                tool_choice: { type: 'auto' },
-                system: "You are an assistant that answers questions and uses tools to help. " +
-                        "Our app connects Google Drive, OneDrive, Dropbox, and local files in one view." +
-                        "Always reply in a way that is simple, short, and straight to the point.",
-            });
-
-            // add the llm response to messages for next iteration
+    }
+    
+    // Tool execution with streaming updates
+    async processToolCallsStreaming(toolCalls: any[], conversationId: string, messages: MessageParam[]) {
+        for (const toolCall of toolCalls){
             messages.push({
-                role: "assistant",
-                content: response.content,
-            });
-
-            // if text -> return response
-            let tool_used = false;
-            for (const content of response.content) {
-                console.log("API Message Content:", content);
-                if (content.type === "text") {
-                    console.log("Response Text content:", content.text);
-                    texts.push(content.text);
-                } else if (content.type === "tool_use") {
-                    tool_used = true;
-                    // if tool -> call the tool on mcp server
-                    const toolName = content.name;
-                    const toolArgs = content.input as { [x: string]: unknown } | undefined;
-                    toolCalls.push({
-                        name: toolName,
-                        arguments: toolArgs || {},
-                    });
-                    const result = await this.mcp.callTool({
-                        name: toolName,
-                        arguments: toolArgs || {}
-                    });
-
-                    console.log("Tool result:", result);
-
-                    const contentArray = result.content as { type: string; text?: string }[];
-                    let toolResultContent: string | undefined;
-                    for (const toolContent of contentArray) {
-                        if (toolContent.type === "text") {
-                            texts.push(toolContent.text);
-                            toolResultContent = toolContent.text;
-                        } else if (toolContent.type === "tool_use") {
-                            console.warn("Unexpected tool_use content in tool result:", toolContent);
-                        }
-                    }
-                    messages.push({
-                        role: "user",
-                        content: [{
-                            type: "tool_result", // content.type
-                            tool_use_id: content.id,
-                            content: toolResultContent ?? "",
-                        }],
-                    });
+            role: "assistant",
+            content: [
+                {
+                type: "tool_use",
+                id: toolCall.id,
+                name: toolCall.name,
+                input: toolCall.input || {}
                 }
-            }
-            triggerRefreshAgentMessage(texts.join("\n") + "\n");
-            //type: string, title: string, icon?: React.ReactNode, cloudType?: CloudType, accountId?: string
-            if (!tool_used) {
-                break; // no more tool calls, exit loop
+            ]
+            });
+            const toolName = toolCall.name;
+            const toolArgs = toolCall.input as { [x: string]: unknown } | undefined;
+            const toolId = toolCall.id;
+
+            if (!toolName || !toolArgs || !toolId) {
+                console.error("Tool name or arguments are missing");
+            } else {
+                messages.push({
+                    role: "assistant",
+                    content: [{
+                        type: "tool_use",
+                        id: toolId,
+                        name: toolName,
+                        input: toolArgs,
+                    }],
+                });
+                const result = await this.mcp.callTool({
+                    name: toolName,
+                    arguments: toolArgs || {},
+                });
+
+                let isError = false;
+                if (result.isError) {
+                    isError = true;
+                    console.error("Tool error:", result.isError);
+                }
+                // check if the result is error
+                triggerToolResultMessage(toolName, toolArgs, result.content, isError);
+
+                const contentArray = result.content as { type: string; text?: string }[];
+
+                // check the length of result.content text and if it is too long, truncate it
+                // This is to prevent the client from crashing due to too long content
+                for (const content of contentArray) {
+                    if (content.type === "text" && content.text && content.text.length > 500) {
+                        console.warn("Tool result content is too long, truncating:", content.text.length);
+                        content.text = content.text.substring(0, 500) + "... (truncated)";
+                    }
+                }
+
+                console.log("Tool result:", result);
+
+                let toolResultContent: string | undefined;
+                for (const toolContent of contentArray) {
+                    if (toolContent.type === "text") {
+                        toolResultContent = toolContent.text;
+                    } else if (toolContent.type === "tool_use") {
+                        console.warn("Unexpected tool_use content in tool result:", toolContent);
+                    }
+                }
+                messages.push({
+                    role: "user",
+                    content: [{
+                        type: "tool_result", // content.type
+                        tool_use_id: toolId,
+                        content: toolResultContent ?? "",
+                    }],
+                });
             }
         }
-
-        return texts.join("\n") + "\n";
-        */
     }
+
 
     async callToolTest(toolName: string, args: { [x: string]: unknown }) {
         // Call the tool with the given query
