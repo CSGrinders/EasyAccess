@@ -46,7 +46,7 @@ function decryptData(encryptedData: string): string {
   }
 }
 
-const StoredAccounts: Map<CloudType, CloudStorage[]> = new Map();
+export const StoredAccounts: Map<CloudType, CloudStorage[]> = new Map();
 
 // To keep track of active authentication processes
 interface ActiveAuth {
@@ -141,6 +141,44 @@ export async function loadStoredAccounts(): Promise<void> {
         console.warn(`Invalid token data for ${cloudType}.${accountId}`, err);
       }
     }
+  }
+}
+
+export async function getFileInfo(cloudType: CloudType, accountId: string, filePath: string): Promise<FileSystemItem> {
+  try {
+    filePath = filePath.replace(CLOUD_HOME, "");
+    console.log('Getting file info from cloud account:', cloudType, accountId, filePath);
+    
+    const accounts = StoredAccounts.get(cloudType);
+    if (accounts) {
+      for (const account of accounts) {
+        if (account.getAccountId() === accountId) {
+          try {
+            return await account.getFileInfo(filePath);
+          } catch (error: any) {
+            console.error(`Error getting file info from ${cloudType}:`, error);
+            
+            // Categorize and re-throw with user-friendly messages
+            if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
+              throw new Error('Authentication expired. Please reconnect your account.');
+            } else if (error.message?.includes('network') || error.message?.includes('timeout') || error.message?.includes('ENOTFOUND')) {
+              throw new Error('Network connection failed. Please check your internet connection.');
+            } else if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
+              throw new Error('File not found or no longer exists.');
+            } else if (error.message?.includes('quota') || error.message?.includes('storage')) {
+              throw new Error('Storage quota exceeded or storage service unavailable.');
+            } else {
+              throw new Error(`Failed to get file info: ${error.message || 'Unknown error'}`);
+            }
+          }
+        }
+      }
+    }
+    
+    throw new Error(`No ${cloudType} account found with ID: ${accountId}`);
+  } catch (error: any) {
+    console.error(`Cloud file info error for ${cloudType}:`, error);
+    throw error; 
   }
 }
 
@@ -361,9 +399,11 @@ export async function readFile(CloudType: CloudType, accountId: string, filePath
 }
 
 
+// GOING TO BE REPLACED 
+
   // filePath: /HOME/dir/temp.txt
   // returns the file content in base64 format
-export async function getFile(CloudType: CloudType, accountId: string, filePath: string): Promise<FileContent | null> {
+export async function getFile(CloudType: CloudType, accountId: string, filePath: string, progressCallback?: (downloaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<FileContent | null> {
   try {
     filePath = filePath.replace(CLOUD_HOME, "");
     console.log('Getting file from cloud account:', CloudType, accountId, filePath);
@@ -373,7 +413,7 @@ export async function getFile(CloudType: CloudType, accountId: string, filePath:
       for (const account of accounts) {
         if (account.getAccountId() === accountId) {
           try {
-            return await account.getFile(filePath);
+            return await account.getFile(filePath, progressCallback, abortSignal);
           } catch (error: any) {
             console.error(`Error getting file from ${CloudType}:`, error);
             
@@ -406,7 +446,7 @@ export async function getFile(CloudType: CloudType, accountId: string, filePath:
 // post the file content (Buffer) to the cloud
 // filePath: /HOME/dir/temp.txt
 // data: Buffer
-export async function postFile(CloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer): Promise<void> {
+export async function postFile(CloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer, progressCallback?: (uploaded: number, total: number) => void, abortSignal?: AbortSignal): Promise<void> {
   try {
     folderPath = folderPath.replace(CLOUD_HOME, "");
     console.log('Posting file to cloud account:', CloudType, accountId, fileName, folderPath);
@@ -417,7 +457,7 @@ export async function postFile(CloudType: CloudType, accountId: string, fileName
         if (account.getAccountId() === accountId) {
           try {
             const type = mime.lookup(fileName) || 'application/octet-stream'; // default to binary if no mime type found
-            return await account.postFile(fileName, folderPath, type, data);
+            return await account.postFile(fileName, folderPath, type, data, progressCallback, abortSignal);
           } catch (error: any) {
             console.error(`Error posting file to ${CloudType}:`, error);
             
@@ -683,21 +723,21 @@ function decodeAccountId(key: string): string {
   return key.replace(/__dot__/g, '.');
 }
 
-// Get file info from cloud storage
-export async function getFileInfo(cloudType: CloudType, accountId: string, filePath: string): Promise<FileSystemItem> {
+// Get item info from cloud storage
+export async function getItemInfo(cloudType: CloudType, accountId: string, itemPath: string): Promise<FileSystemItem> {
   try {
-    filePath = filePath.replace(CLOUD_HOME, "");
-    console.log('Getting file info from cloud account:', cloudType, accountId, filePath);
-    
+    itemPath = itemPath.replace(CLOUD_HOME, "");
+    console.log('Getting item info from cloud account:', cloudType, accountId, itemPath);
+
     const accounts = StoredAccounts.get(cloudType);
     if (accounts) {
       for (const account of accounts) {
         if (account.getAccountId() === accountId) {
           try {
-            return await account.getFileInfo(filePath);
+            return await account.getItemInfo(itemPath);
           } catch (error: any) {
-            console.error(`Error getting file info from ${cloudType}:`, error);
-            
+            console.error(`Error getting item info from ${cloudType}:`, error);
+
             // Categorize and re-throw with user-friendly messages
             if (error.message?.includes('unauthorized') || error.message?.includes('access_denied') || error.message?.includes('Authentication failed')) {
               throw new Error('Authentication expired. Please reconnect your account.');

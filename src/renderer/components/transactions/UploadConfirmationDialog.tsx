@@ -39,13 +39,13 @@ export const UploadConfirmationDialog = ({isOpen, onConfirm, onCancel, fileCount
                             <Upload className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                         </div>
                         <DialogTitle className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                            Confirm File Upload
+                            Confirm Item Transfer
                         </DialogTitle>
                     </div>
                     <DialogDescription className="text-slate-600 dark:text-slate-400 text-left">
                         {fileCount === 1 
-                            ? "Are you sure you want to upload this file?" 
-                            : `Are you sure you want to upload these ${fileCount} files?`
+                            ? "Are you sure you want to transfer this item?" 
+                            : `Are you sure you want to transfer these ${fileCount} items?`
                         }
                     </DialogDescription>
                 </DialogHeader>
@@ -55,7 +55,7 @@ export const UploadConfirmationDialog = ({isOpen, onConfirm, onCancel, fileCount
                         <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
                         <div className="text-sm text-amber-800 dark:text-amber-200">
                             <p className="font-medium mb-1">Important:</p>
-                            <p>By default, the original files will be deleted from the source location after upload.</p>
+                            <p>By default, the original items will be deleted from the source location after the transfer.</p>
                         </div>
                     </div>
                     
@@ -68,13 +68,13 @@ export const UploadConfirmationDialog = ({isOpen, onConfirm, onCancel, fileCount
                                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                             />
                             <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Keep original {fileCount === 1 ? 'file' : 'files'} in source location
+                                Keep original {fileCount === 1 ? 'item' : 'items'} in source location
                             </span>
                         </label>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 ml-7">
                             {keepOriginal 
-                                ? "Files will be copied to the destination" 
-                                : "Files will be moved to the destination"
+                                ? "Items will be copied to the destination" 
+                                : "Items will be moved to the destination"
                             }
                         </p>
                     </div>
@@ -92,7 +92,7 @@ export const UploadConfirmationDialog = ({isOpen, onConfirm, onCancel, fileCount
                         onClick={handleConfirm}
                         className="bg-blue-600 hover:bg-blue-700 text-white"
                     >
-                        {keepOriginal ? 'Copy' : 'Move'} {fileCount === 1 ? 'File' : 'Files'}
+                        {keepOriginal ? 'Copy' : 'Move'} {fileCount === 1 ? 'item' : 'items'}
                     </Button>
                 </DialogFooter>
             </DialogContent>

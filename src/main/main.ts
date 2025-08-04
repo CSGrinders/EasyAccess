@@ -1,12 +1,20 @@
-import { app, BrowserWindow, ipcMain, shell, ipcRenderer, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, ipcRenderer, dialog, Menu } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import Store from 'electron-store';
 import { config } from 'dotenv';
-import { postFile, connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getFileInfo, getDirectoryTree, readFile } from './cloud/cloudManager';
-import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteFileLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal, calculateDirectorySize } from './local/localFileSystem';
-import { CloudType } from "@Types/cloudType";
-import { FileContent, FileSystemItem } from '@Types/fileSystem';
+import { connectNewCloudAccount, getConnectedCloudAccounts, readDirectory, loadStoredAccounts, clearStore, getFile, deleteFile, removeCloudAccount, cancelCloudAuthentication, calculateFolderSize, createDirectory, getDirectoryTree, readFile, getItemInfo } from './cloud/cloudManager';
+import { openExternalUrl, openFileLocal, postFileLocal, getFileLocal, deleteItemLocal, createDirectoryLocal, readDirectoryLocal, searchFilesLocal, readFileLocal, calculateDirectorySize } from './local/localFileSystem';
+// Load environment variables
+// In development, load from project root; in production, load from app Contents directory
+const envPath = app.isPackaged 
+    ? path.join(path.dirname(app.getPath('exe')), '..', '.env')
+    : path.join(__dirname, '../../.env');
+
+console.log('Loading .env from:', envPath);
+config({ path: envPath });
+import { CloudType } from "../types/cloudType";
+import { FileContent, FileSystemItem } from '../types/fileSystem';
 import MCPClient from './MCP/mcpClient';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { PermissionManager } from './permissions/permissionManager';
@@ -14,15 +22,9 @@ import { createFsServer } from './MCP/globalFsMcpServer';
 import { v4 as uuidv4 } from 'uuid';
 import { DashboardState } from '@Types/canvas';
 import http from 'http';
+import { transferManager } from './transfer/transferManager';
+import {progressCallbackData} from '../types/transfer';
 
-// Load environment variables
-// In development, load from project root; in production, load from app Contents directory
-const envPath = app.isPackaged 
-    ? path.join(path.dirname(app.getAppPath()), '..', '..', '.env')
-    : path.join(__dirname, '../../.env');
-
-console.log('Loading .env from:', envPath);
-config({ path: envPath });
 
 export const AppConfig = {
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
@@ -35,6 +37,9 @@ export const AppConfig = {
 }
 
 const store = new Store();
+
+// Set app name as early as possible
+app.setName('Easy Access');
 
 // let mcpClient: MCPClient | null = null;
 let mcpClient: MCPClient | null = null;
@@ -164,6 +169,40 @@ const setUpMCP = async () => {
     return mcpClient;
 };
 
+// Add transfer state storage 
+const TRANSFER_STATE_FILE = path.join(app.getPath('userData'), 'transferState.json');
+
+// Save transfer state function
+const saveTransferState = (transferState: any) => {
+  try {
+    fs.writeFileSync(TRANSFER_STATE_FILE, JSON.stringify(transferState, null, 2));
+  } catch (error) {
+    console.error('Failed to save transfer state:', error);
+  }
+};
+
+// Load transfer state 
+const loadTransferState = () => {
+  try {
+    if (fs.existsSync(TRANSFER_STATE_FILE)) {
+      const data = fs.readFileSync(TRANSFER_STATE_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('Failed to load transfer state:', error);
+  }
+  return { transfers: [], nextId: 1 };
+};
+
+ipcMain.handle('save-transfer-state', async (event, transferState) => {
+  saveTransferState(transferState);
+});
+
+ipcMain.handle('load-transfer-state', async () => {
+  return loadTransferState();
+});
+
+
 const saveCurrentLayout = async () => {
     /*
     Save the current layout of the main window to a file.
@@ -208,6 +247,8 @@ const createWindow = async () => {
     const win = new BrowserWindow({
         width: 1200,
         height: 800,
+        minWidth: 800,   
+        minHeight: 600,  
         frame: false,
         titleBarStyle: 'hiddenInset',
         webPreferences: {
@@ -275,6 +316,18 @@ const createWindow = async () => {
                 }
             }
         });
+
+        // 
+        try {
+            const mainWindow = BrowserWindow.getAllWindows()[0];
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('save-transfer-state-on-quit');
+            }
+            new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (error) {
+            console.error('Failed to save transfer state on quit:', error);
+        }
+
     });
 
     win.once('ready-to-show', () => {
@@ -300,6 +353,38 @@ const createWindow = async () => {
 };
 
 app.whenReady().then(() => {
+    // Set the application name in the menu bar
+    app.setName('Easy Access');
+    
+    // Create custom menu with only Help
+    const template = [
+        {
+            role: 'help',
+            submenu: [
+                {
+                    label: 'About Easy Access',
+                    click: () => {
+                        dialog.showMessageBox({
+                            type: 'info',
+                            title: 'About Easy Access',
+                            message: 'Easy Access',
+                            detail: 'A modern file management application\nVersion 0.1'
+                        });
+                    }
+                },
+                {
+                    label: 'Learn More',
+                    click: () => {
+                        shell.openExternal('https://github.com/');
+                    }
+                }
+            ]
+        }
+    ];
+    
+    const menu = Menu.buildFromTemplate(template as any);
+    Menu.setApplicationMenu(menu);
+    
     createWindow();
 });
 
@@ -312,14 +397,52 @@ ipcMain.handle('get-connected-cloud-accounts', async (_e, cloudType: CloudType) 
 ipcMain.handle('cloud-read-directory', async (_e, cloudType: CloudType, accountId: string, dir: string) => {
     return readDirectory(cloudType, accountId, dir);
 });
-ipcMain.handle('cloud-get-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
-    return getFile(cloudType, accountId, filePath);
+
+// Map to store active download abort controllers by transfer ID
+const activeDownloads = new Map<string, AbortController>()
+
+
+
+
+
+// Map to store active upload abort controllers by transfer ID
+const activeTransfer = new Map<string, AbortController>();
+
+// Transfer Operations 
+ipcMain.handle('transfer-manager', async (event, transferInfo: any) => { 
+    let abortController: AbortController | undefined;
+    if (transferInfo.transferId) {
+        abortController = new AbortController();
+        activeTransfer.set(transferInfo.transferId, abortController);
+    }
+    // Create progress callback that sends updates to renderer
+    const progressCallback = (data: progressCallbackData) => {
+        console.log('Main process sending download progress:', data);
+        event.sender.send('transfer-progress', data);
+    };
+    
+    try {
+        return transferManager(transferInfo, progressCallback, abortController?.signal);
+    } finally {
+        // Clean up abort controller
+        if (transferInfo.transferId) {
+            activeDownloads.delete(transferInfo.transferId);
+        }
+    }
 });
-ipcMain.handle('cloud-post-file', async (_e, cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer | any) => {
-    // Ensure data is a Buffer (handle IPC serialization issues)
-    const bufferData = Buffer.isBuffer(data) ? data : Buffer.from(data.data || data);
-    return postFile(cloudType, accountId, fileName, folderPath, bufferData);
+
+ipcMain.handle('transfer-cancel', async (_e, transferId: string) => {
+    const abortController = activeTransfer.get(transferId);
+    if (abortController) {
+        abortController.abort();
+        activeTransfer.delete(transferId);
+        return true;
+    }
+    return false;
 });
+
+
+
 ipcMain.handle('cloud-delete-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return deleteFile(cloudType, accountId, filePath);
 });
@@ -329,8 +452,8 @@ ipcMain.handle('cloud-calculate-folder-size', async (_e, cloudType: CloudType, a
 ipcMain.handle('cloud-create-directory', async (_e, cloudType: CloudType, accountId: string, dirPath: string) => {
     return createDirectory(cloudType, accountId, dirPath);
 });
-ipcMain.handle('cloud-get-file-info', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
-    return getFileInfo(cloudType, accountId, filePath);
+ipcMain.handle('cloud-get-item-info', async (_e, cloudType: CloudType, accountId: string, itemPath: string) => {
+    return getItemInfo(cloudType, accountId, itemPath);
 });
 ipcMain.handle('cloud-get-directory-tree', async (_e, cloudType: CloudType, accountId: string, dirPath: string) => {
     return getDirectoryTree(cloudType, accountId, dirPath);
@@ -338,6 +461,16 @@ ipcMain.handle('cloud-get-directory-tree', async (_e, cloudType: CloudType, acco
 ipcMain.handle('cloud-read-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
     return readFile(cloudType, accountId, filePath);
 });
+
+// Add missing IPC handlers for getFile operations
+ipcMain.handle('get-file', async (_e, filePath: string) => {
+    return await getFileLocal(filePath);
+});
+
+ipcMain.handle('cloud-get-file', async (_e, cloudType: CloudType, accountId: string, filePath: string) => {
+    return await getFile(cloudType, accountId, filePath);
+});
+
 ipcMain.handle('remove-cloud-account', async (_e, cloudType: CloudType, accountId: string) => {
     return removeCloudAccount(cloudType, accountId);
 });
@@ -433,10 +566,6 @@ ipcMain.handle('calculate-folder-size', async (_e, dirPath: string) => {
     }
 })
 
-ipcMain.handle('get-file', async (_e, filePath: string) => {
-    return await getFileLocal(filePath);
-});
-
 // Handle opening external URLs
 ipcMain.handle('open-external-url', async (event, url) => {
     return await openExternalUrl(url);
@@ -446,12 +575,9 @@ ipcMain.handle('open-file', async (event, fileContent: FileContent) => {
     return await openFileLocal(fileContent);
 });
 
-ipcMain.handle('post-file', async (_e, fileName: string, folderPath: string, data: Buffer) => {
-    return await postFileLocal(fileName, folderPath, data);
-});
 
 ipcMain.handle('delete-file', async (_e, filePath: string)  => {
-    return await deleteFileLocal(filePath);
+    return await deleteItemLocal(filePath);
 });
 
 ipcMain.handle('mcp-process-query-test', (_e, toolName, toolArgs) => {

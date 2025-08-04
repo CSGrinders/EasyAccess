@@ -208,7 +208,7 @@ const StorageWideWindow = ({
                         console.log("Google Drive account connected:", toAddAccount);
                         addStorage(
                             "cloud",
-                            `Google Driven`,
+                            `Google Drive`,
                             CloudType.GoogleDrive,
                             toAddAccount
                         );

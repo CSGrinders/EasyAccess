@@ -133,7 +133,7 @@ export function PopupAccounts({
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             {/* The main content box of the popup */}
-            <DialogContent className="sm:max-w-[500px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl max-h-[80vh] overflow-hidden">
+            <DialogContent className="sm:max-w-[500px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl max-h-[80vh] overflow-hidden select-none">
                 
                 {/* Top section with title and description */}
                 <DialogHeader className="space-y-3 pb-2">

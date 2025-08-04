@@ -83,9 +83,8 @@ function StorageBoxInner({
                              canvasPan,         // Where the view is looking
                              isMaximized,       // Is this box full screen?
                              setIsMaximized,    // Function to make box full screen or no
-                             tempPostFile,      // Function to upload files
-                             tempGetFile,       // Function to download files
-                             tempDragDropTransfer, // Function to handle drag and drop with confirmation first
+                             handleItemTransfer, // Function to handle box file transfer with confirmation first
+                             deleteFileFromSource
                          }: StorageBoxProps, 
                          ref: React.Ref<{}>
                         ) {
@@ -387,7 +386,7 @@ function StorageBoxInner({
                                     
                                     
                                     const filePaths = draggedItems.map(item => item.path);
-                                    await tempDragDropTransfer?.(
+                                    await handleItemTransfer?.(
                                         filePaths, 
                                         sourceCloudType as any, 
                                         sourceAccountId,
@@ -397,13 +396,7 @@ function StorageBoxInner({
                                     );
                                 } catch (error) {
                                 }
-                            } else {
-                                // Regular transfer (not drag and drop)
-                                try {
-                                    await tempPostFile?.(currentPath, box.cloudType, box.accountId);
-                                } catch (error) {
-                                }
-                            }
+                            } 
                         };
                         
                         await handleDragDropTransfer();
@@ -778,7 +771,7 @@ function StorageBoxInner({
                 className={cn(
                     "box-container absolute flex flex-col bg-white dark:bg-slate-800 shadow-lg border border-blue-100 dark:border-slate-700 overflow-hidden",
                     isMaximized ? "border-blue-500 dark:border-blue-400" : "rounded-xl",
-                    isDropZoneActive && "ring-4 ring-green-400 bg-green-50 dark:bg-green-900/20 border-green-400"
+                    isDropZoneActive && "ring-4 ring-green-400 bg-green-50 dark:bg-green-900/20 border-green-400 select-none"
                 )}
                 style={{
                     opacity,
@@ -807,7 +800,7 @@ function StorageBoxInner({
                     </div>
                     <div>
                         <div className="select-none text-slate-800 dark:text-slate-200">{title}</div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                        <div className="select-none text-xs text-slate-500 dark:text-slate-400">
                             {type === "local" ? "" : `(${box.accountId})`}
                         </div>
                     </div>
@@ -880,12 +873,12 @@ function StorageBoxInner({
                     <FileExplorer 
                         ref={fileExplorerRef}
                         zoomLevel={canvasZoom} 
-                        tempGetFile={tempGetFile} 
-                        tempPostFile={tempPostFile} 
                         boxId={id} 
                         onCurrentPathChange={handleCurrentPathChange} 
                         refreshToggle={refreshToggle}
                         silentRefresh={nextRefreshSilentRef.current}
+                        handleItemTransfer={handleItemTransfer} // for out box transfers...
+                        deleteFileFromSource={deleteFileFromSource}
                     />
                 ) : (
                     /* Cloud file explorer */
@@ -894,19 +887,19 @@ function StorageBoxInner({
                         zoomLevel={canvasZoom} 
                         cloudType={box.cloudType} 
                         accountId={box.accountId} 
-                        tempGetFile={tempGetFile} 
-                        tempPostFile={tempPostFile} 
                         boxId={id} 
                         onCurrentPathChange={handleCurrentPathChange} 
                         refreshToggle={refreshToggle} 
                         silentRefresh={nextRefreshSilentRef.current}
+                        handleItemTransfer={handleItemTransfer} // for out box transfers...
+                        deleteFileFromSource={deleteFileFromSource}
                     />
                 )}
             </div>
 
             {/* Size indicator (only shown when not maximized) */}
             {!isMaximized && (
-                <div className="absolute bottom-1 right-2 text-xs text-slate-400 pointer-events-none">
+                <div className="absolute bottom-1 right-2 text-xs text-slate-400 pointer-events-none select-none">
                     {Math.round(sizeRef.current.width)} × {Math.round(sizeRef.current.height)}
                 </div>
             )}

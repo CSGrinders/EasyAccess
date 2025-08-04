@@ -89,10 +89,28 @@ declare global {
             readDirectory: (cloudType: CloudType, accountId: string, dir: string) => Promise<FileSystemItem[]>;
             
             /** Get file content from cloud storage */
-            getFile: (cloudType: CloudType, accountId: string, filePath: string) => Promise<FileContent>;
+            getFile: (cloudType: CloudType, accountId: string, filePath: string, transferId?: string) => Promise<FileContent>;
             
             /** Upload file to cloud storage */
-            postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer) => Promise<void>;
+            postFile: (cloudType: CloudType, accountId: string, fileName: string, folderPath: string, data: Buffer, transferId?: string) => Promise<void>;
+            
+            /** Listen for upload progress updates */
+            onUploadProgress: (callback: (data: { fileName: string; uploaded: number; total: number }) => void) => any;
+            
+            /** Listen for download progress updates */
+            onDownloadProgress: (callback: (data: { fileName: string; downloaded: number; total: number }) => void) => any;
+            
+            /** Remove upload progress listener */
+            removeUploadProgressListener: (wrappedCallback: any) => void;
+            
+            /** Remove download progress listener */
+            removeDownloadProgressListener: (wrappedCallback: any) => void;
+            
+            /** Cancel upload by transfer ID */
+            cancelUpload: (transferId: string) => Promise<boolean>;
+            
+            /** Cancel download by transfer ID */
+            cancelDownload: (transferId: string) => Promise<boolean>;
             
             /** Delete file from cloud storage */
             deleteFile: (cloudType: CloudType, accountId: string, filePath: string) => Promise<void>;

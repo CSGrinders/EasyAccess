@@ -4,8 +4,8 @@
  * Manages a queue of file transfers and displays their status
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { X, AlertCircle, Loader2, CheckCircle, Clock, ChevronDown, ChevronUp, Package, Maximize2, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { X, AlertCircle, Loader2, CheckCircle, Clock, ChevronDown, ChevronUp, Package, Maximize2, RefreshCw, CloudDownload, CloudUpload, ArrowLeftRight} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { TransferItem } from '@Types/transfer';
@@ -33,6 +33,8 @@ export function TransferManager({
   const [estimatedTimes, setEstimatedTimes] = useState<{ [key: string]: string }>({});
   const [autoHideTimer, setAutoHideTimer] = useState<NodeJS.Timeout | null>(null);
   const [locallyHiddenTransfers, setLocallyHiddenTransfers] = useState<Set<string>>(new Set());
+  const [cancelledTimestamps, setCancelledTimestamps] = useState<{ [key: string]: number }>({});
+  const [retryCountdowns, setRetryCountdowns] = useState<{ [key: string]: number }>({});
 
   // Memoize the categorized transfers to prevent infinite re-renders
   const categorizedTransfers = useMemo(() => {
@@ -44,9 +46,9 @@ export function TransferManager({
     const visibleTransfers = transfers.filter(transfer => !locallyHiddenTransfers.has(transfer.id));
 
     visibleTransfers.forEach(transfer => {
-      if (transfer.error) {
+      if (transfer.status == "cancelled") {
         errored.push(transfer);
-      } else if (transfer.isCompleted) {
+      } else if (transfer.status == "completed") {
         completed.push(transfer);
       } else {
         active.push(transfer);
@@ -58,10 +60,70 @@ export function TransferManager({
 
   const { active: activeTransfers, completed: completedTransfers, errored: errorTransfers } = categorizedTransfers;
 
-  // Local handler for closing transfers in the manager (doesn't affect main transfer queue)
+  // Local handler for closing transfers in the manager 
   const handleLocalCloseTransfer = (transferId: string) => {
     setLocallyHiddenTransfers(prev => new Set([...prev, transferId]));
   };
+
+  // Track cancelled transfer timestamps for retry 
+  useEffect(() => {
+    const newCancelledTimestamps = { ...cancelledTimestamps };
+    const newRetryCountdowns = { ...retryCountdowns };
+    let hasChanges = false;
+
+    transfers.forEach(transfer => {
+      if (transfer.status === "cancelled" && !cancelledTimestamps[transfer.id]) {
+        const now = Date.now();
+        newCancelledTimestamps[transfer.id] = now;
+        newRetryCountdowns[transfer.id] = 10; // Start countdown immediately
+        hasChanges = true;
+      } else if (transfer.status !== "cancelled" && cancelledTimestamps[transfer.id]) {
+        delete newCancelledTimestamps[transfer.id];
+        delete newRetryCountdowns[transfer.id];
+        hasChanges = true;
+      }
+    });
+
+    // Clean up timestamps for transfers that no longer exist
+    Object.keys(cancelledTimestamps).forEach(transferId => {
+      if (!transfers.find(t => t.id === transferId)) {
+        delete newCancelledTimestamps[transferId];
+        delete newRetryCountdowns[transferId];
+        hasChanges = true;
+      }
+    });
+
+    if (hasChanges) {
+      setCancelledTimestamps(newCancelledTimestamps);
+      setRetryCountdowns(newRetryCountdowns);
+    }
+  }, [transfers]);
+
+  // Update retry countdowns every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const newRetryCountdowns: { [key: string]: number } = {};
+      let hasActiveCountdowns = false;
+
+      Object.entries(cancelledTimestamps).forEach(([transferId, timestamp]) => {
+        const elapsed = Date.now() - timestamp;
+        const remaining = Math.max(0, 10 - Math.floor(elapsed / 1000));
+        
+        if (remaining > 0) {
+          newRetryCountdowns[transferId] = remaining;
+          hasActiveCountdowns = true;
+        }
+      });
+
+      setRetryCountdowns(newRetryCountdowns);
+
+      if (!hasActiveCountdowns && Object.keys(cancelledTimestamps).length === 0) {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [cancelledTimestamps]);
 
   // Clear locally hidden transfers when transfers are actually removed from the main queue
   useEffect(() => {
@@ -77,10 +139,10 @@ export function TransferManager({
     const newEstimatedTimes: { [key: string]: string } = {};
 
     activeTransfers.forEach(transfer => {
-      if (transfer.startTime && transfer.progress > 0) {
+      if (transfer.startTime && (transfer.progress ?? 0) > 0) {
         const elapsed = Date.now() - transfer.startTime;
-        const rate = transfer.progress / elapsed;
-        const remaining = (100 - transfer.progress) / rate;
+        const rate = (transfer.progress ?? 0) / elapsed;
+        const remaining = (100 - (transfer.progress ?? 0)) / rate;
 
         if (remaining > 0 && remaining < Infinity) {
           const seconds = Math.ceil(remaining / 1000);
@@ -99,9 +161,7 @@ export function TransferManager({
 
   // Auto-hide completed transfers after delay (but not when transfer panel is open)
   useEffect(() => {
-    // Don't auto-remove transfers if the transfer panel is open - users want to see them there
     if (isTransferPanelOpen) {
-      // Clear any existing timer since we don't want to auto-remove
       if (autoHideTimer) {
         clearTimeout(autoHideTimer);
         setAutoHideTimer(null);
@@ -123,7 +183,7 @@ export function TransferManager({
           const newHidden = new Set([...prev]);
           currentCompletedIds.forEach(transferId => {
             const currentTransfer = transfers.find(t => t.id === transferId);
-            if (currentTransfer && currentTransfer.isCompleted && !currentTransfer.error) {
+            if (currentTransfer && currentTransfer.status == "completed") {
               newHidden.add(transferId);
             }
           });
@@ -160,47 +220,60 @@ export function TransferManager({
 
   const renderTransferItem = (transfer: TransferItem) => {
     const getStatusIcon = () => {
-      if (transfer.error) return <AlertCircle className="h-4 w-4 text-red-500" />;
-      if (transfer.isCompleted) return <CheckCircle className="h-4 w-4 text-green-500" />;
-      return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
+      if (transfer.status === "cancelled") return <AlertCircle className="h-7 w-7 text-red-500 animate-pulse" />;
+      if (transfer.status === "completed") return <CheckCircle className="h-7 w-7 text-green-500 animate-pulse" />;
+      if (transfer.status === "downloading") return <CloudDownload className="h-7 w-7 text-blue-500 animate-bounce" />;
+      if (transfer.status === "uploading") return <CloudUpload className="h-7 w-7 text-orange-500 animate-bounce" />;
+      if (transfer.status === "moving") return <ArrowLeftRight className="h-7 w-7 text-indigo-500 animate-pulse" />;
+      if (transfer.status === "copying") return <ArrowLeftRight className="h-7 w-7 text-teal-500 animate-pulse" />;
+      return <Loader2 className="h-7 w-7 text-purple-500 animate-spin" />;
     };
 
     const getStatusText = () => {
-      if (transfer.error) return "Failed";
-      if (transfer.isCompleted) return "Completed";
-      if (transfer.isCancelling) return "Cancelling...";
-      return `${Math.round(transfer.progress)}%`;
-    };    const getProgressText = () => {
-      if (transfer.error) return transfer.error;
-      if (transfer.isCompleted) {
-        const successMsg = `${transfer.keepOriginal ? 'Copied' : 'Moved'} ${transfer.itemCount} file${transfer.itemCount > 1 ? 's' : ''} successfully`;
-        if (transfer.itemCount > 1 && transfer.failedFiles?.length) {
-          return `${successMsg} (${transfer.failedFiles.length} failed)`;
+      if (transfer.status === "cancelled") {
+        if (transfer.failedFiles && transfer.failedFiles.length > 1) {
+          return `Partial (${transfer.completedFiles?.length}/${transfer.itemCount})`;
         }
-        return successMsg;
+        return "Failed";
       }
+      if (transfer.status === "completed") return "Completed";
       
+      return `${Math.round(transfer.progress ?? 0)}%`;
+    };    
+    
+    const getProgressText = () => {
+      if (transfer.status === "completed") {
+        return `Completed ${transfer.completedFiles?.length} of ${transfer.itemCount} items`;
+      }
       const truncatedName = transfer.currentItem && transfer.currentItem.length > 25 
         ? `...${transfer.currentItem.slice(-22)}`
         : transfer.currentItem;
-      return truncatedName || "Preparing...";
+      return truncatedName;
     };
+
+    // Check if retry is available (either no cooldown or cooldown has expired)
+    const isRetryDisabled = transfer.status === "cancelled" && 
+      (retryCountdowns[transfer.id] > 0 || (!retryCountdowns[transfer.id] && cancelledTimestamps[transfer.id] && Date.now() - cancelledTimestamps[transfer.id] < 10000));
 
     return (
       <div key={transfer.id} className={cn(
         "border-l-4 pl-3 py-2 space-y-1",
-        transfer.error ? "border-red-500 bg-red-50/50 dark:bg-red-900/10" :
-        transfer.isCompleted ? "border-green-500 bg-green-50/50 dark:bg-green-900/10" :
-        "border-blue-500 bg-blue-50/50 dark:bg-blue-900/10"
+        transfer.status === "cancelled" ? "border-red-500 bg-red-50/50 dark:bg-red-900/10" :
+        transfer.status === "completed" ? "border-green-500 bg-green-50/50 dark:bg-green-900/10" :
+        transfer.status === "downloading" ? "border-blue-500 bg-blue-50/50 dark:bg-blue-900/10" :
+        transfer.status === "uploading" ? "border-orange-500 bg-orange-50/50 dark:bg-orange-900/10" :
+        transfer.status === "moving" ? "border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/10" :
+        transfer.status === "copying" ? "border-teal-500 bg-teal-50/50 dark:bg-teal-900/10" :
+        "border-purple-500 bg-purple-50/50 dark:bg-purple-900/10" //fetching
       )}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             {getStatusIcon()}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-                <span className="truncate">{transfer.sourceDescription}</span>
+                <span className="truncate">{transfer.sourceStorageType}</span>
                 <span>→</span>
-                <span className="truncate">{transfer.targetDescription}</span>
+                <span className="truncate">{transfer.targetStorageType}</span>
               </div>
               <p className="text-sm text-slate-700 dark:text-slate-300 truncate">
                 {getProgressText()}
@@ -211,24 +284,33 @@ export function TransferManager({
           <div className="flex items-center gap-2 ml-2">
             <span className={cn(
               "text-xs font-medium px-2 py-1 rounded-full",
-              transfer.error ? "text-red-700 bg-red-100 dark:text-red-300 dark:bg-red-900/30" :
-              transfer.isCompleted ? "text-green-700 bg-green-100 dark:text-green-300 dark:bg-green-900/30" :
-              "text-blue-700 bg-blue-100 dark:text-blue-300 dark:bg-blue-900/30"
+              transfer.status === "cancelled" ? "text-red-700 bg-red-100 dark:text-red-300 dark:bg-red-900/30" :
+              transfer.status === "completed" ? "text-green-700 bg-green-100 dark:text-green-300 dark:bg-green-900/30" :
+              transfer.status === "downloading" ? "text-blue-700 bg-blue-100 dark:text-blue-300 dark:bg-blue-900/30" :
+              transfer.status === "uploading" ? "text-orange-700 bg-orange-100 dark:text-orange-300 dark:bg-orange-900/30" :
+              transfer.status === "moving" ? "text-indigo-700 bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-900/30" : //PENDING color
+              transfer.status === "copying" ? "text-teal-700 bg-teal-100 dark:text-teal300 dark:bg-teal-900/30" :
+              "text-purple-700 bg-purple-100 dark:text-purple-300 dark:bg-purple-900/30"
             )}>
               {getStatusText()}
             </span>
             
-            {transfer.error || transfer.isCompleted ? (
+            {transfer.status === "cancelled" || transfer.status === "completed" ? (
               <div className="flex items-center gap-1">
-                {transfer.error && onRetryTransfer && (
+                {transfer.status === "cancelled" && onRetryTransfer && (
                   <Button
                     onClick={() => onRetryTransfer(transfer.id)}
                     variant="ghost"
                     size="sm"
-                    className="h-6 w-6 p-0 hover:bg-slate-100 dark:hover:bg-slate-700"
-                    title="Retry transfer"
+                    className="h-6 w-6 p-0 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={isRetryDisabled ? `Retry available in ${retryCountdowns[transfer.id] || 10}s` : "Retry transfer"}
+                    disabled={!!isRetryDisabled}
                   >
-                    <RefreshCw className="h-3 w-3" />
+                    {isRetryDisabled ? (
+                      <span className="text-xs font-mono">{retryCountdowns[transfer.id] || 10}</span>
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
                   </Button>
                 )}
                 <Button
@@ -241,7 +323,7 @@ export function TransferManager({
                   <X className="h-3 w-3" />
                 </Button>
               </div>
-            ) : !transfer.isCancelling && (
+            ) : (
               <Button
                 onClick={() => onCancelTransfer(transfer.id)}
                 variant="ghost"
@@ -254,22 +336,51 @@ export function TransferManager({
           </div>
         </div>
 
-        {!transfer.error && !transfer.isCompleted && transfer.progress > 0 && (
+        {(transfer.status !== "completed" && (transfer.progress ?? 0) >= 0 && (
           <div className="space-y-1">
             <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
               <div 
-                className="bg-gradient-to-r from-blue-500 to-blue-600 h-1.5 rounded-full transition-all duration-300 ease-out"
-                style={{ width: `${Math.min(100, Math.max(0, transfer.progress))}%` }}
+                className={cn(
+                  "h-1.5 rounded-full transition-all duration-300 ease-out",
+                  transfer.status === "cancelled" ? 
+                    "bg-gradient-to-r from-red-500 to-red-600" : 
+                  transfer.status === "uploading" ?
+                    "bg-gradient-to-r from-orange-400 to-orange-500" : 
+                  transfer.status === "downloading" ?
+                    "bg-gradient-to-r from-blue-400 to-blue-500" :  
+                  transfer.status === "moving" ?
+                    "bg-gradient-to-r from-indigo-400 to-indigo-500" :
+                  transfer.status === "copying" ?
+                    "bg-gradient-to-r from-teal-400 to-teal-500" :
+                    "bg-gradient-to-r from-purple-500 to-purple-600" //Fetching
+                )}
+                style={{ width: `${Math.min(100, Math.max(0, transfer.progress ?? 0))}%` }}
               />
             </div>
+            {transfer.cancelledMessage && (
+                <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                  {transfer.cancelledMessage}
+                </p>)}
+            {transfer.status === "cancelled" && isRetryDisabled && (
+                <p className="text-xs text-orange-600 dark:text-orange-400 mt-1 flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  Retry available in {retryCountdowns[transfer.id] || 10} seconds
+                </p>)}
             <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400">
-              <div className="flex items-center gap-2">
-                {transfer.itemCount > 1 && (
-                  <span>{Math.round((transfer.progress / 100) * transfer.itemCount)} of {transfer.itemCount} files</span>
+              <div className={cn("flex", transfer.isCurrentDirectory ? "flex-col" : "items-center gap-2")}>
+                {transfer.isCurrentDirectory && (
+                  <span>
+                    Item from directory: {transfer.directoryName}
+                  </span>
                 )}
-                {estimatedTimes[transfer.id] && (
+                {transfer.itemCount > 1 && transfer.status !== "cancelled" && (
+                  <span>
+                    Completed {transfer.completedFiles?.length} of {transfer.itemCount} Items
+                  </span>
+                )}
+                {estimatedTimes[transfer.id] && transfer.status !== "cancelled" && (
                   <>
-                    {transfer.itemCount > 1 && <span>•</span>}
+                    {transfer.itemCount > 1 && !transfer.isCurrentDirectory && <span>•</span>}
                     <div className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       <span>{estimatedTimes[transfer.id]}</span>
@@ -279,7 +390,7 @@ export function TransferManager({
               </div>
             </div>
           </div>
-        )}
+        ))}
       </div>
     );
   };
@@ -289,44 +400,24 @@ export function TransferManager({
 
   return (
     <div className={cn(
-      "select-none fixed bottom-6 right-6 bg-white/95 dark:bg-slate-800/95 border border-slate-200 dark:border-slate-700",
-      "rounded-xl shadow-xl backdrop-blur-sm overflow-hidden",
-      "animate-in fade-in-0 slide-in-from-bottom-3 duration-300",
+      "select-none fixed bottom-32 right-0 bg-white/95 dark:bg-slate-800/95 border-l border-t border-b border-slate-200 dark:border-slate-700",
+      "rounded-l-xl shadow-xl backdrop-blur-sm overflow-hidden",
+      "animate-in fade-in-0 slide-in-from-right-3 duration-300",
       "min-w-[350px] max-w-[450px]",
       "backdrop-saturate-150"
     )}
     style={{ zIndex: 99999 }}
     >
       {/* Header */}
-      <div className={cn(
-        "flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-700 cursor-pointer",
-        hasActiveTransfers ? "bg-blue-50 dark:bg-blue-900/20" : 
-        errorTransfers.length > 0 ? "bg-red-50 dark:bg-red-900/20" :
-        "bg-green-50 dark:bg-green-900/20"
-      )}
+      <div className="flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-700 cursor-pointer bg-blue-50 dark:bg-blue-900/20"  
       onClick={() => setIsCollapsed(!isCollapsed)}
       >
         <div className="flex items-center gap-3">
-          <Package className={cn(
-            "h-5 w-5",
-            hasActiveTransfers ? "text-blue-500" :
-            errorTransfers.length > 0 ? "text-red-500" :
-            "text-green-500"
-          )} />
+          <Package className="h-5 w-5 text-blue-500"/>
           <div>
-            <h3 className={cn(
-              "font-semibold text-sm",
-              hasActiveTransfers ? "text-blue-700 dark:text-blue-300" :
-              errorTransfers.length > 0 ? "text-red-700 dark:text-red-300" :
-              "text-green-700 dark:text-green-300"
-            )}>
-              File Transfers ({totalTransfers})
+            <h3 className="font-semibold text-sm text-blue-700 dark:text-blue-300">
+              File Transfers
             </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-400">
-              {hasActiveTransfers ? `${activeTransfers.length} active` :
-               errorTransfers.length > 0 ? `${errorTransfers.length} failed` :
-               `${completedTransfers.length} completed`}
-            </p>
           </div>
         </div>
         
@@ -354,7 +445,7 @@ export function TransferManager({
                 e.stopPropagation();
                 // Hide completed and failed transfers locally instead of removing from main queue
                 const transfersToHide = transfers
-                  .filter(transfer => transfer.isCompleted || transfer.error)
+                  .filter(transfer => transfer.status === "completed" || transfer.status === "cancelled")
                   .map(transfer => transfer.id);
                 
                 setLocallyHiddenTransfers(prev => {
@@ -382,7 +473,7 @@ export function TransferManager({
       {!isCollapsed && (
         <div className="max-h-80 overflow-y-auto p-3 space-y-2">
           {/* Render all transfers in a single list to avoid key conflicts */}
-          {[...activeTransfers, ...errorTransfers, ...completedTransfers].map(transfer => 
+          {[...activeTransfers, ...errorTransfers.slice().reverse(), ...completedTransfers.slice().reverse()].map(transfer => 
             renderTransferItem(transfer)
           )}
         </div>

@@ -16,16 +16,16 @@ export interface TransferringFile {
     /** Filename for display */
     name: string;
     /** Source cloud type (null for local files) */
-    sourceCloudType?: CloudType | null;
+    sourceCloudType?: CloudType | CloudType.Local | null;
     /** Source account ID (null for local files) */
     sourceAccountId?: string | null;
     /** Target cloud type (null for local files) */
-    targetCloudType?: CloudType | null;
+    targetCloudType?: CloudType | CloudType.Local | null;
     /** Target account ID (null for local files) */
     targetAccountId?: string | null;
     /** Transfer ID for tracking */
     transferId: string;
-    /** Whether this is a move operation (file should disappear from source) */
+    /** Move operation */
     isMove: boolean;
 }
 

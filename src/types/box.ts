@@ -61,17 +61,14 @@ export interface StorageBoxProps {
     /** Function to toggle the maximized state */
     setIsMaximized: (isMaximized: boolean) => void;
     
-    /** Optional file upload handler for cloud storage */
-    tempPostFile?: (parentPath: string, cloudType?: CloudType, accountId?: string, fileName?: string) => void;
-
-    /** Optional file download handler for cloud storage */
-    tempGetFile?: (filePaths: string[], cloudType?: CloudType, accountId?: string) => void;
-    
-    /** Optional drag and drop transfer handler with confirmation first */
-    tempDragDropTransfer?: (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => void;
+    /** Optional drag and drop transfer handler box */
+    handleItemTransfer?: (filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string) => void;
     
     /** Handler for transferring items between storage boxes */
     onBoxTransfer?: (sourceItems: any[], targetBoxId: number, targetPath?: string) => void;
+    
+    /** Function to delete a file from the source */
+    deleteFileFromSource?: (fileInfo: any, keepOriginal?: boolean) => Promise<void>;
 }
 
 /**

@@ -12,7 +12,7 @@ import { BoxDragProvider } from "@/contexts/BoxDragContext";
 import { BoxDragPreview } from '@/components/box/BoxDragPreview';
 import SettingsPanel from '@/pages/SettingsPanel';
 import AgentWindow from '../components/app/AgentWindow';
-import { TransferManager } from '@/components/transactions/TransferManager';
+import { TransferManager } from '@/components/transactions/TransferSmallPanel';
 import { TransferDetailPanel } from '@/pages/TransferDetailPanel';
 import { UploadConfirmationDialog } from '@/components/transactions/UploadConfirmationDialog';
 import { useTransferService } from '@/services/TransferService';
@@ -67,11 +67,10 @@ const Dashboard = () => {
         handleCancelTransfer,
         handleCloseTransfer,
         handleRetryTransfer,
-        tempPostFile,
-        tempGetFile,
-        tempDragDropTransfer,
+        handleItemTransfer,
         handleUploadDialogConfirm,
         handleUploadDialogCancel,
+        deleteFileFromSource
     } = useTransferService({ boxRefs, storageBoxesRef });
 
 
@@ -344,17 +343,13 @@ const Dashboard = () => {
         const dispatcher = RendererIpcCommandDispatcher.getInstance();
 
         dispatcher.register('openAccountWindow', addStorageBox);
-        dispatcher.register('getFileOnRenderer', tempGetFile);
-        dispatcher.register('postFileOnRenderer', tempPostFile);
         dispatcher.register('openStorageBox', agentOpenStorageBox);
 
         return () => {
             dispatcher.unregister('openAccountWindow');
-            dispatcher.unregister('getFileOnRenderer');
-            dispatcher.unregister('postFileOnRenderer');
             dispatcher.unregister('openStorageBox');
         };
-    }, [tempPostFile, tempGetFile, addStorageBox]);
+    }, [addStorageBox]);
 
     // Move the listener setup into a useEffect to properly handle state updates
     useEffect(() => {
@@ -456,16 +451,16 @@ const Dashboard = () => {
 
 
     return (
-        <div className="flex flex-col h-screen bg-white dark:bg-gray-900 text-black dark:text-white">
-            <header className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-md">
+        <div className="flex flex-col flex-1 bg-white dark:bg-gray-900 text-black dark:text-white">
+            <header className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 backdrop-blur-sm">
                 <div className="flex items-center justify-between ml-5 mr-5 mt-3 mb-3">
                     <div className="flex items-center space-x-4">
                         <div className="flex items-center">
                             <div
-                                className="bg-gradient-to-r from-blue-500 to-indigo-600 p-2 rounded-lg shadow-md mr-3">
+                                className="bg-gradient-to-br from-blue-500 to-indigo-600 dark:from-blue-400 dark:to-indigo-500 p-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 mr-3">
                                 <HardDrive className="h-6 w-6 text-white" />
                             </div>
-                            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent select-none">
+                            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent select-none">
                                 Easy Access
                             </h1>
                         </div>
@@ -522,9 +517,8 @@ const Dashboard = () => {
                                             canvasPan={position}
                                             isMaximized={maximizedBoxes.has(box.id)}
                                             setIsMaximized={(isMaximized: boolean) => setBoxMaximized(box.id, isMaximized)}
-                                            tempPostFile={tempPostFile}
-                                            tempGetFile={tempGetFile}
-                                            tempDragDropTransfer={tempDragDropTransfer}
+                                            handleItemTransfer={handleItemTransfer}
+                                            deleteFileFromSource={deleteFileFromSource}
                                         />
                                     ))}
                                 </CanvasContainer>

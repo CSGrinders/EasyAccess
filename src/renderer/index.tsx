@@ -9,7 +9,7 @@ const root = ReactDOM.createRoot(document.getElementById('root')!);
 
 root.render(
     <TransferStateProvider>
-        <div className="w-screen h-screen overflow-hidden">
+        <div className="w-screen h-screen overflow-hidden flex flex-col">
             <Titlebar />
             <Dashboard />
             <Toaster />
