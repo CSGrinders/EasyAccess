@@ -7,7 +7,7 @@
 
 ---
 
-## ✨ Features
+## Features
 
 ### 🌟 Unified File Management
 - Access files from multiple cloud storage providers and local directories
@@ -33,7 +33,7 @@
 - Responsive design that adapts to your workflow
 
 ---
-## 📸 Demo
+## Demo
 
 <div align="center">
   <img src="./assets/add-accounts.gif" alt="Adding Cloud Accounts" width="800"/>
@@ -45,7 +45,7 @@
 
 ---
 
-## 🚀 Getting Started
+## Setup
 
 ### Prerequisites
 - **macOS 10.15+** 
@@ -59,7 +59,7 @@ npm run dev
 npm start
 ```
 
-### ⚙️ Configuration
+### Configuration
 Environment Variables for **Google Drive**, **OneDrive**, **Dropbox** Integration 
 Create a .env file in the project root:
 
@@ -72,7 +72,7 @@ DROPBOX_CLIENT_ID=your_dropbox_client_id
 DROPBOX_CLIENT_SECRET=your_dropbox_client_secret
 ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
-> ## 🔑 Note on API Credentials & Security Testing
+> ## Note on API Credentials & Security Testing
 > For security and testing purposes, official **Google**, **OneDrive**, and **Dropbox** credentials are **not bundled** with this repository.  
 >  
 > **Users must provide their own API keys** by creating apps in the respective developer consoles:  
@@ -80,11 +80,18 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 > - [OneDrive App Registration](https://learn.microsoft.com/en-us/graph/auth-register-app-v2)  
 > - [Dropbox App Console](https://www.dropbox.com/developers/apps)  
 >  
-> ### 🤖 AI Assistant API  
+> ### AI Assistant API  
 > - By default, users can **register with us** to receive **10 free Claude AI calls** for demo purposes.  
 > - Alternatively, set your own `ANTHROPIC_API_KEY` in `.env` to use your personal Claude API quota.
 
-## 📄 License
+---
+
+## Acknowledgments
+
+This project incorporates code from the [Model Context Protocol Servers](https://github.com/modelcontextprotocol/servers) repository, which is licensed under the [MIT License](https://github.com/modelcontextprotocol/servers/blob/main/LICENSE). We thank the original authors and contributors for their open-source work.
+
+Please see the [LICENSE](./LICENSE) file for full license details.
+## License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
