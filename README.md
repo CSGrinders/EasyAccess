@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="./assets/background.png" alt="EasyAccess Banner" width="400" height="1200" />
-</p>
-
 <h1 align="center">EasyAccess</h1>
 
 <p align="center">
@@ -37,13 +33,18 @@
 - Responsive design that adapts to your workflow
 
 ---
-## Use Cases
-![EasyAccess Demo](./assets/add-accounts.gif)
-![EasyAccess Demo](./assets/agent-create-file.gif)
-![EasyAccess Demo](./assets/transfer-file.gif)
-![EasyAccess Demo](./assets/agent-search-transfer.gif)
+## 📸 Demo
 
-![EasyAccess Transfer](./assets/transfer-manager.png)
+<div align="center">
+  <img src="./assets/add-accounts.gif" alt="Adding Cloud Accounts" width="400"/>
+  <img src="./assets/agent-search-transfer.gif" alt="AI Agent Search & Transfer" width="400"/>
+</div>
+
+<div align="center">
+  <img src="./assets/transfer-file.gif" alt="File Transfer Demo" width="400"/>
+  <img src="./assets/transfer-manager.png" alt="Transfer Manager" width="400"/>
+</div>
+
 ---
 
 ## 🚀 Getting Started
@@ -54,10 +55,10 @@
 
 ### Quick Start
 ```bash
-git clone https://github.com/yourusername/easyaccess.git
-cd easyaccess
+git clone https://github.com/CSGrinders/EasyAccess/easyaccess.git
 npm install
 npm run dev
+npm start
 ```
 
 ### ⚙️ Configuration
@@ -84,3 +85,11 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 > ### 🤖 AI Assistant API  
 > - By default, users can **register with us** to receive **10 free Claude AI calls** for demo purposes.  
 > - Alternatively, set your own `ANTHROPIC_API_KEY` in `.env` to use your personal Claude API quota.
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+<p align="center">Made with ❤️ using Electron, React, and Anthropic API</p>
