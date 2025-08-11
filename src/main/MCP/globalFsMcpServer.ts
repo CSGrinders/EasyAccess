@@ -18,7 +18,7 @@ import { CloudType } from "../../types/cloudType";
 import { FileContent, FileSystemItem } from "../../types/fileSystem";
 import { createServerMemory } from "./serverMemory";
 import { createDirectoryLocal, getDirectoryInfoLocal, getFileLocal, postFileLocal, readFileLocal } from "../local/localFileSystem";
-import { triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerPostFileOnRenderer, triggerRequestClarification } from "../main";
+import { triggerChangeDirectoryOnAccountWindow, triggerGetFileOnRenderer, triggerOpenAccountWindow, triggerPostFileOnRenderer, triggerRequestClarification, triggerTransferFileOnRenderer } from "../main";
 import { CLOUD_HOME } from "../../types/cloudType";
 
 
@@ -915,31 +915,35 @@ export const createFsServer = async (allowedDirs: string[]) => {
     }
 
     // move files include at least one cloud storage
-    const sourceProvider = parsed.data.source_provider;
-    const destinationProvider = parsed.data.destination_provider;
-    let dataToMove: FileContent | null;
-    if (!sourceProvider) {
-      // source is local storage
-      const validSourcePath = await validatePath(parsed.data.source);
-      // dataToMove = await getFileLocal(validSourcePath);
-      await triggerGetFileOnRenderer([parsed.data.source]);
-    } else {
-      // source is cloud storage
-      const cloudType = await validateProvider(sourceProvider);
-      if (!parsed.data.source_accountId) {
+    let sourceProvider = parsed.data.source_provider;
+    let destinationProvider = parsed.data.destination_provider;
+    let sourceCloudType: CloudType | undefined;
+    let destinationCloudType: CloudType | undefined;
+    let sourceAccountId = parsed.data.source_accountId;
+    let destinationAccountId = parsed.data.destination_accountId;
+
+    if (sourceProvider) {
+      if (!sourceAccountId) {
         throw new Error("Source account ID is required for cloud storage operations");
       }
-      console.log(`Fetching file from cloud storage: ${parsed.data.source} on ${sourceProvider}:${parsed.data.source_accountId}`);
-      await triggerGetFileOnRenderer([parsed.data.source], cloudType, parsed.data.source_accountId);
-      // dataToMove = await getFile(cloudType, parsed.data.source_accountId, parsed.data.source);
+      sourceCloudType = await validateProvider(sourceProvider);
     }
 
-    // Now we have the data to move, we can proceed with the destination
-    if (!destinationProvider) {
+    if (destinationProvider) {
+      if (!destinationAccountId) {
+        throw new Error("Destination account ID is required for cloud storage operations");
+      }
+      destinationCloudType = await validateProvider(destinationProvider);
+      const destFolder = path.dirname(parsed.data.destination);
+      try {
+        await createDirectory(destinationCloudType, destinationAccountId, destFolder); // Ensure the destination directory exists
+      } catch (error) {
+        console.log('Error creating directory in cloud storage:', error);
+      }
+    } else {
       // destination is local storage
       const validDestPath = await validatePath(parsed.data.destination);
       const destFolder = path.dirname(validDestPath);
-      const destFileName = path.basename(validDestPath);
       try {
         await createDirectoryLocal(destFolder); // Ensure the destination directory exists
       } catch (error) {
@@ -948,44 +952,93 @@ export const createFsServer = async (allowedDirs: string[]) => {
           console.log(`Directory already exists: ${destFolder}. No creation needed.`);
         }
       }
-      // const response = await postFileLocal(destFileName, destFolder, dataToMove.content);
-      await triggerPostFileOnRenderer(destFolder, undefined, undefined, destFileName);
-      if (!sourceProvider) {
-        return {
-          content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination}` }],
-        };
-      } else {
-        return {
-          content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from ${sourceProvider}:${parsed.data.source_accountId} to ${parsed.data.destination}` }],
-        };
-      }
-    } else {
-      // destination is cloud storage
-      if (!parsed.data.destination_accountId) {
-        throw new Error("Destination account ID is required for cloud storage operations");
-      }
-      const cloudType = await validateProvider(destinationProvider);
-      const destFolder = path.dirname(parsed.data.destination);
-      const destFileName = path.basename(parsed.data.destination);
-      // post file to the cloud storage
-      try {
-        await createDirectory(cloudType, parsed.data.destination_accountId, destFolder); // Ensure the destination directory exists
-      } catch (error) {
-        console.log('Error creating directory in cloud storage:', error);
-        console.log("Directory creation failed, but it might already exist. Continuing with file move.");
-      }
-      // await postFile(cloudType, parsed.data.destination_accountId, destFileName, destFolder, dataToMove.content);
-      await triggerPostFileOnRenderer(destFolder, cloudType, parsed.data.destination_accountId, destFileName);
-      if (!sourceProvider) {
-        return {
-          content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}` }],
-        };
-      } else {
-        return {
-          content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from ${sourceProvider}:${parsed.data.source_accountId} to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}` }],
-        };
-      }
     }
+
+    // Invoke the file transfer function in the renderering part
+    triggerTransferFileOnRenderer(
+      sourceCloudType,
+      destinationCloudType,
+      sourceAccountId,
+      destinationAccountId,
+      parsed.data.source,
+      parsed.data.destination
+    );
+
+    return {
+      content: [{ type: "text", text: `Successfully start moving ${parsed.data.source} from ${sourceProvider}:${parsed.data.source_accountId} to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}. Might take a while depending on the file size.` }],
+    };
+
+
+
+    // let dataToMove: FileContent | null;
+    // if (!sourceProvider) {
+    //   // source is local storage
+    //   const validSourcePath = await validatePath(parsed.data.source);
+    //   // dataToMove = await getFileLocal(validSourcePath);
+    //   await triggerGetFileOnRenderer([parsed.data.source]);
+    // } else {
+    //   // source is cloud storage
+    //   const cloudType = await validateProvider(sourceProvider);
+    //   if (!parsed.data.source_accountId) {
+    //     throw new Error("Source account ID is required for cloud storage operations");
+    //   }
+    //   console.log(`Fetching file from cloud storage: ${parsed.data.source} on ${sourceProvider}:${parsed.data.source_accountId}`);
+    //   await triggerGetFileOnRenderer([parsed.data.source], cloudType, parsed.data.source_accountId);
+    //   // dataToMove = await getFile(cloudType, parsed.data.source_accountId, parsed.data.source);
+    // }
+
+    // // Now we have the data to move, we can proceed with the destination
+    // if (!destinationProvider) {
+    //   // destination is local storage
+    //   const validDestPath = await validatePath(parsed.data.destination);
+    //   const destFolder = path.dirname(validDestPath);
+    //   const destFileName = path.basename(validDestPath);
+    //   try {
+    //     await createDirectoryLocal(destFolder); // Ensure the destination directory exists
+    //   } catch (error) {
+    //     if (error instanceof Error && error.message.includes("Directory already exists")) {
+    //       // Directory already exists, no action needed
+    //       console.log(`Directory already exists: ${destFolder}. No creation needed.`);
+    //     }
+    //   }
+    //   // const response = await postFileLocal(destFileName, destFolder, dataToMove.content);
+    //   await triggerPostFileOnRenderer(destFolder, undefined, undefined, destFileName);
+    //   if (!sourceProvider) {
+    //     return {
+    //       content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination}` }],
+    //     };
+    //   } else {
+    //     return {
+    //       content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from ${sourceProvider}:${parsed.data.source_accountId} to ${parsed.data.destination}` }],
+    //     };
+    //   }
+    // } else {
+    //   // destination is cloud storage
+    //   if (!parsed.data.destination_accountId) {
+    //     throw new Error("Destination account ID is required for cloud storage operations");
+    //   }
+    //   const cloudType = await validateProvider(destinationProvider);
+    //   const destFolder = path.dirname(parsed.data.destination);
+    //   const destFileName = path.basename(parsed.data.destination);
+    //   // post file to the cloud storage
+    //   try {
+    //     await createDirectory(cloudType, parsed.data.destination_accountId, destFolder); // Ensure the destination directory exists
+    //   } catch (error) {
+    //     console.log('Error creating directory in cloud storage:', error);
+    //     console.log("Directory creation failed, but it might already exist. Continuing with file move.");
+    //   }
+    //   // await postFile(cloudType, parsed.data.destination_accountId, destFileName, destFolder, dataToMove.content);
+    //   await triggerPostFileOnRenderer(destFolder, cloudType, parsed.data.destination_accountId, destFileName);
+    //   if (!sourceProvider) {
+    //     return {
+    //       content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}` }],
+    //     };
+    //   } else {
+    //     return {
+    //       content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from ${sourceProvider}:${parsed.data.source_accountId} to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}` }],
+    //     };
+    //   }
+    // }
   }
 
   async function handleSearchFileTool(args: any) {
