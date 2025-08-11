@@ -1,6 +1,6 @@
 <h1 align="center">
   EasyAccess&nbsp;
-  <a href="https://easyaccess.dev" target="_blank" rel="noopener noreferrer" title="Visit EasyAccess Website">
+  <a href="https://www.easyaccess.dev" target="_blank" rel="noopener noreferrer" title="Visit EasyAccess Website">
     🌐
   </a>
 </h1>
