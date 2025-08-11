@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/banner.png" alt="EasyAccess Banner" style="width: 100%; max-width: 1200px;" />
+  <img src="./assets/background.png" alt="EasyAccess Banner" style="width: 100%; max-width: 1200px;" />
 </p>
 
 <h1 align="center">EasyAccess</h1>
