@@ -1,5 +1,9 @@
-<h1 align="center">EasyAccess</h1>
-
+<h1 align="center">
+  EasyAccess&nbsp;
+  <a href="https://easyaccess.dev" target="_blank" rel="noopener noreferrer" title="Visit EasyAccess Website">
+    🌐
+  </a>
+</h1>
 <p align="center">
   The Ultimate Unified File Management Platform with AI Assistant<br/>
   Seamlessly Manage <strong>Google Drive</strong>, <strong>OneDrive</strong>, <strong>Dropbox</strong>, and Your <strong>Local Files</strong> All in One Place.
