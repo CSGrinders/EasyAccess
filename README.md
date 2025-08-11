@@ -1,6 +1,9 @@
-# EasyAccess
+<h1 align="center">EasyAccess</h1>
 
-A modern desktop application that unifies file management across **Google Drive**, **OneDrive**, **Dropbox**, and your **local file system** in a single, seamless interface with AI Agent's support.
+<p align="center">
+  The Ultimate Unified File Management Platform with AI Assistant<br/>
+  Seamlessly Manage <strong>Google Drive</strong>, <strong>OneDrive</strong>, <strong>Dropbox</strong>, and Your <strong>Local Files</strong> All in One Place.
+</p>
 
 ---
 
