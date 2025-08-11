@@ -36,13 +36,11 @@
 ## 📸 Demo
 
 <div align="center">
-  <img src="./assets/add-accounts.gif" alt="Adding Cloud Accounts" width="400"/>
-  <img src="./assets/agent-search-transfer.gif" alt="AI Agent Search & Transfer" width="400"/>
-</div>
-
-<div align="center">
-  <img src="./assets/transfer-file.gif" alt="File Transfer Demo" width="400"/>
-  <img src="./assets/transfer-manager.png" alt="Transfer Manager" width="400"/>
+  <img src="./assets/add-accounts.gif" alt="Adding Cloud Accounts" width="800"/>
+  <img src="./assets/agent-search-transfer.gif" alt="AI Agent Search & Transfer" width="800"/>
+  <img src="./assets/agent-create-file.gif" alt="AI Agent Create File" width="800"/>
+  <img src="./assets/transfer-file.gif" alt="File Transfer Demo" width="800"/>
+  <img src="./assets/transfer-manager.png" alt="Transfer Manager" width="800"/>
 </div>
 
 ---
