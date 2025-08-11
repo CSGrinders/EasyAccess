@@ -655,7 +655,7 @@ export async function triggerSendTextDelta(delta: string) {
     return await invokeRendererFunction('sendTextDeltaMessage', delta);
 }
 
-export async function triggerOpenAccountWindow(type: string, title: string, icon?: React.ReactNode, cloudType?: CloudType, accountId?: string) {
+export async function triggerOpenAccountWindow(type: string, title: string, cloudType?: CloudType, accountId?: string) {
     return await invokeRendererFunction('openAccountWindow', type, title, cloudType, accountId);
 }
 
