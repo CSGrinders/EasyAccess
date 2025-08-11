@@ -73,6 +73,20 @@ const Dashboard = () => {
         deleteFileFromSource
     } = useTransferService({ boxRefs, storageBoxesRef });
 
+    async function agentTransferItem(sourceCloudType: CloudType | undefined, destinationCloudType: CloudType | undefined, 
+                                                    sourceAccountId: string | undefined, destinationAccountId: string | undefined, 
+                                                    sourcePath: string, destinationPath: string) {
+        console.log("Agent requested transfer item:", { sourceCloudType, destinationCloudType, sourceAccountId, destinationAccountId, sourcePath, destinationPath });
+        // filePaths: string[], sourceCloudType?: CloudType, sourceAccountId?: string, targetPath?: string, targetCloudType?: CloudType, targetAccountId?: string
+        await handleItemTransfer(
+            [sourcePath],
+            sourceCloudType,
+            sourceAccountId,
+            destinationPath,
+            destinationCloudType,
+            destinationAccountId
+        );
+    }
 
     const toggleShowSideWindow = () => {
         setShowStorageWindow(!showStorageWindow); // Toggle the storage window visibility
@@ -344,10 +358,12 @@ const Dashboard = () => {
 
         dispatcher.register('openAccountWindow', addStorageBox);
         dispatcher.register('openStorageBox', agentOpenStorageBox);
+        dispatcher.register('transferFileOnRenderer', agentTransferItem);
 
         return () => {
             dispatcher.unregister('openAccountWindow');
             dispatcher.unregister('openStorageBox');
+            dispatcher.unregister('transferFileOnRenderer');
         };
     }, [addStorageBox]);
 

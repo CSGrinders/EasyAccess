@@ -656,11 +656,17 @@ export async function triggerSendTextDelta(delta: string) {
 }
 
 export async function triggerOpenAccountWindow(type: string, title: string, icon?: React.ReactNode, cloudType?: CloudType, accountId?: string) {
-    return await invokeRendererFunction('openAccountWindow', type, title, icon, cloudType, accountId);
+    return await invokeRendererFunction('openAccountWindow', type, title, cloudType, accountId);
 }
 
 export async function triggerReloadAccountWindow(cloudType: string, accountId: string) {
     return await invokeRendererFunction('reloadAccountWindow', cloudType, accountId);
+}
+
+export async function triggerTransferFileOnRenderer(sourceCloudType: CloudType | undefined, destinationCloudType: CloudType | undefined, 
+                                                    sourceAccountId: string | undefined, destinationAccountId: string | undefined, 
+                                                    sourcePath: string, destinationPath: string) {
+    return await invokeRendererFunction('transferFileOnRenderer', sourceCloudType, destinationCloudType, sourceAccountId, destinationAccountId, sourcePath, destinationPath);
 }
 
 // (filePaths: string[], cloudType?: CloudType, accountId?: string, showProgress?: boolean) => Promise<void>;
