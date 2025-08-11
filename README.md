@@ -90,7 +90,6 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 
 This project incorporates code from the [Model Context Protocol Servers](https://github.com/modelcontextprotocol/servers) repository, which is licensed under the [MIT License](https://github.com/modelcontextprotocol/servers/blob/main/LICENSE). We thank the original authors and contributors for their open-source work.
 
-Please see the [LICENSE](./LICENSE) file for full license details.
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
