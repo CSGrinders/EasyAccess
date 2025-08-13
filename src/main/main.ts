@@ -348,6 +348,7 @@ const createWindow = async () => {
             throw new Error('MCP client not initialized - insufficient permissions');
         }
         console.log("Processing MCP query:", query);
+        console.log("Access token:", access_token);
         return await mcpClient.processQuery(query, access_token);
     });
 };
