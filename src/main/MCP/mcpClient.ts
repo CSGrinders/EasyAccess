@@ -392,9 +392,9 @@ She opened it out of curiosity. Inside, a letter:`;
                         // check the length of result.content text and if it is too long, truncate it
                         // This is to prevent the client from crashing due to too long content
                         for (const content of contentArray) {
-                            if (content.type === "text" && content.text && content.text.length > 500) {
+                            if (content.type === "text" && content.text && content.text.length > 800) {
                                 console.warn("Tool result content is too long, truncating:", content.text.length);
-                                content.text = content.text.substring(0, 500) + "... (truncated)";
+                                content.text = content.text.substring(0, 800) + "... (truncated)";
                             }
                         }
 

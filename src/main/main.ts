@@ -765,6 +765,10 @@ export async function triggerToolResultMessage(toolName: string, toolArgs: any, 
             message = `${toolArgs.question}\n • ${resultContent.map((item: any) => item.text).join("\n")}`;
             break;
 
+        case "move_file_batch":
+            message += `\nStarted moving files: ${toolArgs.sources.join(", ")} to ${toolArgs.destination}.`;
+            break;
+
         default:
             message += `Attempted to handle an unknown tool: "${toolName}".`;
             break;

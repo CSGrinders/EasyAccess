@@ -184,6 +184,15 @@ export const createFsServer = async (allowedDirs: string[]) => {
     destination_accountId: z.string().optional().describe('Must leave empty if local'), // Optional account ID for cloud storage
   });
 
+  const MoveFileBatchArgsSchema = z.object({
+    sources: z.array(z.string()).describe("Array of source file's full paths"),
+    destination: z.string().describe("Destination folder path where files will be moved to"),
+    source_provider: z.string().optional().describe('For only google, onedrive, dropbox. Must leave empty if local'), // Optional provider for cloud storage
+    source_accountId: z.string().optional().describe('Must leave empty if local'), // Optional account ID for cloud storage
+    destination_provider: z.string().optional().describe('For only google, onedrive, dropbox. Must leave empty if local'), // Optional provider for cloud storage
+    destination_accountId: z.string().optional().describe('Must leave empty if local'), // Optional account ID for cloud storage
+  });
+
   const SearchFilesArgsSchema = z.object({
     path: z.string(),
     patterns: z.array(z.string()).describe("Use wildcards like *.txt or specific names like 'report'"),
@@ -469,6 +478,14 @@ export const createFsServer = async (allowedDirs: string[]) => {
             "for simple renaming within the same directory. Both source and destination must be within allowed directories." +
             "Can also move files between cloud storage accounts and local storage.",
           inputSchema: zodToJsonSchema(MoveFileArgsSchema) as ToolInput,
+        },
+        {
+          name: "move_file_batch",
+          description:
+            "Moves multiple files in a batch. Each source file must be specified by its full path. " +
+            "All source files must come from the same provider and account (or from local storage). Mixing files from different accounts or mixing cloud and local storage is not allowed. " +
+            "The destination must be a single folder within one target provider/account (or local storage).",
+          inputSchema: zodToJsonSchema(MoveFileBatchArgsSchema) as ToolInput,
         },
         {
           name: "search_files",
@@ -899,6 +916,90 @@ export const createFsServer = async (allowedDirs: string[]) => {
     };
   }
 
+  async function handleMoveFileBatchTool(args: any) {
+    const parsed = MoveFileBatchArgsSchema.safeParse(args);
+    if (!parsed.success) {
+      throw new Error(`Invalid arguments for move_file_batch: ${parsed.error}`);
+    }
+
+    const sources = parsed.data.sources;
+    const destinationParent = parsed.data.destination;
+
+    for (const source of sources) {
+      console.log('Source:', source);
+    }
+    console.log('Destination Parent:', destinationParent);
+
+    // move files within local storage
+    if (!parsed.data.source_provider && !parsed.data.destination_provider) {
+      for (const source of sources) {
+        const validSourcePath = await validatePath(source);
+        const validDestParentPath = await validatePath(destinationParent);
+        const validDestPath = path.join(validDestParentPath, path.basename(source));
+        await fs.rename(validSourcePath, validDestPath);
+      }
+      return {
+        content: [{ type: "text", text: `Successfully moved ${sources.join(", ")} to ${destinationParent}` }],
+      };
+    }
+
+    // move files include at least one cloud storage
+    let sourceProvider = parsed.data.source_provider;
+    let destinationProvider = parsed.data.destination_provider;
+    let sourceCloudType: CloudType | undefined;
+    let destinationCloudType: CloudType | undefined;
+    let sourceAccountId = parsed.data.source_accountId;
+    let destinationAccountId = parsed.data.destination_accountId;
+
+    if (sourceProvider) {
+      if (!sourceAccountId) {
+        throw new Error("Source account ID is required for cloud storage operations");
+      }
+      sourceCloudType = await validateProvider(sourceProvider);
+    }
+
+    if (destinationProvider) {
+      if (!destinationAccountId) {
+        throw new Error("Destination account ID is required for cloud storage operations");
+      }
+      destinationCloudType = await validateProvider(destinationProvider);
+      const validDestParentPath = await validatePath(parsed.data.destination);
+      try {
+        await createDirectory(destinationCloudType, destinationAccountId, validDestParentPath); // Ensure the destination directory exists
+      } catch (error) {
+        console.log('Error creating directory in cloud storage:', error);
+      }
+    } else {
+      // destination is local storage
+      const validDestParentPath = await validatePath(parsed.data.destination);
+      try {
+        await createDirectoryLocal(validDestParentPath); // Ensure the destination directory exists
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("Directory already exists")) {
+          // Directory already exists, no action needed
+          console.log(`Directory already exists: ${validDestParentPath}. No creation needed.`);
+        }
+      }
+    }
+
+    // Invoke the file transfer function in the renderering part
+    for (const source of sources) {
+      const destination = path.join(destinationParent, path.basename(source));
+      triggerTransferFileOnRenderer(
+        sourceCloudType,
+        destinationCloudType,
+        sourceAccountId,
+        destinationAccountId,
+        source,
+        destination
+      );
+    }
+
+    return {
+      content: [{ type: "text", text: `Successfully start moving ${sources.join(", ")} from ${sourceProvider}:${sourceAccountId} to ${destinationParent}:${destinationProvider}:${destinationAccountId}. Might take a while depending on the file size.` }],
+    };
+  }
+
   async function handleMoveFileTool(args: any) {
     const parsed = MoveFileArgsSchema.safeParse(args);
     if (!parsed.success) {
@@ -967,78 +1068,6 @@ export const createFsServer = async (allowedDirs: string[]) => {
     return {
       content: [{ type: "text", text: `Successfully start moving ${parsed.data.source} from ${sourceProvider}:${parsed.data.source_accountId} to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}. Might take a while depending on the file size.` }],
     };
-
-
-
-    // let dataToMove: FileContent | null;
-    // if (!sourceProvider) {
-    //   // source is local storage
-    //   const validSourcePath = await validatePath(parsed.data.source);
-    //   // dataToMove = await getFileLocal(validSourcePath);
-    //   await triggerGetFileOnRenderer([parsed.data.source]);
-    // } else {
-    //   // source is cloud storage
-    //   const cloudType = await validateProvider(sourceProvider);
-    //   if (!parsed.data.source_accountId) {
-    //     throw new Error("Source account ID is required for cloud storage operations");
-    //   }
-    //   console.log(`Fetching file from cloud storage: ${parsed.data.source} on ${sourceProvider}:${parsed.data.source_accountId}`);
-    //   await triggerGetFileOnRenderer([parsed.data.source], cloudType, parsed.data.source_accountId);
-    //   // dataToMove = await getFile(cloudType, parsed.data.source_accountId, parsed.data.source);
-    // }
-
-    // // Now we have the data to move, we can proceed with the destination
-    // if (!destinationProvider) {
-    //   // destination is local storage
-    //   const validDestPath = await validatePath(parsed.data.destination);
-    //   const destFolder = path.dirname(validDestPath);
-    //   const destFileName = path.basename(validDestPath);
-    //   try {
-    //     await createDirectoryLocal(destFolder); // Ensure the destination directory exists
-    //   } catch (error) {
-    //     if (error instanceof Error && error.message.includes("Directory already exists")) {
-    //       // Directory already exists, no action needed
-    //       console.log(`Directory already exists: ${destFolder}. No creation needed.`);
-    //     }
-    //   }
-    //   // const response = await postFileLocal(destFileName, destFolder, dataToMove.content);
-    //   await triggerPostFileOnRenderer(destFolder, undefined, undefined, destFileName);
-    //   if (!sourceProvider) {
-    //     return {
-    //       content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination}` }],
-    //     };
-    //   } else {
-    //     return {
-    //       content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from ${sourceProvider}:${parsed.data.source_accountId} to ${parsed.data.destination}` }],
-    //     };
-    //   }
-    // } else {
-    //   // destination is cloud storage
-    //   if (!parsed.data.destination_accountId) {
-    //     throw new Error("Destination account ID is required for cloud storage operations");
-    //   }
-    //   const cloudType = await validateProvider(destinationProvider);
-    //   const destFolder = path.dirname(parsed.data.destination);
-    //   const destFileName = path.basename(parsed.data.destination);
-    //   // post file to the cloud storage
-    //   try {
-    //     await createDirectory(cloudType, parsed.data.destination_accountId, destFolder); // Ensure the destination directory exists
-    //   } catch (error) {
-    //     console.log('Error creating directory in cloud storage:', error);
-    //     console.log("Directory creation failed, but it might already exist. Continuing with file move.");
-    //   }
-    //   // await postFile(cloudType, parsed.data.destination_accountId, destFileName, destFolder, dataToMove.content);
-    //   await triggerPostFileOnRenderer(destFolder, cloudType, parsed.data.destination_accountId, destFileName);
-    //   if (!sourceProvider) {
-    //     return {
-    //       content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from local storage to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}` }],
-    //     };
-    //   } else {
-    //     return {
-    //       content: [{ type: "text", text: `Successfully moved ${parsed.data.source} from ${sourceProvider}:${parsed.data.source_accountId} to ${parsed.data.destination} on ${destinationProvider}:${parsed.data.destination_accountId}` }],
-    //     };
-    //   }
-    // }
   }
 
   async function handleSearchFileTool(args: any) {
@@ -1251,6 +1280,11 @@ export const createFsServer = async (allowedDirs: string[]) => {
         // TODO implement
         case "move_file": {
           return await handleMoveFileTool(args);
+        }
+
+        // TODO implement
+        case "move_file_batch": {
+          return await handleMoveFileBatchTool(args);
         }
 
         // TODO implement the case when pattern is given as regex...
