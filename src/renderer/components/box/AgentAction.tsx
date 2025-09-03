@@ -200,7 +200,7 @@ const AgentAction = memo(function AgentAction() {
         }
     }, []);
 
-    const handleAgentWorkStop = useCallback(() => {
+    const handleAgentWorkStop = useCallback((reason?: string) => {
         console.log("Handling agent work stop");
         setIsLoading(false);
         setAgentWorkVisibility(false);
@@ -208,7 +208,11 @@ const AgentAction = memo(function AgentAction() {
         setUserQuery('');
         queueRef.current = [];
         isTyping.current = false;
-        showErrorPopup('Agent stopped working', 'Server is not responding. Please try again later.');
+        if (reason) {
+            showErrorPopup('Agent stopped working', reason);
+        } else {
+            showErrorPopup('Agent work stopped', 'The agent has stopped working for an unknown reason.');
+        }
     }, []);
 
     const showErrorPopup = useCallback((title: string, message: string) => {
@@ -391,7 +395,7 @@ const AgentAction = memo(function AgentAction() {
             showErrorPopup("User Request Limit Reached", "You have reached the maximum number of requests allowed. Please try again later.");
             return;
         }
-        console.log("User request limit check passed");
+        console.log("User request limit check passed or using local API key");
 
         // reset agent work visibility
         setAgentWorkVisibility(false);
@@ -509,23 +513,22 @@ const AgentAction = memo(function AgentAction() {
         const { error } = await supabase.auth.signOut();
         if (error) {
             console.error("Error signing out:", error);
-        } else {
-            console.log("Signed out successfully");
-            setSession(null);
-            setAgentWorkVisibility(false);
-            setResponse('');
-            setUserQuery('');
-            queueRef.current = [];
-            isTyping.current = false;
-            setShowErrorDialog(false);
-            setErrorMessage('');
-            setErrorDescription('');
-            if (questionRef.current) {
-                questionRef.current.style.display = 'none';
-            }
-            setCanUseAgent(false);
-            setIsUsingLocalApiKey(false);
+        } 
+        console.log("Signed out successfully");
+        setSession(null);
+        setAgentWorkVisibility(false);
+        setResponse('');
+        setUserQuery('');
+        queueRef.current = [];
+        isTyping.current = false;
+        setShowErrorDialog(false);
+        setErrorMessage('');
+        setErrorDescription('');
+        if (questionRef.current) {
+            questionRef.current.style.display = 'none';
         }
+        setCanUseAgent(false);
+        setIsUsingLocalApiKey(false);
     }, []);
 
     const localAPIKey = useCallback(async (e: React.FormEvent) => {

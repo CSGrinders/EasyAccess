@@ -16,20 +16,22 @@ import fs from 'fs';
 import { getConnectedCloudAccounts } from "../cloud/cloudManager";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-if (!ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY is not set");
-}
 
 class MCPClient {
+    // mcp and llm might not be initialized if ANTHROPIC_API_KEY is not set
     private mcp: Client;
-    private llm: Anthropic;
+    private llm: Anthropic | undefined;
     private tools: Tool[] = [];
     private prev_messages: MessageParam[] = [];
 
     constructor() {
-        this.llm = new Anthropic({
-            apiKey: ANTHROPIC_API_KEY,
-        });
+        if (!ANTHROPIC_API_KEY) {
+            this.llm = undefined;
+        } else {
+            this.llm = new Anthropic({
+                apiKey: ANTHROPIC_API_KEY,
+            });
+        }
         this.mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
     }
 
@@ -136,13 +138,21 @@ class MCPClient {
         console.log("Processing query:", query);
         
         if (access_token) {
+            console.log("Access token provided, using web API");
             return await this.processQueryWeb(query, access_token);
         } else {
+            console.log("No access token provided, using local API");
             return await this.processQueryLocal(query);
         }
     }
 
     async processQueryLocal(query: string): Promise<string> {
+        // If local API key is not set, stop processing
+        if (!this.llm) {
+            console.error("MCPClient is not initialized properly.");
+            triggerAgentWorkStop("API Key is not set.");
+            return "";
+        }
         const connectedAccountsText = await this.getConnectedAccountsText();
         // get allowed directories from mcp server
         const allowedDirectories = await this.mcp.callTool({
@@ -382,9 +392,9 @@ She opened it out of curiosity. Inside, a letter:`;
                         // check the length of result.content text and if it is too long, truncate it
                         // This is to prevent the client from crashing due to too long content
                         for (const content of contentArray) {
-                            if (content.type === "text" && content.text && content.text.length > 500) {
+                            if (content.type === "text" && content.text && content.text.length > 800) {
                                 console.warn("Tool result content is too long, truncating:", content.text.length);
-                                content.text = content.text.substring(0, 500) + "... (truncated)";
+                                content.text = content.text.substring(0, 800) + "... (truncated)";
                             }
                         }
 
@@ -553,9 +563,6 @@ She opened it out of curiosity. Inside, a letter:`;
 
 
     async callToolTest(toolName: string, args: { [x: string]: unknown }) {
-        // Call the tool with the given query
-        // triggerOpenAccountWindow("cloud", "agent opened", undefined, CloudType.GoogleDrive, "sohn5312@gmail.com");
-        // triggerChangeDirectoryOnAccountWindow(CloudType.GoogleDrive, "sohn5312@gmail.com", "/easyAccess");
         if (!this.tools.some(tool => tool.name === toolName)) {
             throw new Error(`Tool ${toolName} not found`);
         }
@@ -568,7 +575,7 @@ She opened it out of curiosity. Inside, a letter:`;
     }
 
     async cleanup() {
-        await this.mcp.close();
+        await this.mcp?.close();
     }
 }
 

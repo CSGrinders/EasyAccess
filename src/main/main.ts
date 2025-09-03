@@ -348,6 +348,7 @@ const createWindow = async () => {
             throw new Error('MCP client not initialized - insufficient permissions');
         }
         console.log("Processing MCP query:", query);
+        console.log("Access token:", access_token);
         return await mcpClient.processQuery(query, access_token);
     });
 };
@@ -762,6 +763,10 @@ export async function triggerToolResultMessage(toolName: string, toolArgs: any, 
 
         case "get_information_from_user":
             message = `${toolArgs.question}\n • ${resultContent.map((item: any) => item.text).join("\n")}`;
+            break;
+
+        case "move_file_batch":
+            message += `\nStarted moving files: ${toolArgs.sources.join(", ")} to ${toolArgs.destination}.`;
             break;
 
         default:
